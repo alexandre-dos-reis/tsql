@@ -42,12 +42,12 @@
     "access": "public"
   },
   "scripts": {
-    "compile": "bun run src/cli.ts compile",
-    "check": "bun run src/cli.ts check",
+    "compile": "bun run src/cli.ts compile examples/rules/*.ts --project examples/rules/tsconfig.json --out examples/generated/0001_rules.sql --manifest examples/generated/manifest.json",
+    "check": "bun run src/cli.ts check examples/rules/*.ts --project examples/rules/tsconfig.json",
     "test": "bun test",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
-    "typecheck": "bun check --no-script && bun check --no-script -p rules/tsconfig.json",
+    "typecheck": "bun check --no-script && bun check --no-script -p examples/rules/tsconfig.json",
     "build:binary": "bun run scripts/buildBinaries.ts",
     "build:packages": "bun run scripts/buildBinaries.ts --packages",
     "prepublishOnly": "bun run typecheck && bun test"

@@ -22,7 +22,7 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 
 ```
 bun run check                   # type check + translate, write nothing
-bun run compile                 # write generated/0001_rules.sql and generated/manifest.json
+bun run compile                 # write examples/generated/ from examples/rules/
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
@@ -31,17 +31,27 @@ bun run format                  # oxfmt (format:check in CI)
 bun run build:packages          # per-platform binaries + their npm packages, into dist/
 ```
 
-`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, plus file
-positionals that narrow the build. Narrowing is validated in `compile.ts#selected`: a named file that
-is not one of the project's rule files throws, listing what the project holds, because reporting
-success having translated nothing is the same class of quiet wrongness the translator refuses.
-`CompileOptions.include` is the unvalidated predicate form, used by the tests.
+`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, and **requires
+file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
+default: the migration is written from exactly the files named, so a default would let `tsql compile`
+write more than was asked for over whatever was there before. The flip side is that narrowing to a
+subset writes a migration holding only that subset, which is why the repo's own scripts pass
+`examples/rules/*.ts` rather than a single file.
+
+Narrowing is validated in `compile.ts#selected`: a named file that is not one of the project's rule
+files throws, listing what the project holds, because reporting success having translated nothing is
+the same class of quiet wrongness the translator refuses. `CompileOptions.include` is the unvalidated
+predicate form, used by the tests.
+
+The CLI's `--project` default (`rules/tsconfig.json`) and `--out`/`--manifest` defaults describe a
+*consuming* project, not this repo — the demo rules live under `examples/`, so repo scripts and tests
+pass paths explicitly.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
 `typecheck` script, never the compiler API the translator depends on. The `check` script shadows the
 built-in subcommand, hence `--no-script` in `typecheck`.
 
-After any change that alters generated SQL, re-run `bun run compile` and commit `generated/`. The
+After any change that alters generated SQL, re-run `bun run compile` and commit `examples/generated/`. The
 compiler owns that directory and guarantees byte-identical re-runs; it is excluded from oxfmt for
 exactly that reason.
 
@@ -167,7 +177,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 ## Three tsconfigs, deliberately
 
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`.
-- `rules/tsconfig.json` — the compiler's **input**, `types: []`. This is load-bearing: `process`, `Bun`
+- `examples/rules/tsconfig.json` — the demo **input**, `types: []`. This is load-bearing: `process`, `Bun`
   and `require` become *type errors* before the translator ever runs, so one class of rejection costs
   no compiler code.
 - `tests/fixtures/tsconfig.json` — fixtures are valid TypeScript that falls outside the subset, so
@@ -178,11 +188,14 @@ raises on drift. The compiler creates types; it never rewrites them.
 - `tests/compile.test.ts` compiles one fixture at a time (`include` narrows to a single file) so each
   test sees only its own errors. **Every rejection has a test here plus a fixture in `tests/fixtures/`.**
   Adding a rejection means adding both.
+- `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
+  visible to the library tests. It only ever runs `check` — `compile` writes, and a test suite has no
+  business rewriting `examples/generated/`.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, and that the
   platform list, `optionalDependencies` and the launcher agree.
 - `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
-  generates one test per manifest function — so **adding a rule under `rules/` adds a parity test with
+  generates one test per manifest function — so **adding a rule under `examples/rules/` adds a parity test with
   no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
   PostgreSQL type, 200 inputs per function; composite returns are compared field by field via
   `(fn(...)).*`; arguments are snapshotted before the TypeScript call and compared after, so a mutating

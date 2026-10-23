@@ -17,8 +17,8 @@ async function compileFixture(file: string) {
 describe("supported subset", () => {
   test("produces the SQL documented in the readme", async () => {
     const result = await compileProject({
-      tsconfig: "rules/tsconfig.json",
-      include: (fileName) => fileName.endsWith("rules/todo.ts"),
+      tsconfig: "examples/rules/tsconfig.json",
+      include: (fileName) => fileName.endsWith("examples/rules/todo.ts"),
       emit: { schema: undefined, orReplace: false, comments: false },
     });
 
@@ -42,7 +42,7 @@ $$;`,
   });
 
   test("compiles the whole rules project", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.errors.map((e) => e.format())).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
@@ -57,15 +57,15 @@ $$;`,
   });
 
   test("resolves the Integer alias instead of widening to double precision", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "canCreateTodo")!;
     expect(fn.params.map((p) => (p.type.kind === "scalar" ? p.type.sql : p.type.sqlName))).toEqual(["text", "integer"]);
   });
 
   test("naming files narrows the build to those rules", async () => {
     const result = await compileProject({
-      tsconfig: "rules/tsconfig.json",
-      files: ["rules/billing.ts"],
+      tsconfig: "examples/rules/tsconfig.json",
+      files: ["examples/rules/billing.ts"],
       emit: { schema: "app" },
     });
     expect(result.errors.map((e) => e.format())).toEqual([]);
@@ -81,16 +81,16 @@ $$;`,
     // Reporting success having translated nothing is the quiet wrongness this
     // compiler exists to refuse, so a misspelled path has to say so.
     const failure = await compileProject({
-      tsconfig: "rules/tsconfig.json",
-      files: ["rules/nope.ts"],
+      tsconfig: "examples/rules/tsconfig.json",
+      files: ["examples/rules/nope.ts"],
       emit: { schema: "app" },
     }).then(
       () => undefined,
       (error: Error) => error,
     );
-    expect(failure?.message).toContain("`rules/nope.ts` is not a rule file in rules/tsconfig.json");
+    expect(failure?.message).toContain("`examples/rules/nope.ts` is not a rule file in examples/rules/tsconfig.json");
     // The message names what the project does hold, so the fix is visible.
-    expect(failure?.message).toContain("rules/billing.ts");
+    expect(failure?.message).toContain("examples/rules/billing.ts");
   });
 
   test("an identically named local alias is not mistaken for the real Integer", async () => {
@@ -106,7 +106,7 @@ $$;`,
   });
 
   test("keeps the values of a string-literal union for the reader", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "todoLimit")!;
     expect(fn.params[0]!.type).toEqual({
       kind: "scalar",
@@ -117,17 +117,17 @@ $$;`,
   });
 
   test("translates a nullable comparison to IS DISTINCT FROM, not <>", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("referral IS NOT NULL");
   });
 
   test("schema-qualifies calls between compiled functions", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain('"limit" := app.todo_limit(plan);');
   });
 
   test("quotes identifiers that are reserved words", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain('"limit" integer;');
   });
 });
@@ -183,7 +183,7 @@ describe("object types", () => {
   });
 
   test("the composite is read with a parenthesised field reference", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("plan := (sub).plan;");
     expect(result.sql).toContain("sub app.subscription");
   });
@@ -195,7 +195,7 @@ describe("object types", () => {
   });
 
   test("types are emitted before the functions that use them", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql.indexOf("CREATE TYPE app.subscription")).toBeLessThan(result.sql.indexOf("sub app.subscription"));
   });
 
@@ -238,7 +238,7 @@ describe("nested object types", () => {
   });
 
   test("the rules project flattens the nested shape", async () => {
-    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("CREATE TYPE app.nested AS (");
     expect(result.sql).toContain("foo_bar text");
     // The rule rebuilds the shape with a spread rather than mutating it.

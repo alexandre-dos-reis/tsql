@@ -25,12 +25,14 @@ export function todoLimit(plan: "free" | "pro", count: Integer): Integer {
 ```
 
 ```
-tsql check                     # type check + translate, write nothing
-tsql compile                   # write generated/0001_rules.sql and generated/manifest.json
-tsql check rules/billing.ts    # narrow to one file while iterating
+tsql check   rules/*.ts        # type check + translate, write nothing
+tsql compile rules/*.ts        # write generated/0001_rules.sql and generated/manifest.json
+tsql check   rules/billing.ts  # narrow to one file while iterating
 ```
 
-Naming files narrows the build to those rules. A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing.
+Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
+
+A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing.
 
 `tsql --help` lists `--project`, `--out`, `--manifest`, `--schema` and `--no-comments`. Both commands exit non-zero on a rejection, so `tsql check` belongs in CI next to the type checker.
 
@@ -233,7 +235,7 @@ Three things worth knowing about TypeScript 7:
 
 ```
 bun run check            # type check + translate, write nothing
-bun run compile          # write generated/0001_rules.sql and generated/manifest.json
+bun run compile          # write examples/generated/ from examples/rules/
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the rules project
 bun run format           # oxfmt (format:check for CI)
@@ -243,7 +245,7 @@ bun run build:packages   # ...and lay out the npm package around each one
 
 `.oxfmtrc.json` sets `printWidth` to 120 — measured as the width that reflows this code least — and excludes two things:
 
-- **`generated/**`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting `manifest.json` would produce a diff on every compile, forever.
+- **`examples/generated/**`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting `manifest.json` would produce a diff on every compile, forever.
 - **`**/*.md`** — oxfmt reflows the original design notes above, and flattens the tab-separated type-support table into run-together prose.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
@@ -251,7 +253,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 ### Layout
 
 ```
-rules/              business rules — the compiler's input, its own isolated tsconfig
+examples/rules/     demo business rules — the compiler's input, its own isolated tsconfig
+examples/generated/ emitted migration + manifest
 src/pgtypes.ts      the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts      TypeScript 7 API wrapper
 src/tscPath.ts      finds the native executable the API drives
@@ -265,10 +268,9 @@ src/index.ts        the library entry point
 src/targets.ts      the platforms a binary is published for
 bin/tsql.mjs        launcher: picks the platform binary, or falls back to the sources
 scripts/            the release build
-generated/          emitted migration + manifest
 ```
 
-`rules/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
+`examples/rules/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
 
 ### Publishing
 
@@ -383,7 +385,7 @@ return nested.foo.bar;
 ```
 
 ```sql
--- rules/todo.ts: Nested
+-- examples/rules/todo.ts: Nested
 --   foo_bar: from foo.bar
 CREATE TYPE app.nested AS (
   foo_bar text
@@ -540,7 +542,7 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 
 This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/fixtures/shadowedGlobal.ts`).
 
-Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: `rules/tsconfig.json` sets `"types": []`, so they are type errors before the translator runs.
+Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: the rules project's tsconfig sets `"types": []`, so they are type errors before the translator runs.
 
 Rejections carry a file, line, column and the offending source line.
 
@@ -561,13 +563,13 @@ PostgreSQL raises on `integer` overflow where TypeScript silently continues. The
 
 ## Parity tests
 
-`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations — the TypeScript function imported directly, and the generated function in PGlite. Adding a rule to `rules/` adds a parity test with no edit to the test file.
+`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations — the TypeScript function imported directly, and the generated function in PGlite. Adding a rule to `examples/rules/` adds a parity test with no edit to the test file.
 
 Failures report the shrunk counterexample with both answers, plus the seed to reproduce:
 
 ```
 todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
-  rules/billing.ts vs select app.wrong_limit($1::text) as value
+  examples/rules/billing.ts vs select app.wrong_limit($1::text) as value
   reproduce with seed -315639818, path 0
 ```
 

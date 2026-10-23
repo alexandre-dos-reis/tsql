@@ -1,4 +1,4 @@
-import type { Integer } from "../src/pgtypes";
+import type { Integer } from "../../src/pgtypes";
 
 /** The readme's example, compiled verbatim. */
 export function canCreateTodo(plan: string, count: Integer): boolean {

@@ -6,11 +6,15 @@ import { compileProject, formatResult } from "./compile.ts";
 const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 
 Usage:
-  tsql compile [options] [files...]   Type check, translate and write SQL
-  tsql check   [options] [files...]   Type check and translate, writing nothing
+  tsql compile <files...> [options]   Type check, translate and write SQL
+  tsql check   <files...> [options]   Type check and translate, writing nothing
 
-Named files narrow the build to those rules; with none, the whole project
-compiles. A file the project does not hold is an error, not an empty build.
+Rules are named explicitly, because the migration is written from exactly the
+files given. Compile a whole project with a glob:
+
+  tsql compile rules/*.ts
+
+A file the project does not hold is an error, not an empty build.
 
 Options:
   --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
@@ -34,7 +38,12 @@ const { values, positionals } = parseArgs({
 });
 
 const command = positionals[0] ?? "compile";
-if (values.help || !["compile", "check"].includes(command)) {
+const files = positionals.slice(1);
+
+// No files means nothing to do, and there is no safe default to invent: the
+// migration is written from the files named, so quietly compiling whatever the
+// project happened to contain would overwrite it with more than was asked for.
+if (values.help || !["compile", "check"].includes(command) || files.length === 0) {
   console.log(USAGE);
   process.exit(values.help ? 0 : 1);
 }
@@ -43,7 +52,7 @@ if (values.help || !["compile", "check"].includes(command)) {
 // tsconfig — is a message to the user, not a stack trace through bundled code.
 const result = await compileProject({
   tsconfig: values.project,
-  files: positionals.slice(1),
+  files,
   emit: { schema: values.schema, comments: !values["no-comments"] },
 }).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
