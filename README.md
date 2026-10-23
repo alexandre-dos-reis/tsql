@@ -1,310 +1,180 @@
-# tsql
+<div align="center">
 
-`tsql` compiles a small, deliberately restricted subset of TypeScript business rules to PL/pgSQL. It refuses anything whose semantics it cannot preserve, and proves the two implementations agree with generated parity tests.
+<img src="assets/logo.svg" alt="tsql — TypeScript compiles to PL/pgSQL" width="420">
 
-## Install
+### Write the rule once in TypeScript. Enforce it in PostgreSQL.
 
-```
-bun add -d @adr/tsql        # or npm i -D @adr/tsql
-```
+</div>
 
-The package is 45 kB of TypeScript sources — no build output, no embedded runtime. It runs under [Bun](https://bun.com), and `typescript@~7.0.2` is a peer dependency: the checker has to be the one that agrees with your own code.
+You already write this rule twice.
 
-Write rules, annotating anything whose PostgreSQL precision matters:
+**Once in TypeScript,** so the UI can grey out the button before anyone clicks it:
 
 ```ts
-// rules/billing.ts
-import type { Integer } from "@adr/tsql/pgtypes";
-
-export function todoLimit(plan: "free" | "pro", count: Integer): Integer {
-  if (plan === "free") {
-    return 3;
-  }
-  return count * 2;
-}
-```
-
-```
-tsql check   rules/*.ts        # type check + translate, write nothing
-tsql compile rules/*.ts        # write generated/0001_rules.sql and generated/manifest.json
-tsql check   rules/billing.ts  # narrow to one file while iterating
-```
-
-Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
-
-A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing.
-
-`tsql --help` lists `--project`, `--out`, `--manifest`, `--schema` and `--no-comments`. Both commands exit non-zero on a rejection, so `tsql check` belongs in CI next to the type checker.
-
-## Goal
-
-The goal is to transform typescript function into plpgsql language. 
-
-Input :
-
-```ts
-export function canCreateTodo(
-  plan: string,
-  count: number,
-): boolean {
+export function canCreateTodo(plan: string, count: Integer): boolean {
   return plan !== "free" || count < 3;
 }
 ```
 
-Output :
+**And again in SQL,** by hand, because a browser cannot be trusted to enforce anything:
 
 ```sql
-CREATE FUNCTION can_create_todo(
-  plan text,
-  count integer
-)
-RETURNS boolean
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
+CREATE FUNCTION can_create_todo(plan text, count integer)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $$
 BEGIN
   RETURN plan <> 'free' OR count < 3;
 END;
 $$;
 ```
 
-## Design Decision
+One rule, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
 
-I'd make the compiler intentionally small rather than trying to support all TypeScript.
+**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL, and generates tests that run both implementations on hundreds of random inputs to prove they still agree.
 
-Start with:
+And when it meets something it cannot translate *faithfully*, it refuses to compile rather than guessing. A build error beats a function that quietly returns the wrong answer at 3am.
 
-    Primitive types: string, number, boolean.
+## Install
 
-    Function parameters and return values.
+```bash
+bun add -d @adr/tsql        # npm i -D @adr/tsql works too
+```
 
-    if statements and conditional expressions.
+45 kB, no runtime dependencies. Runs on [Bun](https://bun.com); `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
 
-    Comparisons, boolean operators, and arithmetic.
-
-    Calls to other compiled functions.
-
-    Explicitly defined null semantics.
-
-Reject unsupported syntax at build time instead of silently generating incorrect SQL.
-
-One particularly important detail: compile only the pure business-rule functions, not database operations themselves. A rule like canCreateTodo(plan, count) is portable; the operation that obtains the trusted plan and counts rows belongs in PostgreSQL.
-
-I'd also generate parity tests automatically, running identical inputs through the TypeScript function and the generated database function.
-
-That gives you a clear long-term goal: a small TypeScript-to-PL/pgSQL compiler, ordinary TypeScript for the browser, and native PostgreSQL for enforcement.
-
-## Support
-
-TypeScript Type Support for a TypeScript-to-PL/pgSQL Compiler
-
-I'd support TypeScript types from the beginning, but distinguish types used for compile-time checking from types that affect generated PostgreSQL behavior. That distinction lets you support familiar TypeScript without making the compiler unnecessarily complicated.
-
-1. Type support I'd recommend
-TypeScript feature	Example	Compilation strategy
-Primitive types	string, number, boolean	Map to PostgreSQL types
-Type aliases	type Plan = "free" | "pro"	Resolve at build time
-Union types	"free" | "pro"	Use a PostgreSQL enum or text plus validation
-Interfaces and object types	interface User { id: string }	Generate composite types or flatten into parameters
-Optional properties	status?: string	Explicit null/absence semantics
-Literal types	status: "active"	Validate or narrow at compile time
-Generics	Result<T>	Support compile-time substitution where feasible
-Type guards	x !== null	Translate supported guards into SQL conditions
-Enums	enum Status { Active }	Map to PostgreSQL enums or compatible scalar values
-
-I'd start with the first five and add the rest incrementally. You don't need to support all of TypeScript to get substantial value.
-
-2. Example: typed business rules
-
-Write normal TypeScript:
+## Write a rule
 
 ```ts
-export type Plan = "free" | "pro";
+// rules/billing.ts
+import type { Integer } from "@adr/tsql/pgtypes";
 
-export interface TodoPolicy {
-  plan: Plan;
-  currentCount: number;
-}
+export type Plan = "free" | "pro" | "enterprise";
 
-export function canCreateTodo(
-  policy: TodoPolicy,
-): boolean {
-  return policy.plan !== "free" ||
-    policy.currentCount < 3;
+export function todoLimit(plan: Plan): Integer {
+  if (plan === "free") {
+    return 3;
+  } else if (plan === "pro") {
+    return 100;
+  }
+  return 1000;
 }
 ```
 
+Ordinary TypeScript. `Integer` is a plain alias of `number` — it costs nothing at call sites, and it tells the compiler you meant `integer`, not `double precision`.
 
-The browser uses this function with normal TypeScript types.
+## Compile it
 
-For PostgreSQL, the compiler could generate a composite type and a function:
+```bash
+tsql compile rules/*.ts
+```
 
 ```sql
-CREATE TYPE app.todo_policy AS (
-  plan text,
-  current_count integer
-);
-
-CREATE FUNCTION app.can_create_todo(
-  policy app.todo_policy
+-- rules/billing.ts: todoLimit()
+--   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
+CREATE OR REPLACE FUNCTION app.todo_limit(
+  plan text
 )
-RETURNS boolean
+RETURNS integer
 LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (policy).plan <> 'free'
-      OR (policy).current_count < 3;
+  IF plan = 'free' THEN
+    RETURN 3;
+  ELSIF plan = 'pro' THEN
+    RETURN 100;
+  END IF;
+  RETURN 1000;
 END;
 $$;
 ```
 
+Point your migration tool at the emitted file and you are done. `tsql check` does the same without writing anything — put it in CI next to your type checker.
 
-This is illustrative generated SQL. A production compiler must also define how it handles null fields, invalid plan values, and the difference between TypeScript's structural types and PostgreSQL's nominal composite types.
+## More examples
 
-3. Types don't all need SQL equivalents
-
-I'd classify types into three categories:
-
-Compile-time only: interfaces, aliases, generics, and many unions. Resolve these during compilation; they don't necessarily need database objects.
-Runtime-relevant: strings, numbers, booleans, null checks, and literal values. These influence the generated SQL and must have defined semantics.
-Database-specific: rows, queries, transactions, and authenticated identities. Keep these in PostgreSQL rather than trying to model them as portable TypeScript business rules.
-
-For example, Plan = "free" | "pro" can remain a TypeScript union and compile to text in PostgreSQL. If the database must reject every other value, enforce that separately using a PostgreSQL enum, constraint, or validation function.
-
-4. Semantic differences to address early
-
-TypeScript's number is an IEEE-754 floating-point number, while PostgreSQL offers integer, floating-point, and arbitrary-precision numeric types.
-
-Similarly, JavaScript's undefined has no direct SQL equivalent, and SQL uses three-valued logic for NULL.
-
-I'd define these mappings explicitly rather than infer them silently:
-
-number → double precision, or require an explicit database integer/decimal annotation where precision matters.
-string → text.
-boolean → boolean.
-Nullable values → explicit T | null, with carefully translated null checks.
-Optional properties → either explicitly supported absence semantics or rejected in the first compiler version.
-
-5. Compiler implementation
-
-Use the official TypeScript compiler API for parsing, type checking, and symbol resolution. Then build a separate, deliberately restricted code generator that emits PL/pgSQL.
-
-As of TypeScript 7 (the native Go port) that API is no longer `import ts from "typescript"` — the package's main export is just a version string. The compiler API now lives under `typescript/unstable/async` (programs, checkers, diagnostics) and `typescript/unstable/ast` (nodes, `SyntaxKind`, visitors). See **Toolchain** below.
-
-Recommended compilation pipeline:
-
-Parse TypeScript into an AST.
-Run TypeScript type checking.
-Resolve aliases, interfaces, and generic substitutions.
-Reject unsupported runtime constructs.
-Translate supported expressions and statements into PL/pgSQL.
-Generate SQL types and function signatures where needed.
-Emit versioned SQL migrations.
-Run parity tests against the original TypeScript functions and generated PostgreSQL functions.
-Recommendation
-
-Support ordinary TypeScript types wherever possible, but only compile runtime constructs whose semantics you can preserve exactly.
-
-This gives developers a familiar authoring experience without promising that every valid TypeScript program can execute identically in PostgreSQL.
-
-## Toolchain
-
-Verified working on this machine, 2026-10-23:
-
-| Tool | Version | Role |
-| --- | --- | --- |
-| Bun | 1.4.4 | runtime, package manager, test runner, type checker, and the binary's runtime |
-| TypeScript | 7.0.2 (pinned) | the compiler API the translator reads, and the native checker it drives |
-| PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
-| fast-check | 4.10.2 | input generation for parity tests |
-
-`devenv.nix` pins Bun, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
-
-The only runtime dependency is `typescript` — not for its JavaScript, which the binary bundles, but for the 23 MB native executable it drives. The emitter is string building.
-
-Three things worth knowing about TypeScript 7:
-
-- **Use the async API.** `typescript/unstable/sync` reads `stdout._handle.fd` off the spawned compiler process, which Bun does not expose, so it throws on construction. `typescript/unstable/async` speaks the same protocol over ordinary streams and works on Bun and Node alike. The AST is in process — traversal, `getText()` and positions are synchronous — so only checker queries are awaited.
-- **It is `unstable/` on purpose.** The version is pinned exactly (`"typescript": "7.0.2"`, no caret) because these subpaths may move between 7.x minors.
-- **The executable is located by tsql, not by the package.** `typescript` finds its own binary relative to its module URL, which inside a compiled binary is `/$bunfs/root/…` — the lookup dies with ENOENT before anything is translated. The API takes a `tsserverPath` option for exactly this, and `src/tscPath.ts` supplies it.
-
-`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. Note that a project script named `check` would shadow the built-in subcommand — the example scripts are `ex:check` and `ex:compile` partly for that reason, and `typecheck` passes `--no-script` so the built-in is used regardless.
-
-### Commands
-
-```
-bun run ex:check         # type check + translate the examples, write nothing
-bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
-bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
-bun run typecheck        # bun check over the compiler and over the rules project
-bun run format           # oxfmt (format:check for CI)
-bun run build:binary     # compile a binary per platform into dist/
-bun run build:packages   # ...and lay out the npm package around each one
-```
-
-`.oxfmtrc.json` sets `printWidth` to 120 — measured as the width that reflows this code least — and excludes two things:
-
-- **`examples/manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
-- **`**/*.md`** — oxfmt reflows the original design notes above, and flattens the tab-separated type-support table into run-together prose.
-
-oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
-
-### Layout
-
-```
-examples/*.ts       demo business rules — the compiler's input, its own isolated tsconfig
-examples/*.sql      the emitted migration, checked in beside the rules it came from
-examples/manifest.json  what the parity harness reads
-src/pgtypes.ts      the authoring vocabulary (Integer, Numeric, Float)
-src/program.ts      TypeScript 7 API wrapper
-src/tscPath.ts      finds the native executable the API drives
-src/typemap.ts      TypeScript types -> PostgreSQL types
-src/references.ts   classifies a name: parameter, local, compiled function, or runtime global
-src/origin.ts       where a declaration lives: this project, the standard library, or a package
-src/lower.ts        AST -> IR; every restriction is enforced here
-src/emit.ts         IR -> PL/pgSQL, with precedence-aware parenthesising
-src/parity.ts       parity harness, driven by the emitted manifest
-src/index.ts        the library entry point
-src/targets.ts      the platforms a binary is published for
-bin/tsql.mjs        launcher: picks the platform binary, or falls back to the sources
-scripts/            the release build
-```
-
-`examples/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
-
-### Publishing
-
-The package is **sources only** — 45 kB, twenty files, no build output and no embedded runtime. Versions and changelogs are handled by [changesets](https://github.com/changesets/changesets):
-
-```
-bun run changeset   # describe a change (interactive)
-bun run version     # bump and write CHANGELOG.md
-bun run release     # changeset publish
-```
-
-`prepublishOnly` runs the type checker and the test suite. The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun.
-
-Three decisions worth stating:
-
-- **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op, the runtime ships stripped already, and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever — to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
-- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. The range is `~7.0.2` — patches only, because the `unstable/` subpaths this compiler reads may move between 7.x minors. That leaves the package with no runtime dependencies at all, which a test asserts.
-- **The package ships TypeScript sources, not a build.** Bun runs `.ts` directly and TypeScript resolves `.ts` as its own types, so `exports` points straight at `src/`. That removes a build step and an emitted-declarations drift risk; the cost is that Bun has to be present, which `bin/tsql.mjs` checks for and reports.
-
-### Keeping `Integer` honest once installed
-
-`Integer`, `Numeric` and `Float` are resolved by name, so the compiler has to be sure the name it found is *its* name. That check asks which npm package declared the symbol — walking up to the nearest `package.json` — rather than matching the path:
+**Null means null.** `??` becomes `COALESCE`, and an absent discount stays distinct from a zero one:
 
 ```ts
-// a consumer's own src/pgtypes.ts
-export type Integer = string;
+export function priceCents(listCents: Integer, percentOff: Float | null): Float {
+  const discount = percentOff ?? 0;
+  return (listCents * (100 - discount)) / 100;
+}
 ```
 
-A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
+```sql
+DECLARE
+  discount double precision;
+BEGIN
+  discount := COALESCE(percent_off, 0);
+  RETURN list_cents * (100 - discount) / 100;
+```
 
-## What the scaffold compiles today
+**Nullable comparisons are handled for you.** `x !== ""` on a nullable value is not `<>` — SQL's `=` is three-valued, so this would silently return NULL:
 
-Primitives and their mappings, parameters and return values, `if`/`else if`/`else`, `const` locals (hoisted into `DECLARE`), comparisons, boolean operators, arithmetic, `??`, conditional expressions (as `CASE`), and calls to other compiled functions.
+```ts
+export function isNotEmpty(string: string | null): boolean {
+  if (string === null) {
+    return false;
+  }
+  return string !== "";
+}
+```
+
+```sql
+IF is_present IS NULL THEN
+  RETURN false;
+END IF;
+RETURN is_present IS DISTINCT FROM '';
+```
+
+**Objects become composite types**, and rules can call each other:
+
+```ts
+type Subscription = { plan: Plan };
+
+export function canCreateTodo(sub: Subscription, count: Integer): boolean {
+  const limit = todoLimit(sub.plan);
+  return count < limit;
+}
+```
+
+```sql
+DECLARE
+  "limit" integer;
+BEGIN
+  "limit" := app.todo_limit((sub).plan);
+  RETURN count < "limit";
+```
+
+(`limit` is a reserved word in PostgreSQL, so it gets quoted. You don't have to think about it.)
+
+## It refuses rather than guesses
+
+This is the part worth buying. Every rejection is a thing that *looks* fine and would have compiled to subtly wrong SQL:
+
+```
+rules/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
+                       Truthiness is not translated — compare explicitly.
+
+    2 |   if (name) {
+      |       ^
+```
+
+A few others: `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
+
+## Parity tests, for free
+
+`tsql` emits a manifest describing every function it compiled. Point the harness at it and it runs each rule 200 times — same inputs through your TypeScript and through the generated PL/pgSQL — and tells you if they ever disagree:
+
+```
+todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
+  rules/billing.ts vs select app.todo_limit($1::text) as value
+  reproduce with seed -315639818, path 0
+```
+
+Adding a rule adds a test. You don't write it.
+
+## What's supported
 
 | TypeScript | PostgreSQL |
 | --- | --- |
@@ -313,14 +183,55 @@ Primitives and their mappings, parameters and return values, `if`/`else if`/`els
 | `number` | `double precision` |
 | `Integer` / `Numeric` / `Float` | `integer` / `numeric` / `double precision` |
 | `"free" \| "pro"` | `text`, permitted values recorded as a comment |
-| `T \| null` | nullable column type, null checks translated |
+| `T \| null` | nullable, with null checks translated |
 | type alias | resolved at build time |
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
-| a nested object field | flattened to a prefixed column, `foo.bar` -> `foo_bar` |
+| a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-`Integer`, `Numeric` and `Float` are plain aliases of `number` exported from `src/pgtypes.ts`. They cost nothing in TypeScript and impose no friction at call sites, but they let the compiler resolve the author's intent by name instead of guessing a precision. Provenance is checked, so a locally declared `type Integer = Date` is not mistaken for PostgreSQL's `integer`.
+Plus `if`/`else if`/`else`, `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
-### Object types
+Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
+
+---
+
+# Reference
+
+Everything below is the *why*: the reasoning behind each restriction and each semantic
+mapping. You don't need it to use `tsql`, but you will want it before changing how it behaves.
+
+## CLI
+
+```
+tsql compile <files...> [options]   Type check, translate and write SQL
+tsql check   <files...> [options]   Type check and translate, writing nothing
+
+  --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
+  --out <file>           Migration to write     (default: generated/0001_rules.sql)
+  --manifest <file>      Manifest to write      (default: generated/manifest.json)
+  --schema <name>        Schema to qualify with (default: app)
+  --no-comments          Omit provenance comments from the generated SQL
+```
+
+Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
+
+A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. Both commands exit non-zero on a rejection.
+
+## Semantics that are decided, not inferred
+
+- **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
+- **`x === null`** becomes `IS NULL` rather than a comparison.
+- **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
+- **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
+- **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
+- **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
+- **String-literal unions** stay `text`. The permitted values are recorded in a comment; enforcing them is a separate concern (an enum, a domain, or a `CHECK`).
+- **Identifiers** are mapped to `snake_case`, and quoted when they collide with a reserved word — `const limit` becomes `"limit"`.
+
+### Known divergence
+
+PostgreSQL raises on `integer` overflow where TypeScript silently continues. The parity harness generates integers well inside int32 rather than pretending this is handled; narrowing `Integer` to a checked domain would be the real fix.
+
+## Object types
 
 A named `interface` or `type` object shape becomes a PostgreSQL composite type, and field access becomes a parenthesised field reference:
 
@@ -384,7 +295,7 @@ return nested.foo.bar;
 ```
 
 ```sql
--- examples/todo.ts: Nested
+-- examples/input-2.ts: Nested
 --   foo_bar: from foo.bar
 CREATE TYPE app.nested AS (
   foo_bar text
@@ -443,7 +354,7 @@ RETURNS app.seat
   RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
 ```
 
-Spreads resolve **by field path**, so they compose with flattening and with each other, last-one-wins exactly as in JavaScript. The mutation case from the previous section becomes:
+Spreads resolve **by field path**, so they compose with flattening and with each other, last-one-wins exactly as in JavaScript:
 
 ```ts
 const next: Mutable = { ...nested, foo: { ...nested.foo, bar: "some" } };
@@ -460,8 +371,8 @@ The nested spread supplies `foo_bar`, then `bar: "some"` overrides it — so the
 Three consequences:
 
 - **A literal needs a named target type.** `ROW(...)` has to be cast to a nominal composite, so the type comes from the contextual type: an annotation, the function's return type, or the parameter being passed to. An unannotated `const x = { ... }` is rejected with that advice.
-- **Composite returns work.** PL/pgSQL always returned them fine; the gap was that nothing in the subset could build one. `RETURNS app.seat` now compiles, and a field can be read straight off the call: `RETURN (app.grant_seat(seat)).count;`
-- **A nested group can be passed by rebuilding it.** `barOf(outer.foo)` is still rejected, because the flattened composite has no column for the group — but `barOf({ ...outer.foo })` compiles to `app.bar_of(ROW((outer).foo_bar)::app.inner)`.
+- **Composite returns work.** PL/pgSQL always returned them fine; the gap was that nothing in the subset could build one. `RETURNS app.seat` compiles, and a field can be read straight off the call: `RETURN (app.grant_seat(seat)).count;`
+- **A nested group can be passed by rebuilding it.** `barOf(outer.foo)` is rejected, because the flattened composite has no column for the group — but `barOf({ ...outer.foo })` compiles to `app.bar_of(ROW((outer).foo_bar)::app.inner)`.
 
 Field access is resolved as *a composite-typed base plus a path*, not as "a property of a variable", so all four of these read the same way:
 
@@ -472,35 +383,29 @@ Field access is resolved as *a composite-typed base plus a path*, not as "a prop
 | `grantSeat(seat).count` (call result) | `(app.grant_seat(seat)).count` |
 | `{ ...nested.foo }` (group, in a literal) | `ROW((nested).foo_bar)::app.inner` |
 
-Mutating a field is rejected for a sharper reason than the rest of this list: it is not unsupported syntax, it is untranslatable. The same assignment is perfectly legal PL/pgSQL, but parameters there are passed **by value**, so the change never reaches the caller:
+Mutating a field is rejected for a sharper reason than the rest: it is not unsupported syntax, it is untranslatable. The same assignment is perfectly legal PL/pgSQL, but parameters there are passed **by value**, so the change never reaches the caller:
 
 ```
 TS:  returned "some" | caller now holds "some"      <- mutation escapes the function
 SQL: returned some, caller still holds original     <- mutation stays on the local copy
 ```
 
-Compiling it would silently drop a side effect the TypeScript version has, which is exactly the class of bug this compiler exists to refuse. Build a new value with a spread instead, as above; declaring object fields `readonly` gets TypeScript to reject the assignment at authoring time too.
+Compiling it would silently drop a side effect the TypeScript version has. Build a new value with a spread instead; declaring object fields `readonly` gets TypeScript to reject the assignment at authoring time too.
 
-Copying the argument into a fresh local at the top of the generated function — making the SQL internally consistent — was considered and rejected. PL/pgSQL parameters are *already* copies, so the copy is a no-op; and because the two implementations then agree on every return value, the parity harness would go green while the caller-visible behaviour still differed. The fresh value has to exist in the TypeScript, where both languages can see it.
-
-Referencing a group rather than a leaf is also rejected, since the group has no column of its own:
-
-```
-`outer.foo` is a nested shape, not a value. Reference a leaf instead: `outer.foo.bar`.
-```
+Copying the argument into a fresh local at the top of the generated function — making the SQL internally consistent — was considered and rejected. PL/pgSQL parameters are *already* copies, so the copy is a no-op; and because the two implementations would then agree on every return value, the parity harness would go green while the caller-visible behaviour still differed. The fresh value has to exist in the TypeScript, where both languages can see it.
 
 Four more decisions worth stating:
 
 - **Keyed to the name, not the shape.** TypeScript object types are structural; PostgreSQL composites are nominal. Two structurally identical TypeScript types stay two distinct SQL types rather than being silently unified, and an anonymous `{ plan: string }` is rejected — there would be no name to generate. Types are emitted before the functions that use them, and only if a compiled function actually mentions them.
-- **`CREATE TYPE` has no `IF NOT EXISTS`,** so the statement is guarded. The guard also compares the shape that already exists against the expected one and raises, turning a field renamed in TypeScript but never migrated into a loud migration failure rather than a function that quietly returns NULL. Changing a shape still needs a deliberate `ALTER TYPE`: the compiler creates, it never rewrites. Both re-runnability and the drift failure are tested.
+- **`CREATE TYPE` has no `IF NOT EXISTS`,** so the statement is guarded. The guard also compares the shape that already exists against the expected one and raises, turning a field renamed in TypeScript but never migrated into a loud migration failure rather than a function that quietly returns NULL. Changing a shape still needs a deliberate `ALTER TYPE`: the compiler creates, it never rewrites.
 - **`(sub).plan`, not `sub.plan`.** Without the parentheses PostgreSQL reads it as a column reference on a table named `sub`.
 - **`===` on an object is rejected.** TypeScript compares objects by identity, SQL compares composites by value — there is no faithful translation, so compare the fields you care about.
 
 Built-in object types are excluded by the same provenance check that catches runtime globals: `Date` and `Error` are interfaces with properties, but they are declared in the standard library, so they are rejected as built-ins rather than turned into composite types.
 
-### Rejected at build time
+## Rejected at build time
 
-Each of these has a test in `tests/compile.test.ts`, with the fixture that provokes it in `tests/fixtures/`:
+Each of these has a test in `tests/compile.test.ts`, with the fixture that provokes it in `tests/fixtures/`.
 
 **Language constructs:**
 
@@ -545,40 +450,111 @@ Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier
 
 Rejections carry a file, line, column and the offending source line.
 
-## Semantics that are decided, not inferred
-
-- **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
-- **`x === null`** becomes `IS NULL` rather than a comparison.
-- **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
-- **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
-- **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
-- **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
-- **String-literal unions** stay `text`. The permitted values are recorded in a comment; enforcing them is a separate concern (an enum, a domain, or a `CHECK`).
-- **Identifiers** are mapped to `snake_case`, and quoted when they collide with a reserved word — `const limit` becomes `"limit"`.
-
-### Known divergence
-
-PostgreSQL raises on `integer` overflow where TypeScript silently continues. The parity harness generates integers well inside int32 rather than pretending this is handled; narrowing `Integer` to a checked domain would be the real fix.
-
 ## Parity tests
 
-`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations — the TypeScript function imported directly, and the generated function in PGlite. Adding a rule to `examples/` adds a parity test with no edit to the test file.
+`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a rule adds a parity test with no edit to the test file.
 
-Failures report the shrunk counterexample with both answers, plus the seed to reproduce:
+The harness takes a `RowQuery` callback, so it does not care which PostgreSQL you point it at.
 
-```
-todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
-  examples/billing.ts vs select app.wrong_limit($1::text) as value
-  reproduce with seed -315639818, path 0
-```
-
-That example is a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
+That failure message in the overview is itself a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
 
 Two further checks:
 
 - **Composite returns** are compared field by field, querying `(fn(...)).*` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings.
 - **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
 
-## Not built yet
+## Keeping `Integer` honest once installed
 
-Enums, generic substitution, `RETURNS SETOF` and `RETURNS TABLE`, the `Numeric` path beyond type mapping, and migration versioning beyond a single emitted file.
+`Integer`, `Numeric` and `Float` are resolved by name, so the compiler has to be sure the name it found is *its* name. That check asks which npm package declared the symbol — walking up to the nearest `package.json` — rather than matching the path:
+
+```ts
+// a consumer's own src/pgtypes.ts
+export type Integer = string;
+```
+
+A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
+
+## Toolchain
+
+| Tool | Version | Role |
+| --- | --- | --- |
+| Bun | 1.4.4 | runtime, package manager, test runner, type checker |
+| TypeScript | 7.0.2 (peer) | the compiler API the translator reads, and the native checker it drives |
+| PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
+| fast-check | 4.10.2 | input generation for parity tests |
+
+`devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
+
+Three things worth knowing about TypeScript 7:
+
+- **Use the async API.** `typescript/unstable/sync` reads `stdout._handle.fd` off the spawned compiler process, which Bun does not expose, so it throws on construction. `typescript/unstable/async` speaks the same protocol over ordinary streams and works on Bun and Node alike. The AST is in process — traversal, `getText()` and positions are synchronous — so only checker queries are awaited.
+- **It is `unstable/` on purpose.** The peer range is `~7.0.2` — patches only, because these subpaths may move between 7.x minors.
+- **The checker is a separate 23 MB native executable**, which arrives with the consumer's own `typescript` install. `src/tscPath.ts` locates it and passes it as `tsserverPath`, and insists its `lib.*.d.ts` files sit beside it — handed an executable without them, the native compiler *hangs* rather than erroring.
+
+`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is part of why the example scripts are `ex:check` and `ex:compile`.
+
+### Commands
+
+```
+bun run ex:check         # type check + translate the examples, write nothing
+bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
+bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
+bun run typecheck        # bun check over the compiler and over the examples project
+bun run format           # oxfmt (format:check for CI)
+```
+
+`.oxfmtrc.json` sets `printWidth` to 120 and excludes two things:
+
+- **`examples/manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
+- **`**/*.md`** — oxfmt reflows prose and flattens tables.
+
+oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
+
+### Layout
+
+```
+examples/*.ts           demo business rules — the compiler's input, its own isolated tsconfig
+examples/output.sql     the emitted migration, checked in beside the rules it came from
+examples/manifest.json  what the parity harness reads
+src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
+src/program.ts          TypeScript 7 API wrapper
+src/tscPath.ts          finds the native executable the API drives
+src/typemap.ts          TypeScript types -> PostgreSQL types
+src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
+src/origin.ts           where a declaration lives: this project, the standard library, or a package
+src/lower.ts            AST -> IR; every restriction is enforced here
+src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
+src/parity.ts           parity harness, driven by the emitted manifest
+src/index.ts            the library entry point
+bin/tsql.mjs            the launcher npm puts on PATH
+```
+
+`examples/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
+
+## Publishing
+
+The package is **sources only** — 45 kB, no build output and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets):
+
+```
+bun run changeset   # describe a change (interactive)
+bun run version     # bump and write CHANGELOG.md
+bun run release     # changeset publish
+```
+
+`prepublishOnly` runs the type checker and the test suite.
+
+Three decisions worth stating:
+
+- **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op — the runtime ships stripped — and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever, to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
+- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. That leaves no runtime dependencies at all, which a test asserts.
+- **The package ships TypeScript sources, not a build.** Bun runs `.ts` directly and TypeScript resolves `.ts` as its own types, so `exports` points straight at `src/`. That removes a build step and an emitted-declarations drift risk; the cost is that Bun has to be present, which `bin/tsql.mjs` checks for and reports.
+
+## Licence and trademarks
+
+`tsql` is MIT licensed — see [LICENSE](LICENSE).
+
+PostgreSQL and the PostgreSQL elephant logo ("Slonik") are trademarks or registered trademarks of the PostgreSQL Community Association of Canada, used here to identify the database this project targets. The elephant artwork in `assets/logo.svg` is the PostgreSQL project's own, distributed under the [PostgreSQL Licence](https://www.postgresql.org/about/licence/).
+
+TypeScript is a trademark of Microsoft Corporation. The `TS` tile in the logo is original artwork, not Microsoft's mark.
+
+This project is not affiliated with, sponsored by, or endorsed by the PostgreSQL Community Association of Canada or Microsoft Corporation.
