@@ -1,0 +1,15 @@
+{
+  "comment": "The project the compiler reads. Deliberately isolated: no Bun/Node globals, so business rules cannot reach for anything the database side has no equivalent for.",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "types": []
+  },
+  "include": ["."]
+}

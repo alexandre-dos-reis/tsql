@@ -1,0 +1,19 @@
+{
+  "name": "ts-to-plpgsql",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "ln -sf tsc node_modules/.bin/tsgo",
+    "compile": "bun run src/cli.ts compile",
+    "check": "bun run src/cli.ts check",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json && tsc -p rules/tsconfig.json"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "@types/bun": "^1.4.2",
+    "fast-check": "4.10.2",
+    "typescript": "7.0.2"
+  }
+}

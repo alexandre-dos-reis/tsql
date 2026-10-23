@@ -1,0 +1,214 @@
+import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
+import { compileProject } from "../src/compile.ts";
+
+const FIXTURES = "tests/fixtures/tsconfig.json";
+
+/** Compile a single fixture file, so each test sees only its own errors. */
+async function compileFixture(file: string) {
+  const target = resolve("tests/fixtures", file);
+  return compileProject({
+    tsconfig: FIXTURES,
+    include: (fileName) => resolve(fileName) === target,
+    emit: { schema: "app" },
+  });
+}
+
+describe("supported subset", () => {
+  test("produces the SQL documented in the readme", async () => {
+    const result = await compileProject({
+      tsconfig: "rules/tsconfig.json",
+      include: (fileName) => fileName.endsWith("rules/todo.ts"),
+      emit: { schema: undefined, orReplace: false, comments: false },
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.errors.map((e) => e.message)).toEqual([]);
+    // Containment, not equality: the module holds other rules too.
+    expect(result.sql).toContain(
+      `CREATE FUNCTION can_create_todo(
+  plan text,
+  count integer
+)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN plan <> 'free' OR count < 3;
+END;
+$$;`,
+    );
+  });
+
+  test("compiles the whole rules project", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
+      "can_create_todo",
+      "can_create_todo_with_type",
+      "is_eligible_for_trial",
+      "price_cents",
+      "remaining_todos",
+      "todo_limit",
+    ]);
+  });
+
+  test("resolves the Integer alias instead of widening to double precision", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const fn = result.functions.find((f) => f.tsName === "canCreateTodo")!;
+    expect(fn.params.map((p) => (p.type.kind === "scalar" ? p.type.sql : p.type.sqlName))).toEqual(["text", "integer"]);
+  });
+
+  test("keeps the values of a string-literal union for the reader", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    const fn = result.functions.find((f) => f.tsName === "todoLimit")!;
+    expect(fn.params[0]!.type).toEqual({ kind: "scalar", sql: "text", nullable: false, allowed: ["enterprise", "free", "pro"] });
+  });
+
+  test("translates a nullable comparison to IS DISTINCT FROM, not <>", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql).toContain("referral IS NOT NULL");
+  });
+
+  test("schema-qualifies calls between compiled functions", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql).toContain('"limit" := app.todo_limit(plan);');
+  });
+
+  test("quotes identifiers that are reserved words", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql).toContain('"limit" integer;');
+  });
+});
+
+function rejects(cases: [file: string, expected: string][]) {
+  for (const [file, expected] of cases) {
+    test(`${file} is rejected at build time`, async () => {
+      const result = await compileFixture(file);
+      expect(result.diagnostics).toEqual([]);
+      expect(result.ok).toBe(false);
+      expect(result.sql).toBe("");
+      expect(result.errors.map((e) => e.message).join("\n")).toContain(expected);
+    });
+  }
+}
+
+describe("rejections — language constructs", () => {
+  rejects([
+    ["truthiness.ts", "Truthiness is not translated"],
+    ["mutable.ts", "Only `const` declarations are supported"],
+    ["loops.ts", "WhileStatement is not supported"],
+    ["assignment.ts", "Assignment is not supported"],
+    ["discardedStatement.ts", "value is discarded, which has no effect in a pure function"],
+    ["textOrder.ts", "Ordering comparisons are only supported on numbers"],
+    ["floatMod.ts", "`%` is not defined for `double precision`"],
+    ["optional.ts", "Optional parameters are not supported"],
+    ["inferredReturn.ts", "Add an explicit return type"],
+    ["looseEquality.ts", "Use `===` / `!==`"],
+    ["unsupportedType.ts", "`Date` is a built-in JavaScript type"],
+    ["undefinedType.ts", "`undefined` has no SQL equivalent"],
+    ["generic.ts", "Generic functions are not supported"],
+  ]);
+
+  test("a rejection points at the offending line", async () => {
+    const result = await compileFixture("truthiness.ts");
+    const error = result.errors[0]!;
+    expect(error.fileName).toEndWith("tests/fixtures/truthiness.ts");
+    expect(error.line).toBe(2);
+    expect(error.format()).toContain("if (name) {");
+  });
+});
+
+describe("object types", () => {
+  test("a named object type becomes a composite type", async () => {
+    const result = await compileFixture("interfaceShape.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.composites.map((c) => c.sqlName)).toEqual(["todo_policy"]);
+    expect(result.sql).toContain("CREATE TYPE app.todo_policy AS (");
+    expect(result.sql).toContain("plan text");
+    expect(result.sql).toContain("current_count double precision");
+    expect(result.sql).toContain("policy app.todo_policy");
+  });
+
+  test("the composite is read with a parenthesised field reference", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql).toContain("plan := (sub).plan;");
+    expect(result.sql).toContain("sub app.subscription");
+  });
+
+  test("CREATE TYPE is guarded and checks the existing shape", async () => {
+    const result = await compileFixture("interfaceShape.ts");
+    expect(result.sql).toContain("IF to_regtype('app.todo_policy') IS NULL THEN");
+    expect(result.sql).toContain("RAISE EXCEPTION");
+  });
+
+  test("types are emitted before the functions that use them", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql.indexOf("CREATE TYPE app.subscription")).toBeLessThan(
+      result.sql.indexOf("sub app.subscription"),
+    );
+  });
+
+  test("only types a compiled function uses are emitted", async () => {
+    // `objectEquality.ts` fails to lower, so its type must not be left behind.
+    const result = await compileFixture("objectEquality.ts");
+    expect(result.ok).toBe(false);
+    expect(result.composites).toEqual([]);
+  });
+
+  test("a nested anonymous shape is reported as nesting, not as anonymity", async () => {
+    // The outer type is named, so complaining about a missing name sends the
+    // reader looking in the wrong place.
+    const result = await compileFixture("nestedAnonymous.ts");
+    const error = result.errors[0]!;
+    expect(error.message).toContain("`Nested.foo` is itself an object");
+    expect(error.message).not.toContain("Anonymous object types");
+    // And it points at the field, not at the parameter that referenced it.
+    expect(error.line).toBe(3);
+    expect(error.format()).toContain("foo: { bar: string };");
+  });
+
+  rejects([
+    ["anonymousObject.ts", "Anonymous object types are not supported"],
+    ["optionalProperty.ts", "`Account.note` is optional"],
+    ["nestedObject.ts", "Nested composite types are not supported"],
+    ["nestedAnonymous.ts", "Nested composite types are not supported"],
+    ["objectEquality.ts", "Objects compare by identity in TypeScript"],
+    ["compositeReturn.ts", "Returning an object is not supported"],
+    ["indexSignature.ts", "`Bag` has an index signature"],
+    ["collisionTypes.ts", "already used by `PlanInfo`"],
+  ]);
+});
+
+describe("rejections — runtime references", () => {
+  rejects([
+    ["asyncFn.ts", "`async` and `await` are not supported"],
+    ["externalCall.ts", "`Math.max` is a JavaScript runtime global"],
+    ["mathProperty.ts", "`Math.PI` is a JavaScript runtime global"],
+    ["jsonGlobal.ts", "`JSON.stringify` is a JavaScript runtime global"],
+    ["dateGlobal.ts", "`Date` is a JavaScript runtime global"],
+    ["infinityGlobal.ts", "`Infinity` is outside the supported subset"],
+    ["packageImport.ts", "comes from a package (`fast-check`)"],
+    ["paramProperty.ts", "object and element access are not part of the compiled subset"],
+    ["methodCall.ts", "methods on values are not part of the compiled subset"],
+  ]);
+
+  test("globals are detected by provenance, not by name", async () => {
+    // A parameter called `Math` is a parameter, and compiles.
+    const result = await compileFixture("shadowedGlobal.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.sql).toContain("math double precision");
+    expect(result.sql).toContain("RETURN math + 1;");
+  });
+
+  test("a runtime global is reported where it is written", async () => {
+    const result = await compileFixture("mathProperty.ts");
+    const error = result.errors[0]!;
+    expect(error.line).toBe(2);
+    expect(error.format()).toContain("return n > Math.PI;");
+  });
+});

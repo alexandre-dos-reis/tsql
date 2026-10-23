@@ -1,0 +1,244 @@
+{
+  "generatedBy": "ts-to-plpgsql",
+  "schema": "app",
+  "types": [
+    {
+      "kind": "composite",
+      "tsName": "Subscription",
+      "sqlName": "subscription",
+      "fields": [
+        {
+          "tsName": "plan",
+          "sqlName": "plan",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "free",
+              "max",
+              "pro"
+            ]
+          }
+        }
+      ],
+      "nullable": false,
+      "module": "rules/todo.ts"
+    }
+  ],
+  "functions": [
+    {
+      "tsName": "todoLimit",
+      "sqlName": "todo_limit",
+      "module": "rules/billing.ts",
+      "params": [
+        {
+          "tsName": "plan",
+          "sqlName": "plan",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "enterprise",
+              "free",
+              "pro"
+            ]
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "integer",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "remainingTodos",
+      "sqlName": "remaining_todos",
+      "module": "rules/billing.ts",
+      "params": [
+        {
+          "tsName": "plan",
+          "sqlName": "plan",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "enterprise",
+              "free",
+              "pro"
+            ]
+          }
+        },
+        {
+          "tsName": "count",
+          "sqlName": "count",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "integer",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "priceCents",
+      "sqlName": "price_cents",
+      "module": "rules/billing.ts",
+      "params": [
+        {
+          "tsName": "listCents",
+          "sqlName": "list_cents",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        },
+        {
+          "tsName": "percentOff",
+          "sqlName": "percent_off",
+          "type": {
+            "kind": "scalar",
+            "sql": "double precision",
+            "nullable": true
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "double precision",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "isEligibleForTrial",
+      "sqlName": "is_eligible_for_trial",
+      "module": "rules/billing.ts",
+      "params": [
+        {
+          "tsName": "plan",
+          "sqlName": "plan",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "enterprise",
+              "free",
+              "pro"
+            ]
+          }
+        },
+        {
+          "tsName": "hadTrial",
+          "sqlName": "had_trial",
+          "type": {
+            "kind": "scalar",
+            "sql": "boolean",
+            "nullable": false
+          }
+        },
+        {
+          "tsName": "referral",
+          "sqlName": "referral",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": true
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "boolean",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "canCreateTodo",
+      "sqlName": "can_create_todo",
+      "module": "rules/todo.ts",
+      "params": [
+        {
+          "tsName": "plan",
+          "sqlName": "plan",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false
+          }
+        },
+        {
+          "tsName": "count",
+          "sqlName": "count",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "boolean",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "canCreateTodoWithType",
+      "sqlName": "can_create_todo_with_type",
+      "module": "rules/todo.ts",
+      "params": [
+        {
+          "tsName": "sub",
+          "sqlName": "sub",
+          "type": {
+            "kind": "composite",
+            "tsName": "Subscription",
+            "sqlName": "subscription",
+            "fields": [
+              {
+                "tsName": "plan",
+                "sqlName": "plan",
+                "type": {
+                  "kind": "scalar",
+                  "sql": "text",
+                  "nullable": false,
+                  "allowed": [
+                    "free",
+                    "max",
+                    "pro"
+                  ]
+                }
+              }
+            ],
+            "nullable": false,
+            "module": "rules/todo.ts"
+          }
+        },
+        {
+          "tsName": "count",
+          "sqlName": "count",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "boolean",
+        "nullable": false
+      }
+    }
+  ]
+}

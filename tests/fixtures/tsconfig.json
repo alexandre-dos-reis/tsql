@@ -1,0 +1,14 @@
+{
+  "comment": "Fixtures are valid TypeScript that falls outside the compiled subset, so the rejection tests exercise the compiler rather than tsc.",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "types": []
+  },
+  "include": ["."]
+}
