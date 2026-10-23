@@ -186,6 +186,27 @@
       }
     },
     {
+      "tsName": "isNotEmpty",
+      "sqlName": "is_not_empty",
+      "module": "examples/input-1.ts",
+      "params": [
+        {
+          "tsName": "isPresent",
+          "sqlName": "is_present",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": true
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "boolean",
+        "nullable": false
+      }
+    },
+    {
       "tsName": "canCreateTodo",
       "sqlName": "can_create_todo",
       "module": "examples/input-2.ts",

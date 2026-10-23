@@ -104,6 +104,22 @@ BEGIN
 END;
 $$;
 
+-- examples/input-1.ts: isNotEmpty()
+CREATE OR REPLACE FUNCTION app.is_not_empty(
+  is_present text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  IF is_present IS NULL THEN
+    RETURN false;
+  END IF;
+  RETURN is_present IS DISTINCT FROM '';
+END;
+$$;
+
 -- examples/input-1.ts: priceCents()
 CREATE OR REPLACE FUNCTION app.price_cents(
   list_cents integer,

@@ -29,3 +29,10 @@ export function priceCents(listCents: Integer, percentOff: Float | null): Float 
 export function isEligibleForTrial(plan: Plan, hadTrial: boolean, referral: string | null): boolean {
   return plan === "free" && !hadTrial && referral !== null;
 }
+
+export function isNotEmpty(isPresent: string | null): boolean {
+  if (isPresent === null) {
+    return false;
+  }
+  return isPresent !== "";
+}
