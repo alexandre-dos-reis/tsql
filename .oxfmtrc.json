@@ -1,4 +1,4 @@
 {
   "printWidth": 120,
-  "ignorePatterns": ["examples/generated/**", "**/*.md"]
+  "ignorePatterns": ["examples/manifest.json", "**/*.md"]
 }

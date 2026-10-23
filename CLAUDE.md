@@ -22,7 +22,7 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 
 ```
 bun run check                   # type check + translate, write nothing
-bun run compile                 # write examples/generated/ from examples/rules/
+bun run compile                 # write examples/*.sql + manifest from examples/rules/
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
@@ -51,9 +51,11 @@ pass paths explicitly.
 `typecheck` script, never the compiler API the translator depends on. The `check` script shadows the
 built-in subcommand, hence `--no-script` in `typecheck`.
 
-After any change that alters generated SQL, re-run `bun run compile` and commit `examples/generated/`. The
-compiler owns that directory and guarantees byte-identical re-runs; it is excluded from oxfmt for
-exactly that reason.
+After any change that alters generated SQL, re-run `bun run compile` and commit the result:
+`examples/0001_rules.sql` and `examples/manifest.json`, which sit beside the `examples/rules/` they
+are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
+`examples/manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
+compile, forever.
 
 ## TypeScript 7 compiler API
 
@@ -190,7 +192,7 @@ raises on drift. The compiler creates types; it never rewrites them.
   Adding a rejection means adding both.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
   visible to the library tests. It only ever runs `check` — `compile` writes, and a test suite has no
-  business rewriting `examples/generated/`.
+  business rewriting the emitted example output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, and that the
   platform list, `optionalDependencies` and the launcher agree.

@@ -235,7 +235,7 @@ Three things worth knowing about TypeScript 7:
 
 ```
 bun run check            # type check + translate, write nothing
-bun run compile          # write examples/generated/ from examples/rules/
+bun run compile          # write examples/0001_rules.sql + manifest from examples/rules/
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the rules project
 bun run format           # oxfmt (format:check for CI)
@@ -245,7 +245,7 @@ bun run build:packages   # ...and lay out the npm package around each one
 
 `.oxfmtrc.json` sets `printWidth` to 120 — measured as the width that reflows this code least — and excludes two things:
 
-- **`examples/generated/**`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting `manifest.json` would produce a diff on every compile, forever.
+- **`examples/manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
 - **`**/*.md`** — oxfmt reflows the original design notes above, and flattens the tab-separated type-support table into run-together prose.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
@@ -254,7 +254,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 ```
 examples/rules/     demo business rules — the compiler's input, its own isolated tsconfig
-examples/generated/ emitted migration + manifest
+examples/*.sql      the emitted migration, checked in beside the rules it came from
+examples/manifest.json  what the parity harness reads
 src/pgtypes.ts      the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts      TypeScript 7 API wrapper
 src/tscPath.ts      finds the native executable the API drives

@@ -42,7 +42,7 @@
     "access": "public"
   },
   "scripts": {
-    "compile": "bun run src/cli.ts compile examples/rules/*.ts --project examples/rules/tsconfig.json --out examples/generated/0001_rules.sql --manifest examples/generated/manifest.json",
+    "compile": "bun run src/cli.ts compile examples/rules/*.ts --project examples/rules/tsconfig.json --out examples/0001_rules.sql --manifest examples/manifest.json",
     "check": "bun run src/cli.ts check examples/rules/*.ts --project examples/rules/tsconfig.json",
     "test": "bun test",
     "format": "oxfmt --write",
@@ -57,7 +57,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11",
-    "@types/bun": "^1.4.2",
+    "@types/bun": "1.4.4",
     "fast-check": "4.10.2"
   },
   "optionalDependencies": {
