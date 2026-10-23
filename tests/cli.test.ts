@@ -30,18 +30,29 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
     expect(stdout).toContain("tsql compile <files...>");
   });
 
-  test("a command with no files shows usage and fails", async () => {
+  test("a command with no files says so, and shows usage", async () => {
     for (const command of ["compile", "check"]) {
-      const { stdout, exitCode } = await run([command]);
+      const { stderr, exitCode } = await run([command]);
       expect(exitCode).toBe(1);
-      expect(stdout).toContain("Usage:");
+      expect(stderr).toContain(`\`${command}\` needs at least one file`);
+      expect(stderr).toContain("Usage:");
     }
   });
 
-  test("an unknown command shows usage and fails", async () => {
-    const { stdout, exitCode } = await run(["frobnicate", "examples/input-1.ts"]);
+  test("an unknown command names it, and shows usage", async () => {
+    const { stderr, exitCode } = await run(["frobnicate", "examples/input-1.ts"]);
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("Usage:");
+    expect(stderr).toContain("unknown command `frobnicate`");
+    expect(stderr).toContain("Usage:");
+  });
+
+  test("a file where the command goes suggests the command", async () => {
+    // The likeliest slip. Reprinting usage leaves the reader to spot the
+    // difference themselves, so the path that was given is named instead.
+    const { stderr, exitCode } = await run(["examples/input-1.ts", "--out", "some.sql"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("expected a command, got `examples/input-1.ts`");
+    expect(stderr).toContain("tsql compile examples/input-1.ts");
   });
 
   test("--help shows usage and succeeds", async () => {
@@ -57,6 +68,17 @@ describe("the CLI compiles the files it is given", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
     expect(stdout).not.toContain("can_create_todo");
+  });
+
+  test("a missing project names the path and points at --project", async () => {
+    // The `--project` default describes a consuming project, so a first run
+    // from anywhere else lands here.
+    const { stderr, exitCode } = await run(["check", "examples/input-1.ts"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("No TypeScript project at");
+    expect(stderr).toContain("rules/tsconfig.json");
+    expect(stderr).toContain("--project");
+    expect(stderr).not.toContain("at <anonymous>");
   });
 
   test("a file the project does not hold fails with advice, not a stack trace", async () => {

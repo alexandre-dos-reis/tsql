@@ -1,7 +1,9 @@
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { compileProject, formatResult } from "./compile.ts";
+import { ProjectNotFoundError } from "./errors.ts";
 
 const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 
@@ -37,15 +39,39 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const command = positionals[0] ?? "compile";
+const COMMANDS: readonly string[] = ["compile", "check"];
+
+const command = positionals[0] ?? "";
 const files = positionals.slice(1);
+
+if (values.help) {
+  console.log(USAGE);
+  process.exit(0);
+}
 
 // No files means nothing to do, and there is no safe default to invent: the
 // migration is written from the files named, so quietly compiling whatever the
 // project happened to contain would overwrite it with more than was asked for.
-if (values.help || !["compile", "check"].includes(command) || files.length === 0) {
+if (positionals.length === 0) {
   console.log(USAGE);
-  process.exit(values.help ? 0 : 1);
+  process.exit(1);
+}
+
+if (!COMMANDS.includes(command)) {
+  // Leaving a path where the command goes is the likeliest slip, and reprinting
+  // usage makes the reader find the difference themselves. Name what was wrong.
+  const looksLikeAFile = /\.[cm]?tsx?$/.test(command) || existsSync(command);
+  console.error(
+    looksLikeAFile
+      ? `tsql: expected a command, got \`${command}\`.\n\n  Did you mean:  tsql compile ${positionals.join(" ")}\n`
+      : `tsql: unknown command \`${command}\`. Expected ${COMMANDS.join(" or ")}.\n\n${USAGE}`,
+  );
+  process.exit(1);
+}
+
+if (files.length === 0) {
+  console.error(`tsql: \`${command}\` needs at least one file.\n\n${USAGE}`);
+  process.exit(1);
 }
 
 // A toolchain that cannot be assembled — no native compiler, an unreadable
@@ -55,6 +81,16 @@ const result = await compileProject({
   files,
   emit: { schema: values.schema, comments: !values["no-comments"] },
 }).catch((error: unknown) => {
+  // The default `--project` describes a consuming project, not whatever
+  // directory tsql happens to be run from, so this is what a first run hits.
+  if (error instanceof ProjectNotFoundError) {
+    console.error(
+      `${error.message}\n\n` +
+        `Point --project at the tsconfig that holds your rules:\n\n` +
+        `  tsql ${command} ${files.join(" ")} --project path/to/tsconfig.json\n`,
+    );
+    process.exit(1);
+  }
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });

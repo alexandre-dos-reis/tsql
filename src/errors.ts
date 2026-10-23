@@ -32,6 +32,20 @@ export class CompileError extends Error {
   }
 }
 
+/**
+ * The rules project could not be opened.
+ *
+ * Distinct from a plain `Error` so the CLI can add advice about `--project`
+ * without the library having to know that a CLI exists — the default path
+ * describes a *consuming* project, so this is what a first run usually hits.
+ */
+export class ProjectNotFoundError extends Error {
+  constructor(readonly tsconfigPath: string) {
+    super(`No TypeScript project at ${tsconfigPath}`);
+    this.name = "ProjectNotFoundError";
+  }
+}
+
 /** A diagnostic from `tsc` itself, surfaced before we attempt any translation. */
 export class TypeCheckError extends Error {
   constructor(readonly diagnostics: readonly string[]) {

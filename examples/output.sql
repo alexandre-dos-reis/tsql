@@ -106,17 +106,17 @@ $$;
 
 -- examples/input-1.ts: isNotEmpty()
 CREATE OR REPLACE FUNCTION app.is_not_empty(
-  is_present text
+  string text
 )
 RETURNS boolean
 LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  IF is_present IS NULL THEN
+  IF string IS NULL THEN
     RETURN false;
   END IF;
-  RETURN is_present IS DISTINCT FROM '';
+  RETURN string IS DISTINCT FROM '';
 END;
 $$;
 

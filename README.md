@@ -121,10 +121,10 @@ export function isNotEmpty(string: string | null): boolean {
 ```
 
 ```sql
-IF is_present IS NULL THEN
+IF string IS NULL THEN
   RETURN false;
 END IF;
-RETURN is_present IS DISTINCT FROM '';
+RETURN string IS DISTINCT FROM '';
 ```
 
 **Objects become composite types**, and rules can call each other:
