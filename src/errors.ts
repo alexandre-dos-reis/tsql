@@ -1,19 +1,29 @@
 import type { Node } from "typescript/unstable/ast";
 
+/*
+ * Fields are declared and assigned rather than written as constructor
+ * parameter properties. Parameter properties *generate* assignments, so they
+ * are not erasable syntax, and Node refuses to run a file containing them
+ * without a transform. `erasableSyntaxOnly` in tsconfig.json keeps it that way.
+ */
+
 /**
  * An unsupported-construct rejection, carrying a source position so the build
  * failure reads like a compiler error rather than a stack trace.
  */
 export class CompileError extends Error {
-  constructor(
-    message: string,
-    readonly fileName: string,
-    readonly line: number,
-    readonly column: number,
-    readonly sourceLine?: string,
-  ) {
+  readonly fileName: string;
+  readonly line: number;
+  readonly column: number;
+  readonly sourceLine?: string;
+
+  constructor(message: string, fileName: string, line: number, column: number, sourceLine?: string) {
     super(message);
     this.name = "CompileError";
+    this.fileName = fileName;
+    this.line = line;
+    this.column = column;
+    this.sourceLine = sourceLine;
   }
 
   static at(node: Node, message: string): CompileError {
@@ -40,16 +50,22 @@ export class CompileError extends Error {
  * describes a *consuming* project, so this is what a first run usually hits.
  */
 export class ProjectNotFoundError extends Error {
-  constructor(readonly tsconfigPath: string) {
+  readonly tsconfigPath: string;
+
+  constructor(tsconfigPath: string) {
     super(`No TypeScript project at ${tsconfigPath}`);
     this.name = "ProjectNotFoundError";
+    this.tsconfigPath = tsconfigPath;
   }
 }
 
 /** A diagnostic from `tsc` itself, surfaced before we attempt any translation. */
 export class TypeCheckError extends Error {
-  constructor(readonly diagnostics: readonly string[]) {
+  readonly diagnostics: readonly string[];
+
+  constructor(diagnostics: readonly string[]) {
     super(`TypeScript reported ${diagnostics.length} error(s)`);
     this.name = "TypeCheckError";
+    this.diagnostics = diagnostics;
   }
 }
