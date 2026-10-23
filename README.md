@@ -6,11 +6,32 @@
 
 </div>
 
-Your `canCreateTodo()` runs in the browser. The same rule has to hold in the database — so it gets written a second time, in PL/pgSQL, by hand. Then one of them changes.
+You already write this rule twice.
 
-`tsql` compiles the TypeScript one into PL/pgSQL, and generates tests that run both on hundreds of random inputs to prove they still agree.
+**Once in TypeScript,** so the UI can grey out the button before anyone clicks it:
 
-And when it meets something it cannot translate *faithfully*, it refuses to compile it. A build error beats a function that quietly returns the wrong answer at 3am.
+```ts
+export function canCreateTodo(plan: string, count: Integer): boolean {
+  return plan !== "free" || count < 3;
+}
+```
+
+**And again in SQL,** by hand, because a browser cannot be trusted to enforce anything:
+
+```sql
+CREATE FUNCTION can_create_todo(plan text, count integer)
+RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+  RETURN plan <> 'free' OR count < 3;
+END;
+$$;
+```
+
+One rule, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
+
+**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL, and generates tests that run both implementations on hundreds of random inputs to prove they still agree.
+
+And when it meets something it cannot translate *faithfully*, it refuses to compile rather than guessing. A build error beats a function that quietly returns the wrong answer at 3am.
 
 ## Install
 
