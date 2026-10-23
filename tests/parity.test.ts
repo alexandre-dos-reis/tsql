@@ -60,7 +60,7 @@ END; $$;`);
     const subject = {
       tsName: "todoLimit",
       sqlName: "wrong_limit",
-      module: "examples/billing.ts",
+      module: "examples/input-1.ts",
       params: [
         {
           tsName: "plan",
@@ -70,7 +70,7 @@ END; $$;`);
       ],
       returns: { kind: "scalar" as const, sql: "integer" as const, nullable: false },
     };
-    const { todoLimit } = await import(resolve("examples/billing.ts"));
+    const { todoLimit } = await import(resolve("examples/input-1.ts"));
 
     const failure = await checkParity(subject, todoLimit, query, SCHEMA).then(
       () => undefined,

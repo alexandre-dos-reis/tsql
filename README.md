@@ -235,7 +235,7 @@ Three things worth knowing about TypeScript 7:
 
 ```
 bun run ex:check         # type check + translate the examples, write nothing
-bun run ex:compile       # write examples/0001_rules.sql + manifest from examples/*.ts
+bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the rules project
 bun run format           # oxfmt (format:check for CI)
@@ -277,15 +277,22 @@ scripts/            the release build
 
 The binary is platform-specific, so the release uses npm's own mechanism for that: `@adr/tsql` is a launcher with `optionalDependencies` on one package per platform, each carrying `os`/`cpu` so only the matching binary installs. A Bun binary is ~105 MB unpacked and ~49 MB on the wire, per platform.
 
+Versions and changelogs are handled by [changesets](https://github.com/changesets/changesets):
+
 ```
-bun run build:packages
-npm publish dist/tsql-linux-x64     # platform packages first, so the
-npm publish dist/tsql-darwin-arm64  # launcher's optional deps resolve
-...
-npm publish                         # then the launcher
+bun run changeset   # describe a change (interactive)
+bun run version     # bump, write CHANGELOG.md, re-pin the platform packages
+bun run release     # build binaries, publish platform packages, then the launcher
 ```
 
+Changesets manages the launcher only, because **the platform packages are build artifacts rather than workspace members** — nothing in `.changeset/` knows they exist. Two scripts close that gap:
+
+- `scripts/syncVersion.ts` regenerates `optionalDependencies` from `src/targets.ts` after `changeset version`. The pins have to equal the launcher version exactly, or npm will pair a launcher with a binary from a different release.
+- `scripts/publishBinaries.ts` publishes `dist/tsql-*` before the launcher, treats an already-published version as success so a half-finished release can be re-run, and refuses to publish at all while changesets are pending — that would spend the current version number on a build the changelog does not describe.
+
 `src/targets.ts` is the single list of platforms; a test asserts the `optionalDependencies`, the launcher's own mapping and that list all agree, since a target added to one and not the others ships a release that silently has no binary for someone. `prepublishOnly` runs the type checker and the test suite.
+
+The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun.
 
 Three decisions worth stating:
 

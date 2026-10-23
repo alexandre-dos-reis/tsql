@@ -22,7 +22,7 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 
 ```
 bun run ex:check                # type check + translate the examples, write nothing
-bun run ex:compile              # write examples/0001_rules.sql + manifest from examples/*.ts
+bun run ex:compile              # write examples/output.sql + manifest from examples/*.ts
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
@@ -53,7 +53,7 @@ shadow the built-in subcommand, which is part of why the example scripts are `ex
 `--no-script` stays in `typecheck` so the built-in wins even if a `check` script reappears.
 
 After any change that alters generated SQL, re-run `bun run ex:compile` and commit the result:
-`examples/0001_rules.sql` and `examples/manifest.json`, which sit beside the `examples/*.ts` they
+`examples/output.sql` and `examples/manifest.json`, which sit beside the `examples/*.ts` they
 are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
 `examples/manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
 compile, forever.
@@ -129,6 +129,30 @@ to one and not the others ships a release with no binary for someone.
   executable, and depending on the package lets npm resolve the right platform build.
 - No `--bytecode` in the build: it needs a CommonJS entry and `src/cli.ts` has top-level `await`.
 - Platform packages must be published **before** the launcher, or its optional deps will not resolve.
+
+### Releasing, via changesets
+
+```
+bun run changeset   # describe a change (interactive — needs a TTY)
+bun run version     # changeset version, then sync the pins, then the lockfile
+bun run release     # build binaries, publish platform packages, then changeset publish
+```
+
+Changesets manages the launcher only: **the platform packages are build artifacts, not workspace
+members**, so nothing in `.changeset/` knows they exist. Two scripts close that gap.
+
+- `scripts/syncVersion.ts` regenerates `optionalDependencies` from `src/targets.ts` after
+  `changeset version`. The pins must equal the launcher version exactly — npm would otherwise pair a
+  launcher with a binary from a different release — and `changeset version` has no reason to touch
+  them. It generates the block rather than patching it, so adding a target to `src/targets.ts` is
+  enough; `tests/packaging.test.ts` then catches any hand-editing that drifts back out of step.
+- `scripts/publishBinaries.ts` publishes `dist/tsql-*` and treats an existing version as success, so
+  a release that failed halfway can be re-run. It **refuses to publish while changesets are pending**,
+  since that would spend the current version number on a build the changelog does not describe.
+
+The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun. Its
+non-interactive subcommands (`status`, `version`, `publish`) run fine under `bun run`; only
+`changeset add` needs a TTY.
 
 ## Rejection is by provenance, not by name
 

@@ -18,7 +18,7 @@ describe("supported subset", () => {
   test("produces the SQL documented in the readme", async () => {
     const result = await compileProject({
       tsconfig: "examples/tsconfig.json",
-      include: (fileName) => fileName.endsWith("examples/todo.ts"),
+      include: (fileName) => fileName.endsWith("examples/input-2.ts"),
       emit: { schema: undefined, orReplace: false, comments: false },
     });
 
@@ -49,6 +49,7 @@ $$;`,
       "can_create_todo",
       "can_create_todo_with_type",
       "is_eligible_for_trial",
+      "is_not_empty",
       "price_cents",
       "remaining_todos",
       "some_nested_assignment",
@@ -65,12 +66,13 @@ $$;`,
   test("naming files narrows the build to those rules", async () => {
     const result = await compileProject({
       tsconfig: "examples/tsconfig.json",
-      files: ["examples/billing.ts"],
+      files: ["examples/input-1.ts"],
       emit: { schema: "app" },
     });
     expect(result.errors.map((e) => e.format())).toEqual([]);
     expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
       "is_eligible_for_trial",
+      "is_not_empty",
       "price_cents",
       "remaining_todos",
       "todo_limit",
@@ -90,7 +92,7 @@ $$;`,
     );
     expect(failure?.message).toContain("`examples/nope.ts` is not a rule file in examples/tsconfig.json");
     // The message names what the project does hold, so the fix is visible.
-    expect(failure?.message).toContain("examples/billing.ts");
+    expect(failure?.message).toContain("examples/input-1.ts");
   });
 
   test("an identically named local alias is not mistaken for the real Integer", async () => {

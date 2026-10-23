@@ -39,7 +39,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   });
 
   test("an unknown command shows usage and fails", async () => {
-    const { stdout, exitCode } = await run(["frobnicate", "examples/billing.ts"]);
+    const { stdout, exitCode } = await run(["frobnicate", "examples/input-1.ts"]);
     expect(exitCode).toBe(1);
     expect(stdout).toContain("Usage:");
   });
@@ -53,7 +53,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
 
 describe("the CLI compiles the files it is given", () => {
   test("named files succeed and report only their own rules", async () => {
-    const { stdout, exitCode } = await run(["check", "examples/billing.ts", ...PROJECT]);
+    const { stdout, exitCode } = await run(["check", "examples/input-1.ts", ...PROJECT]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
     expect(stdout).not.toContain("can_create_todo");
@@ -63,7 +63,7 @@ describe("the CLI compiles the files it is given", () => {
     const { stderr, exitCode } = await run(["check", "examples/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
-    expect(stderr).toContain("examples/billing.ts");
+    expect(stderr).toContain("examples/input-1.ts");
     expect(stderr).not.toContain("at <anonymous>");
   });
 });

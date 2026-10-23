@@ -44,9 +44,15 @@ let
   );
 in
 {
-  packages = [ bun ];
+  # Node is here for the tooling that is not Bun-native: the changesets CLI,
+  # and `npm publish` for the per-platform binary packages. Pinned for the same
+  # reason Bun is — the ambient system Node is whatever happens to be on PATH.
+  packages = [
+    bun
+    pkgs.nodejs_24
+  ];
 
   enterShell = ''
-    echo "tsql — bun $(bun --version)"
+    echo "tsql — bun $(bun --version), node $(node --version)"
   '';
 }
