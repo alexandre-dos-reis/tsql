@@ -8,6 +8,8 @@
     "compile": "bun run src/cli.ts compile",
     "check": "bun run src/cli.ts check",
     "test": "bun test",
+    "format": "oxfmt --write",
+    "format:check": "oxfmt --check",
     "typecheck": "tsc -p tsconfig.json && tsc -p rules/tsconfig.json"
   },
   "devDependencies": {

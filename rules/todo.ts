@@ -30,5 +30,6 @@ type Nested = {
 };
 
 export function someNestedTest(nested: Nested): string {
+  nested.foo.bar = "some";
   return nested.foo.bar;
 }

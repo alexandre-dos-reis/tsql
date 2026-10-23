@@ -1,4 +1,13 @@
-import { isScalar, type BinOp, type CompositeType, type ExprIR, type FunctionIR, type PgType, type StmtIR } from "./ir.ts";
+import {
+  fieldLabel,
+  isScalar,
+  type BinOp,
+  type CompositeType,
+  type ExprIR,
+  type FunctionIR,
+  type PgType,
+  type StmtIR,
+} from "./ir.ts";
 import { quoteIdentifier, quoteLiteral } from "./names.ts";
 
 export interface EmitOptions {
@@ -235,6 +244,9 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
   if (comments) {
     lines.push(`-- ${composite.module ?? "rules"}: ${composite.tsName}`);
     for (const field of composite.fields) {
+      // A flattened column no longer looks like the shape it came from, so the
+      // path is recorded for whoever reads the schema.
+      if (field.path.length > 1) lines.push(`--   ${field.sqlName}: from ${fieldLabel(field.path)}`);
       if (field.type.allowed) lines.push(allowedNote(field.sqlName, field.type.allowed));
     }
   }

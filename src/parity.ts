@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import type { ManifestFunction } from "./compile.ts";
-import { isScalar, type PgType, type ScalarType } from "./ir.ts";
+import { isScalar, type CompositeField, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
 import { quoteIdentifier } from "./names.ts";
 
 /**
@@ -26,19 +26,46 @@ const FLOAT_BOUND = 1e9;
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
 export function arbitraryFor(type: PgType): fc.Arbitrary<unknown> {
-  const base = isScalar(type)
-    ? scalarArbitrary(type)
-    : // A composite parameter is an object on the TypeScript side.
-      fc.record(Object.fromEntries(type.fields.map((f) => [f.tsName, arbitraryFor(f.type)])));
+  const base = isScalar(type) ? scalarArbitrary(type) : compositeArbitrary(type);
   return type.nullable ? fc.option(base, { nil: null, freq: 4 }) : base;
+}
+
+/**
+ * A composite parameter is an object on the TypeScript side, and the generated
+ * object must have the *nested* shape the author wrote — the flattening to
+ * columns only applies to the SQL side.
+ */
+function compositeArbitrary(type: CompositeType): fc.Arbitrary<unknown> {
+  const leaves = type.fields.map((f) => arbitraryFor(f.type));
+  return fc.tuple(...leaves).map((values) => {
+    const root: Record<string, unknown> = {};
+    type.fields.forEach((field, i) => assignPath(root, field.path, values[i]));
+    return root;
+  });
+}
+
+function assignPath(root: Record<string, unknown>, path: readonly string[], value: unknown): void {
+  let node = root;
+  for (const segment of path.slice(0, -1)) {
+    node[segment] ??= {};
+    node = node[segment] as Record<string, unknown>;
+  }
+  node[path[path.length - 1]!] = value;
+}
+
+function readPath(value: unknown, path: readonly string[]): unknown {
+  let node: unknown = value;
+  for (const segment of path) {
+    if (node === null || node === undefined) return null;
+    node = (node as Record<string, unknown>)[segment];
+  }
+  return node ?? null;
 }
 
 function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
   switch (type.sql) {
     case "text":
-      return type.allowed
-        ? fc.constantFrom(...type.allowed)
-        : fc.string().filter((s) => !TEXT_UNSAFE.test(s));
+      return type.allowed ? fc.constantFrom(...type.allowed) : fc.string().filter((s) => !TEXT_UNSAFE.test(s));
     case "integer":
       return fc.integer({ min: -INT_BOUND, max: INT_BOUND });
     case "numeric":
@@ -63,7 +90,7 @@ export function callSql(fn: ManifestFunction, schema: string | null): string {
     if (isScalar(param.type)) return `$${++placeholder}::${param.type.sql}`;
     // A composite is built from one placeholder per field and cast to the
     // named type, which is how a caller would construct one by hand.
-    const fields = param.type.fields.map((f) => `$${++placeholder}::${f.type.sql}`).join(", ");
+    const fields = param.type.fields.map((f: CompositeField) => `$${++placeholder}::${f.type.sql}`).join(", ");
     return `ROW(${fields})::${qualify(param.type.sqlName)}`;
   });
 
@@ -82,8 +109,8 @@ export function flattenArgs(fn: ManifestFunction, args: readonly unknown[]): unk
       flat.push(value);
       return;
     }
-    const object = (value ?? {}) as Record<string, unknown>;
-    for (const field of param.type.fields) flat.push(value === null ? null : (object[field.tsName] ?? null));
+    // One placeholder per flattened leaf, read out of the nested object.
+    for (const field of param.type.fields) flat.push(value === null ? null : readPath(value, field.path));
   });
   return flat;
 }

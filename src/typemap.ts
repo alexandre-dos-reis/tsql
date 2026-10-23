@@ -9,10 +9,19 @@ import {
   type TypeReferenceNode,
   type UnionTypeNode,
 } from "typescript/unstable/ast";
-import { SymbolFlags, TypeFlags, type Checker, type Project, type Symbol as TsSymbol, type Type, type UnionType } from "typescript/unstable/async";
+import {
+  SymbolFlags,
+  TypeFlags,
+  type Checker,
+  type Project,
+  type Symbol as TsSymbol,
+  type Type,
+  type UnionType,
+} from "typescript/unstable/async";
 import { CompileError } from "./errors.ts";
 import {
   compositeType,
+  fieldLabel,
   isScalar,
   scalarType,
   shapeOf,
@@ -228,9 +237,26 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
     throw CompileError.at(at, `\`${tsName}\` has no properties, so there is nothing to map.`);
   }
 
-  const fields: CompositeField[] = [];
-  for (const property of properties) {
-    fields.push(await mapField(property, tsName, at, ctx));
+  const fields = await flattenFields(type, tsName, [], [type.id], at, ctx);
+
+  const seen = new Map<string, readonly string[]>();
+  for (const field of fields) {
+    const clash = seen.get(field.sqlName);
+    if (clash) {
+      throw CompileError.at(
+        at,
+        `\`${tsName}.${fieldLabel(field.path)}\` and \`${tsName}.${fieldLabel(clash)}\` both flatten to the column \`${field.sqlName}\`. Rename one of them.`,
+      );
+    }
+    // PostgreSQL truncates identifiers at 63 bytes silently, which could make
+    // two distinct fields collide after the fact.
+    if (Buffer.byteLength(field.sqlName, "utf8") > MAX_IDENTIFIER_BYTES) {
+      throw CompileError.at(
+        at,
+        `\`${tsName}.${fieldLabel(field.path)}\` flattens to \`${field.sqlName}\`, which is longer than PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte identifier limit. Shorten the names.`,
+      );
+    }
+    seen.set(field.sqlName, field.path);
   }
 
   const sqlName = toSnakeCase(tsName);
@@ -251,8 +277,52 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
   return composite;
 }
 
-async function mapField(property: TsSymbol, owner: string, at: Node, ctx: TypeCtx): Promise<CompositeField> {
-  const where = `\`${owner}.${property.name}\``;
+/** PostgreSQL's NAMEDATALEN - 1. Longer identifiers are silently truncated. */
+const MAX_IDENTIFIER_BYTES = 63;
+
+/** Nesting deeper than this is more likely a mistake than a business rule. */
+const MAX_NESTING = 4;
+
+/**
+ * Walk an object shape to its scalar leaves, prefixing nested field names.
+ *
+ * `{ foo: { bar: string } }` becomes one field: path `["foo", "bar"]`, column
+ * `foo_bar`. The inner shape needs no name of its own, which is why an
+ * anonymous nested object is fine here even though an anonymous *parameter*
+ * type is not.
+ */
+async function flattenFields(
+  type: Type,
+  owner: string,
+  prefix: readonly string[],
+  ancestors: readonly number[],
+  at: Node,
+  ctx: TypeCtx,
+): Promise<CompositeField[]> {
+  if (prefix.length >= MAX_NESTING) {
+    throw CompileError.at(
+      at,
+      `\`${owner}.${fieldLabel(prefix)}\` nests more than ${MAX_NESTING} levels deep. Flatten the shape instead.`,
+    );
+  }
+
+  const fields: CompositeField[] = [];
+  for (const property of await ctx.checker.getPropertiesOfType(type)) {
+    fields.push(...(await mapField(property, owner, prefix, ancestors, at, ctx)));
+  }
+  return fields;
+}
+
+async function mapField(
+  property: TsSymbol,
+  owner: string,
+  prefix: readonly string[],
+  ancestors: readonly number[],
+  at: Node,
+  ctx: TypeCtx,
+): Promise<CompositeField[]> {
+  const path = [...prefix, property.name];
+  const where = `\`${owner}.${fieldLabel(path)}\``;
   // Report against the field's own declaration when we can resolve it, so the
   // caret lands on the offending property rather than on the parameter that
   // happened to reference the type.
@@ -271,14 +341,35 @@ async function mapField(property: TsSymbol, owner: string, at: Node, ctx: TypeCt
   const propertyType = await ctx.checker.getTypeOfSymbol(property);
   if (!propertyType) throw CompileError.at(site, `The type of ${where} could not be resolved.`);
 
-  // Check for an object *before* mapping it. Mapping would reach for the inner
-  // type's name and complain that it has none, which is misleading when the
-  // real problem is the nesting — the outer type is named just fine.
+  // A nested object is flattened into prefixed columns.
   if (propertyType.isObjectType()) {
-    throw CompileError.at(
-      site,
-      `${where} is itself an object. Nested composite types are not supported — flatten the shape (\`${property.name}_<field>\`), or pass the inner value as its own parameter.`,
-    );
+    if (ancestors.includes(propertyType.id)) {
+      throw CompileError.at(
+        site,
+        `${where} makes the shape recursive, which cannot be flattened into a fixed set of columns.`,
+      );
+    }
+    if ((await ctx.checker.getIndexInfosOfType(propertyType)).length > 0) {
+      throw CompileError.at(site, `${where} has an index signature, which has no fixed composite shape.`);
+    }
+    const nested = await flattenFields(propertyType, owner, path, [...ancestors, propertyType.id], site, ctx);
+    if (nested.length === 0) {
+      throw CompileError.at(site, `${where} has no properties, so there is nothing to map.`);
+    }
+    return nested;
+  }
+
+  // A nested shape that might be absent cannot be flattened: there is no single
+  // column to carry "the whole group is missing".
+  if (propertyType.isUnionType()) {
+    for (const member of await propertyType.getTypes()) {
+      if (member.isObjectType()) {
+        throw CompileError.at(
+          site,
+          `${where} is an object that may be absent. Flattening cannot represent a missing group of columns — give each field its own \`T | null\`.`,
+        );
+      }
+    }
   }
 
   const mapped = await mapTypeStructurally(propertyType, site, ctx);
@@ -286,12 +377,9 @@ async function mapField(property: TsSymbol, owner: string, at: Node, ctx: TypeCt
     throw CompileError.at(site, `${where} is \`null\` alone; write \`T | null\`.`);
   }
   if (!isScalar(mapped)) {
-    throw CompileError.at(
-      site,
-      `${where} is itself an object. Nested composite types are not supported — flatten the shape, or pass the inner value as its own parameter.`,
-    );
+    throw CompileError.at(site, `${where} cannot be mapped to a single column.`);
   }
-  return { tsName: property.name, sqlName: toSnakeCase(property.name), type: mapped };
+  return [{ path, sqlName: path.map(toSnakeCase).join("_"), type: mapped }];
 }
 
 function merge(parts: readonly Mapped[], at: Node): Mapped {

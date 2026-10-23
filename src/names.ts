@@ -15,6 +15,8 @@ export function toSnakeCase(name: string): string {
  * Deliberately short: it only needs the words that are actually unusable, and
  * anything missing surfaces immediately as a syntax error from PostgreSQL.
  */
+// A wrapped word list reads better than 77 one-word lines.
+// prettier-ignore
 const RESERVED = new Set([
   "all", "analyse", "analyze", "and", "any", "array", "as", "asc", "asymmetric", "both", "case",
   "cast", "check", "collate", "column", "constraint", "create", "current_catalog", "current_date",

@@ -26,6 +26,7 @@ import {
 import { CompileError } from "./errors.ts";
 import {
   describe,
+  fieldLabel,
   isComposite,
   isExactly,
   isNumeric,
@@ -195,10 +196,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
       // Lower it first: if it reaches for a runtime global, that is the more
       // useful error to report.
       await lowerExpr((node as ExpressionStatement).expression, s);
-      throw CompileError.at(
-        node,
-        "This statement's value is discarded, which has no effect in a pure function.",
-      );
+      throw CompileError.at(node, "This statement's value is discarded, which has no effect in a pure function.");
     }
 
     default:
@@ -426,17 +424,13 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
  * built-in type, and the third an object field the subset does not model yet.
  */
 async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
-  // `sub.plan` where `sub` is a composite: a field reference.
-  if (node.kind === SyntaxKind.PropertyAccessExpression) {
-    const access = node as PropertyAccessExpression;
-    if (access.expression.kind === SyntaxKind.Identifier) {
-      const binding = s.scope.get((access.expression as Identifier).text);
-      if (binding && isComposite(binding.type)) {
-        const name = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : undefined;
-        const field = binding.type.fields.find((f) => f.tsName === name);
-        if (!field) {
-          throw CompileError.at(access.name, `\`${binding.type.tsName}\` has no field \`${name ?? access.name.getText()}\`.`);
-        }
+  // `sub.plan`, `nested.foo.bar` — a reference to a flattened composite field.
+  const chain = accessChain(node);
+  if (chain) {
+    const binding = s.scope.get(chain.root.text);
+    if (binding && isComposite(binding.type)) {
+      const field = binding.type.fields.find((f) => samePath(f.path, chain.path));
+      if (field) {
         return {
           kind: "field",
           operand: { kind: "ref", sqlName: binding.sqlName, type: binding.type },
@@ -444,6 +438,20 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
           type: field.type,
         };
       }
+
+      // A partial path names a nested shape rather than a value. After
+      // flattening there is no column for the group itself.
+      const label = fieldLabel(chain.path);
+      const leaves = binding.type.fields.filter((f) => startsWith(f.path, chain.path));
+      if (leaves.length > 0) {
+        throw CompileError.at(
+          node,
+          `\`${chain.root.text}.${label}\` is a nested shape, not a value. Reference a leaf instead: ${leaves
+            .map((f) => `\`${chain.root.text}.${fieldLabel(f.path)}\``)
+            .join(", ")}.`,
+        );
+      }
+      throw CompileError.at(node, `\`${binding.type.tsName}\` has no field \`${label}\`.`);
     }
   }
 
@@ -480,6 +488,32 @@ const ACCESS_KINDS = new Set<SyntaxKind>([
   SyntaxKind.NewExpression,
 ]);
 
+/**
+ * Decompose a plain property-access chain into its root and field path:
+ * `nested.foo.bar` -> root `nested`, path `["foo", "bar"]`. Returns undefined
+ * for anything that is not a chain of plain property accesses.
+ */
+function accessChain(node: Expression): { root: Identifier; path: string[] } | undefined {
+  const path: string[] = [];
+  let current: Expression = node;
+  while (current.kind === SyntaxKind.PropertyAccessExpression) {
+    const access = current as PropertyAccessExpression;
+    if (access.name.kind !== SyntaxKind.Identifier) return undefined;
+    path.unshift((access.name as Identifier).text);
+    current = access.expression;
+  }
+  if (current.kind !== SyntaxKind.Identifier || path.length === 0) return undefined;
+  return { root: current as Identifier, path };
+}
+
+function samePath(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((segment, i) => segment === b[i]);
+}
+
+function startsWith(path: readonly string[], prefix: readonly string[]): boolean {
+  return prefix.length < path.length && prefix.every((segment, i) => segment === path[i]);
+}
+
 /** `Math.max` -> `Math`; `new Date().getTime` -> `Date`; `fc.sample(x).length` -> `fc`. */
 function rootIdentifier(node: Expression): Identifier | undefined {
   let current: Expression = node;
@@ -508,6 +542,16 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   const op = node.operatorToken.kind;
 
   if (ASSIGNMENT_OPERATORS.has(op)) {
+    const target = node.left;
+    if (target.kind === SyntaxKind.PropertyAccessExpression || target.kind === SyntaxKind.ElementAccessExpression) {
+      // This one is not merely unsupported, it is untranslatable: the same
+      // assignment is legal PL/pgSQL, but parameters are passed by value there,
+      // so the caller would never observe the change TypeScript makes.
+      throw CompileError.at(
+        node,
+        `Assigning to \`${target.getText()}\` mutates the caller's object in TypeScript, but PL/pgSQL passes a composite by value — the caller would never see the change. Compute a new value and return it; marking the field \`readonly\` makes TypeScript reject this too.`,
+      );
+    }
     throw CompileError.at(
       node.operatorToken,
       "Assignment is not supported: a compiled function computes values with `const` and returns them.",
@@ -546,13 +590,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
       // TypeScript's equality is total; SQL's `=` is three-valued. When either
       // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
       const nullable = left.type.nullable || right.type.nullable;
-      const binOp: BinOp = nullable
-        ? negated
-          ? "is distinct from"
-          : "is not distinct from"
-        : negated
-          ? "<>"
-          : "=";
+      const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
       return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
     }
 
@@ -590,7 +628,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
         if (left.type.nullable || right.type.nullable) {
           throw CompileError.at(
             node,
-            "Concatenating a nullable text value would yield NULL in SQL but \"null\" in TypeScript; narrow the operands first.",
+            'Concatenating a nullable text value would yield NULL in SQL but "null" in TypeScript; narrow the operands first.',
           );
         }
         return { kind: "binary", op: "||", left, right, type: scalarType("text") };
@@ -610,7 +648,12 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
       const result = scalarType("double precision", nullable);
       const dividend: ExprIR = isExactly(left.type, "double precision")
         ? left
-        : { kind: "cast", operand: left, to: "double precision", type: scalarType("double precision", left.type.nullable) };
+        : {
+            kind: "cast",
+            operand: left,
+            to: "double precision",
+            type: scalarType("double precision", left.type.nullable),
+          };
       return { kind: "binary", op: "/", left: dividend, right, type: result };
     }
 

@@ -179,12 +179,24 @@ export type ExprIR =
   | { readonly kind: "ref"; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: "field"; readonly operand: ExprIR; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: "lit"; readonly value: string | number | boolean | null; readonly type: ScalarType }
-  | { readonly kind: "binary"; readonly op: BinOp; readonly left: ExprIR; readonly right: ExprIR; readonly type: ScalarType }
+  | {
+      readonly kind: "binary";
+      readonly op: BinOp;
+      readonly left: ExprIR;
+      readonly right: ExprIR;
+      readonly type: ScalarType;
+    }
   | { readonly kind: "not"; readonly operand: ExprIR; readonly type: ScalarType }
   | { readonly kind: "neg"; readonly operand: ExprIR; readonly type: ScalarType }
   | { readonly kind: "nullTest"; readonly operand: ExprIR; readonly negated: boolean; readonly type: ScalarType }
   | { readonly kind: "coalesce"; readonly left: ExprIR; readonly right: ExprIR; readonly type: PgType }
-  | { readonly kind: "case"; readonly cond: ExprIR; readonly whenTrue: ExprIR; readonly whenFalse: ExprIR; readonly type: PgType }
+  | {
+      readonly kind: "case";
+      readonly cond: ExprIR;
+      readonly whenTrue: ExprIR;
+      readonly whenFalse: ExprIR;
+      readonly type: PgType;
+    }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType };
 

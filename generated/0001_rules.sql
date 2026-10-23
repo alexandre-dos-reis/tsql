@@ -3,6 +3,30 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
+-- rules/todo.ts: Nested
+--   foo_bar: from foo.bar
+DO $$
+DECLARE
+  expected text[] := ARRAY['foo_bar text'];
+  actual text[];
+BEGIN
+  IF to_regtype('app.nested') IS NULL THEN
+    CREATE TYPE app.nested AS (
+      foo_bar text
+    );
+  ELSE
+    SELECT array_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) ORDER BY a.attnum)
+      INTO actual
+      FROM pg_attribute a
+     WHERE a.attrelid = (SELECT t.typrelid FROM pg_type t WHERE t.oid = to_regtype('app.nested'))
+       AND a.attnum > 0 AND NOT a.attisdropped;
+    IF actual IS DISTINCT FROM expected THEN
+      RAISE EXCEPTION 'app.nested exists as % but the rules expect %', actual, expected;
+    END IF;
+  END IF;
+END
+$$;
+
 -- rules/todo.ts: Subscription
 --   plan: one of 'free', 'max', 'pro' (not enforced here)
 DO $$
@@ -115,6 +139,19 @@ BEGIN
     RETURN 0;
   END IF;
   RETURN "limit" - count;
+END;
+$$;
+
+-- rules/todo.ts: someNestedTest()
+CREATE OR REPLACE FUNCTION app.some_nested_test(
+  nested app.nested
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN (nested).foo_bar;
 END;
 $$;
 
