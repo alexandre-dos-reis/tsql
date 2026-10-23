@@ -112,11 +112,11 @@ BEGIN
 **Nullable comparisons are handled for you.** `x !== ""` on a nullable value is not `<>` — SQL's `=` is three-valued, so this would silently return NULL:
 
 ```ts
-export function isNotEmpty(isPresent: string | null): boolean {
-  if (isPresent === null) {
+export function isNotEmpty(string: string | null): boolean {
+  if (string === null) {
     return false;
   }
-  return isPresent !== "";
+  return string !== "";
 }
 ```
 

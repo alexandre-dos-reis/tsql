@@ -30,9 +30,9 @@ export function isEligibleForTrial(plan: Plan, hadTrial: boolean, referral: stri
   return plan === "free" && !hadTrial && referral !== null;
 }
 
-export function isNotEmpty(isPresent: string | null): boolean {
-  if (isPresent === null) {
+export function isNotEmpty(string: string | null): boolean {
+  if (string === null) {
     return false;
   }
-  return isPresent !== "";
+  return string !== "";
 }
