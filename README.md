@@ -343,6 +343,57 @@ What it costs, and what guards those costs:
 | arbitrarily deep nesting | capped at 4 levels |
 | a nested shape that may be absent | `{ foo: { bar: string } \| null }` is rejected: no single column can carry "this group is missing" |
 
+### Object literals and spread
+
+A literal builds a composite with `ROW(...)`, which is how a fresh value is produced without mutating anything:
+
+```ts
+export interface Seat {
+  plan: "free" | "pro";
+  count: number;
+}
+
+export function grantSeat(seat: Seat): Seat {
+  return { ...seat, count: seat.count + 1 };
+}
+```
+
+```sql
+CREATE OR REPLACE FUNCTION app.grant_seat(seat app.seat)
+RETURNS app.seat
+...
+  RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
+```
+
+Spreads resolve **by field path**, so they compose with flattening and with each other, last-one-wins exactly as in JavaScript. The mutation case from the previous section becomes:
+
+```ts
+const next: Mutable = { ...nested, foo: { ...nested.foo, bar: "some" } };
+return next.foo.bar;
+```
+
+```sql
+next := ROW('some')::app.mutable;
+RETURN (next).foo_bar;
+```
+
+The nested spread supplies `foo_bar`, then `bar: "some"` overrides it — so the generated row carries the literal, with no intermediate copy to assign into.
+
+Three consequences:
+
+- **A literal needs a named target type.** `ROW(...)` has to be cast to a nominal composite, so the type comes from the contextual type: an annotation, the function's return type, or the parameter being passed to. An unannotated `const x = { ... }` is rejected with that advice.
+- **Composite returns work.** PL/pgSQL always returned them fine; the gap was that nothing in the subset could build one. `RETURNS app.seat` now compiles, and a field can be read straight off the call: `RETURN (app.grant_seat(seat)).count;`
+- **A nested group can be passed by rebuilding it.** `barOf(outer.foo)` is still rejected, because the flattened composite has no column for the group — but `barOf({ ...outer.foo })` compiles to `app.bar_of(ROW((outer).foo_bar)::app.inner)`.
+
+Field access is resolved as *a composite-typed base plus a path*, not as "a property of a variable", so all four of these read the same way:
+
+| Written | Generated |
+| --- | --- |
+| `sub.plan` (parameter) | `(sub).plan` |
+| `next.foo.bar` (local, nested) | `(next).foo_bar` |
+| `grantSeat(seat).count` (call result) | `(app.grant_seat(seat)).count` |
+| `{ ...nested.foo }` (group, in a literal) | `ROW((nested).foo_bar)::app.inner` |
+
 Mutating a field is rejected for a sharper reason than the rest of this list: it is not unsupported syntax, it is untranslatable. The same assignment is perfectly legal PL/pgSQL, but parameters there are passed **by value**, so the change never reaches the caller:
 
 ```
@@ -350,7 +401,9 @@ TS:  returned "some" | caller now holds "some"      <- mutation escapes the func
 SQL: returned some, caller still holds original     <- mutation stays on the local copy
 ```
 
-Compiling it would silently drop a side effect the TypeScript version has, which is exactly the class of bug this compiler exists to refuse. Declaring object fields `readonly` gets TypeScript to reject it at authoring time too.
+Compiling it would silently drop a side effect the TypeScript version has, which is exactly the class of bug this compiler exists to refuse. Build a new value with a spread instead, as above; declaring object fields `readonly` gets TypeScript to reject the assignment at authoring time too.
+
+Copying the argument into a fresh local at the top of the generated function — making the SQL internally consistent — was considered and rejected. PL/pgSQL parameters are *already* copies, so the copy is a no-op; and because the two implementations then agree on every return value, the parity harness would go green while the caller-visible behaviour still differed. The fresh value has to exist in the TypeScript, where both languages can see it.
 
 Referencing a group rather than a leaf is also rejected, since the group has no column of its own:
 
@@ -391,10 +444,10 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 | an object field that may be absent | no single column can carry "this group is missing" |
 | a recursive shape, or nesting past 4 levels | no fixed set of columns |
 | two fields that flatten to the same column | `{ foo: { bar } }` and `{ fooBar }` collide |
-| referencing a nested group, not a leaf | the group has no column of its own |
+| referencing a nested group, not a leaf | the group has no column; rebuild it with `{ ...outer.foo }` |
 | `nested.foo.bar = "x"` | TypeScript mutates the caller's object; PL/pgSQL mutates a copy |
 | `===` on two objects | identity in TypeScript, value in SQL |
-| returning an object | nothing in the subset can construct one |
+| an unannotated object literal | `ROW()` must be cast to a nominal type, so a target type is required |
 | an index signature | no fixed composite shape |
 
 **Runtime references.** A compiled function may use its parameters, its local constants, and other compiled functions — nothing else:
@@ -443,6 +496,11 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
 
 That example is a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
 
+Two further checks:
+
+- **Composite returns** are compared field by field, querying `(fn(...)).*` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings.
+- **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
+
 ## Not built yet
 
-Enums, generic substitution, constructing an object to return (which would also give composite return types, since PL/pgSQL returns them fine — the gap is that nothing in the subset can build one), passing a nested group as a composite argument, the `Numeric` path beyond type mapping, and migration versioning beyond a single emitted file.
+Enums, generic substitution, `RETURNS SETOF` and `RETURNS TABLE`, the `Numeric` path beyond type mapping, and migration versioning beyond a single emitted file.

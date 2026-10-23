@@ -13,12 +13,15 @@ import {
   type IfStatement,
   type NewExpression,
   type Node,
+  type ObjectLiteralExpression,
   type NumericLiteral,
   type ParameterDeclaration,
   type ParenthesizedExpression,
   type PropertyAccessExpression,
+  type PropertyAssignment,
   type PrefixUnaryExpression,
   type ReturnStatement,
+  type SpreadAssignment,
   type Statement,
   type StringLiteral,
   type VariableStatement,
@@ -39,6 +42,7 @@ import {
   type ExprIR,
   type FunctionIR,
   type LocalIR,
+  type CompositeType,
   type ParamIR,
   type PgScalar,
   type PgType,
@@ -98,13 +102,6 @@ export async function lowerSignature(fn: FunctionDeclaration, ctx: TypeCtx): Pro
   }
 
   const returns = await mapTypeNode(fn.type, ctx);
-  if (!isScalar(returns)) {
-    throw CompileError.at(
-      fn.type,
-      `\`${tsName}\` returns \`${describe(returns)}\`. Returning an object is not supported: there is no way to build one in the compiled subset. Return a scalar, or a field of it.`,
-    );
-  }
-
   return { tsName, sqlName: toSnakeCase(tsName), params, returns };
 }
 
@@ -345,6 +342,9 @@ async function lowerExpr(node: Expression, s: State): Promise<ExprIR> {
     case SyntaxKind.CallExpression:
       return lowerCall(node as CallExpression, s);
 
+    case SyntaxKind.ObjectLiteralExpression:
+      return lowerObjectLiteral(node as ObjectLiteralExpression, s);
+
     default:
       throw CompileError.at(node, `${formatSyntaxKind(node.kind)} is not supported in a compiled expression.`);
   }
@@ -419,40 +419,54 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
 }
 
 /**
+ * A composite-typed base expression plus the field path read from it.
+ *
+ * Works uniformly for a parameter (`sub.plan`), a local, a nested path
+ * (`nested.foo.bar`) and the result of a call (`grantSeat(seat).count`), so
+ * field access does not care how the composite was produced.
+ */
+interface ResolvedAccess {
+  readonly base: ExprIR;
+  readonly path: readonly string[];
+}
+
+async function resolveAccess(node: Expression, s: State): Promise<ResolvedAccess | undefined> {
+  if (node.kind === SyntaxKind.ParenthesizedExpression) {
+    return resolveAccess((node as ParenthesizedExpression).expression, s);
+  }
+
+  if (node.kind === SyntaxKind.PropertyAccessExpression) {
+    const access = node as PropertyAccessExpression;
+    if (access.name.kind !== SyntaxKind.Identifier) return undefined;
+    const inner = await resolveAccess(access.expression, s);
+    if (!inner) return undefined;
+    return { base: inner.base, path: [...inner.path, (access.name as Identifier).text] };
+  }
+
+  if (node.kind === SyntaxKind.Identifier) {
+    const binding = s.scope.get((node as Identifier).text);
+    if (!binding || !isComposite(binding.type)) return undefined;
+    return { base: { kind: "ref", sqlName: binding.sqlName, type: binding.type }, path: [] };
+  }
+
+  // Anything else that yields a composite: a call, an object literal.
+  if (node.kind === SyntaxKind.CallExpression || node.kind === SyntaxKind.ObjectLiteralExpression) {
+    const lowered = await lowerExpr(node, s);
+    return isComposite(lowered.type) ? { base: lowered, path: [] } : undefined;
+  }
+
+  return undefined;
+}
+
+/**
  * Property and element access. Reached by `Math.PI`, `plan.length` and
- * `policy.plan` alike: the first is a runtime global, the second a method on a
- * built-in type, and the third an object field the subset does not model yet.
+ * `sub.plan` alike: the first is a runtime global, the second a method on a
+ * built-in type, and the third a composite field.
  */
 async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
-  // `sub.plan`, `nested.foo.bar` — a reference to a flattened composite field.
-  const chain = accessChain(node);
-  if (chain) {
-    const binding = s.scope.get(chain.root.text);
-    if (binding && isComposite(binding.type)) {
-      const field = binding.type.fields.find((f) => samePath(f.path, chain.path));
-      if (field) {
-        return {
-          kind: "field",
-          operand: { kind: "ref", sqlName: binding.sqlName, type: binding.type },
-          sqlName: field.sqlName,
-          type: field.type,
-        };
-      }
-
-      // A partial path names a nested shape rather than a value. After
-      // flattening there is no column for the group itself.
-      const label = fieldLabel(chain.path);
-      const leaves = binding.type.fields.filter((f) => startsWith(f.path, chain.path));
-      if (leaves.length > 0) {
-        throw CompileError.at(
-          node,
-          `\`${chain.root.text}.${label}\` is a nested shape, not a value. Reference a leaf instead: ${leaves
-            .map((f) => `\`${chain.root.text}.${fieldLabel(f.path)}\``)
-            .join(", ")}.`,
-        );
-      }
-      throw CompileError.at(node, `\`${binding.type.tsName}\` has no field \`${label}\`.`);
-    }
+  const resolved = await resolveAccess(node, s);
+  if (resolved && isComposite(resolved.base.type) && resolved.path.length > 0) {
+    return fieldOf(resolved, node);
   }
 
   const root = rootIdentifier(node);
@@ -463,6 +477,31 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
     node,
     `\`${node.getText()}\` is not supported: object and element access are not part of the compiled subset. Pass the value you need as a parameter instead.`,
   );
+}
+
+/** Read one leaf from a resolved access, or explain why that path is not a value. */
+function fieldOf(resolved: ResolvedAccess, at: Expression): ExprIR {
+  const composite = resolved.base.type as CompositeType;
+  const field = composite.fields.find((f) => samePath(f.path, resolved.path));
+  if (field) {
+    return { kind: "field", operand: resolved.base, sqlName: field.sqlName, type: field.type };
+  }
+
+  // A partial path names a nested shape rather than a value. After flattening
+  // there is no column for the group itself.
+  const leaves = composite.fields.filter((f) => startsWith(f.path, resolved.path));
+  if (leaves.length > 0) {
+    // Suggest leaves the way the author would write them, rooted at the same
+    // variable. A call result has no variable, so the path stands alone.
+    const root = rootIdentifier(at)?.text;
+    throw CompileError.at(
+      at,
+      `\`${at.getText()}\` is a nested shape, not a value. Reference a leaf instead: ${leaves
+        .map((f) => `\`${root ? `${root}.` : ""}${fieldLabel(f.path)}\``)
+        .join(", ")}.`,
+    );
+  }
+  throw CompileError.at(at, `\`${composite.tsName}\` has no field \`${fieldLabel(resolved.path)}\`.`);
 }
 
 async function lowerNew(node: NewExpression, s: State): Promise<ExprIR> {
@@ -487,24 +526,6 @@ const ACCESS_KINDS = new Set<SyntaxKind>([
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
 ]);
-
-/**
- * Decompose a plain property-access chain into its root and field path:
- * `nested.foo.bar` -> root `nested`, path `["foo", "bar"]`. Returns undefined
- * for anything that is not a chain of plain property accesses.
- */
-function accessChain(node: Expression): { root: Identifier; path: string[] } | undefined {
-  const path: string[] = [];
-  let current: Expression = node;
-  while (current.kind === SyntaxKind.PropertyAccessExpression) {
-    const access = current as PropertyAccessExpression;
-    if (access.name.kind !== SyntaxKind.Identifier) return undefined;
-    path.unshift((access.name as Identifier).text);
-    current = access.expression;
-  }
-  if (current.kind !== SyntaxKind.Identifier || path.length === 0) return undefined;
-  return { root: current as Identifier, path };
-}
 
 function samePath(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((segment, i) => segment === b[i]);
@@ -538,6 +559,163 @@ const ASSIGNMENT_OPERATORS = new Set<SyntaxKind>([
   SyntaxKind.QuestionQuestionEqualsToken,
 ]);
 
+/**
+ * Build a composite value from an object literal.
+ *
+ * The literal needs a target type, because PostgreSQL composites are nominal
+ * and `ROW(...)` has to be cast to a named one. That comes from the contextual
+ * type — an annotation, the function's return type, or a parameter being passed
+ * to — so an unannotated `const x = { ... }` is rejected with that advice.
+ *
+ * Fields are resolved by path, which is what makes spread work: `{ ...sub, plan: p }`
+ * takes `plan` from `p` and every other leaf from `sub`, with later entries winning
+ * exactly as they do in JavaScript.
+ */
+async function lowerObjectLiteral(node: ObjectLiteralExpression, s: State): Promise<ExprIR> {
+  const contextual = await s.checker.getContextualType(node);
+  const target = contextual ? await mapInferredType(contextual, node, s) : undefined;
+
+  if (!target || !isComposite(target)) {
+    throw CompileError.at(
+      node,
+      target
+        ? `An object literal cannot produce \`${describe(target)}\`.`
+        : "An object literal needs a named target type, because a PostgreSQL composite is nominal. Annotate it (`const next: T = { ... }`), or use it where a named type is expected.",
+    );
+  }
+
+  const values = new Map<string, ExprIR>();
+  for (const [sqlName, expr] of await resolveLiteral(node, target, [], s)) {
+    values.set(sqlName, expr);
+  }
+
+  const args: ExprIR[] = [];
+  const missing: string[] = [];
+  for (const field of target.fields) {
+    const value = values.get(field.sqlName);
+    if (!value) {
+      missing.push(fieldLabel(field.path));
+      continue;
+    }
+    requireAssignable(value.type, field.type, node, `value for \`${fieldLabel(field.path)}\``);
+    args.push(coerce(value, field.type));
+  }
+  if (missing.length > 0) {
+    throw CompileError.at(
+      node,
+      `This literal is missing ${missing.map((m) => `\`${m}\``).join(", ")}. A composite has every field, so there is no way to leave one out.`,
+    );
+  }
+
+  return { kind: "row", args, type: target };
+}
+
+/**
+ * Walk one literal, returning `[column, expression]` pairs. Later pairs
+ * override earlier ones, so processing in source order gives JavaScript's
+ * own last-one-wins behaviour for spreads and duplicate keys.
+ */
+async function resolveLiteral(
+  node: ObjectLiteralExpression,
+  target: CompositeType,
+  prefix: readonly string[],
+  s: State,
+): Promise<[string, ExprIR][]> {
+  const pairs: [string, ExprIR][] = [];
+
+  for (const property of node.properties) {
+    switch (property.kind) {
+      case SyntaxKind.SpreadAssignment: {
+        const expression = (property as SpreadAssignment).expression;
+        const source = await resolveAccess(expression, s);
+        if (!source || !isComposite(source.base.type)) {
+          const lowered = await lowerExpr(expression, s);
+          throw CompileError.at(property, `Only an object can be spread, not \`${describe(lowered.type)}\`.`);
+        }
+        // `...nested` copies every leaf; `...nested.foo` copies the leaves under
+        // `foo`, re-rooted at the position being spread into.
+        pairs.push(...spreadPairs(source, target, prefix, property));
+        break;
+      }
+
+      case SyntaxKind.PropertyAssignment:
+      case SyntaxKind.ShorthandPropertyAssignment: {
+        const name = property.name;
+        if (name.kind !== SyntaxKind.Identifier && name.kind !== SyntaxKind.StringLiteral) {
+          throw CompileError.at(name, "Computed property names are not supported.");
+        }
+        const key = name.kind === SyntaxKind.Identifier ? (name as Identifier).text : (name as StringLiteral).text;
+        const path = [...prefix, key];
+        const value =
+          property.kind === SyntaxKind.PropertyAssignment
+            ? (property as PropertyAssignment).initializer
+            : (property.name as Identifier);
+
+        // A nested literal keeps descending; the flattened target has no
+        // column for the group itself.
+        if (value.kind === SyntaxKind.ObjectLiteralExpression) {
+          pairs.push(...(await resolveLiteral(value as ObjectLiteralExpression, target, path, s)));
+          break;
+        }
+
+        // `{ foo: other.foo }` — splice the referenced group's leaves in.
+        const group = await resolveAccess(value as Expression, s);
+        if (group && isComposite(group.base.type) && !columnFor(target, path)) {
+          pairs.push(...spreadPairs(group, target, path, property));
+          break;
+        }
+
+        const lowered = await lowerExpr(value as Expression, s);
+        const column = columnFor(target, path);
+        if (!column) {
+          throw CompileError.at(property, `\`${target.tsName}\` has no field \`${fieldLabel(path)}\`.`);
+        }
+        pairs.push([column, lowered]);
+        break;
+      }
+
+      default:
+        throw CompileError.at(
+          property,
+          `${formatSyntaxKind(property.kind)} is not supported in an object literal; use plain properties and spreads.`,
+        );
+    }
+  }
+
+  return pairs;
+}
+
+/**
+ * Expand a resolved group into `[column, field access]` pairs, re-rooted at
+ * `prefix`. Leaves the target does not have are skipped: a spread may carry
+ * more than the target needs.
+ */
+function spreadPairs(
+  source: ResolvedAccess,
+  target: CompositeType,
+  prefix: readonly string[],
+  at: Node,
+): [string, ExprIR][] {
+  const composite = source.base.type as CompositeType;
+  const leaves = composite.fields.filter((f) => samePath(f.path, source.path) || startsWith(f.path, source.path));
+  if (leaves.length === 0) {
+    throw CompileError.at(at, `\`${composite.tsName}\` has nothing at \`${fieldLabel(source.path)}\` to spread.`);
+  }
+
+  const pairs: [string, ExprIR][] = [];
+  for (const field of leaves) {
+    const relative = field.path.slice(source.path.length);
+    const column = columnFor(target, [...prefix, ...relative]);
+    if (!column) continue;
+    pairs.push([column, { kind: "field", operand: source.base, sqlName: field.sqlName, type: field.type }]);
+  }
+  return pairs;
+}
+
+function columnFor(target: CompositeType, path: readonly string[]): string | undefined {
+  return target.fields.find((f) => samePath(f.path, path))?.sqlName;
+}
+
 async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   const op = node.operatorToken.kind;
 
@@ -549,7 +727,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
       // so the caller would never observe the change TypeScript makes.
       throw CompileError.at(
         node,
-        `Assigning to \`${target.getText()}\` mutates the caller's object in TypeScript, but PL/pgSQL passes a composite by value — the caller would never see the change. Compute a new value and return it; marking the field \`readonly\` makes TypeScript reject this too.`,
+        `Assigning to \`${target.getText()}\` mutates the caller's object in TypeScript, but PL/pgSQL passes a composite by value — the caller would never see the change. Build a new value instead (\`const next: T = { ...${rootIdentifier(target)?.text ?? "value"}, field: x }\`); marking the field \`readonly\` makes TypeScript reject the assignment too.`,
       );
     }
     throw CompileError.at(

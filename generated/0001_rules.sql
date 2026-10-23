@@ -142,16 +142,19 @@ BEGIN
 END;
 $$;
 
--- rules/todo.ts: someNestedTest()
-CREATE OR REPLACE FUNCTION app.some_nested_test(
+-- rules/todo.ts: someNestedAssignment()
+CREATE OR REPLACE FUNCTION app.some_nested_assignment(
   nested app.nested
 )
-RETURNS text
+RETURNS app.nested
 LANGUAGE plpgsql
 IMMUTABLE
 AS $$
+DECLARE
+  _nested app.nested;
 BEGIN
-  RETURN (nested).foo_bar;
+  _nested := ROW('some')::app.nested;
+  RETURN _nested;
 END;
 $$;
 

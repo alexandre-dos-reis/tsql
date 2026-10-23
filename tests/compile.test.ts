@@ -51,7 +51,7 @@ $$;`,
       "is_eligible_for_trial",
       "price_cents",
       "remaining_todos",
-      "some_nested_test",
+      "some_nested_assignment",
       "todo_limit",
     ]);
   });
@@ -167,7 +167,6 @@ describe("object types", () => {
     ["anonymousObject.ts", "Anonymous object types are not supported"],
     ["optionalProperty.ts", "`Account.note` is optional"],
     ["objectEquality.ts", "Objects compare by identity in TypeScript"],
-    ["compositeReturn.ts", "Returning an object is not supported"],
     ["indexSignature.ts", "`Bag` has an index signature"],
     ["collisionTypes.ts", "already used by `PlanInfo`"],
   ]);
@@ -199,7 +198,9 @@ describe("nested object types", () => {
     const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("CREATE TYPE app.nested AS (");
     expect(result.sql).toContain("foo_bar text");
-    expect(result.sql).toContain("RETURN (nested).foo_bar;");
+    // The rule rebuilds the shape with a spread rather than mutating it.
+    expect(result.sql).toContain("_nested := ROW('some')::app.nested;");
+    expect(result.sql).toContain("RETURN _nested;");
   });
 
   test("mutating a field explains the by-value divergence, not `const`", async () => {
@@ -210,6 +211,8 @@ describe("nested object types", () => {
     expect(error.message).toContain("mutates the caller's object in TypeScript");
     expect(error.message).toContain("passes a composite by value");
     expect(error.message).not.toContain("computes values with `const`");
+    // And it names the construct that replaces it.
+    expect(error.message).toContain("{ ...nested, field: x }");
     expect(error.format()).toContain('nested.foo.bar = "some";');
   });
 
@@ -224,6 +227,54 @@ describe("nested object types", () => {
     ["flattenCollision.ts", "both flatten to the column `foo_bar`"],
     // PostgreSQL truncates past 63 bytes silently, which could collide.
     ["longFieldName.ts", "longer than PostgreSQL's 63-byte identifier limit"],
+  ]);
+});
+
+describe("object literals and spread", () => {
+  test("a spread rebuild compiles where mutation does not", async () => {
+    const result = await compileFixture("spreadUpdate.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    // The nested spread supplies foo_bar, then `bar: "some"` overrides it.
+    expect(result.sql).toContain("next := ROW('some')::app.mutable;");
+    expect(result.sql).toContain("RETURN (next).foo_bar;");
+  });
+
+  test("a function can return a composite built from a spread", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURNS app.seat");
+    // One ROW argument per flattened field, in field order.
+    expect(result.sql).toContain("RETURN ROW((seat).plan, (seat).count + 1)::app.seat;");
+  });
+
+  test("a field can be read off a call that returns a composite", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.sql).toContain("RETURN (app.grant_seat(seat)).count;");
+  });
+
+  test("a composite can be returned unchanged", async () => {
+    const result = await compileFixture("compositeReturn.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURNS app.plan");
+    expect(result.sql).toContain("RETURN plan;");
+  });
+
+  test("the composite type a return value needs is emitted", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.composites.map((c) => c.sqlName)).toEqual(["seat"]);
+  });
+
+  test("a nested group can be passed by spreading it into a literal", async () => {
+    // `barOf(outer.foo)` is still rejected — the group has no column — but
+    // `barOf({ ...outer.foo })` rebuilds it, which does.
+    const result = await compileFixture("groupSpread.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURN app.bar_of(ROW((outer).foo_bar)::app.inner);");
+  });
+
+  rejects([
+    // ROW() has to be cast to a named type, so the literal needs a target.
+    ["unannotatedLiteral.ts", "needs a named target type"],
   ]);
 });
 

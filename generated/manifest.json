@@ -266,8 +266,8 @@
       }
     },
     {
-      "tsName": "someNestedTest",
-      "sqlName": "some_nested_test",
+      "tsName": "someNestedAssignment",
+      "sqlName": "some_nested_assignment",
       "module": "rules/todo.ts",
       "params": [
         {
@@ -297,9 +297,25 @@
         }
       ],
       "returns": {
-        "kind": "scalar",
-        "sql": "text",
-        "nullable": false
+        "kind": "composite",
+        "tsName": "Nested",
+        "sqlName": "nested",
+        "fields": [
+          {
+            "path": [
+              "foo",
+              "bar"
+            ],
+            "sqlName": "foo_bar",
+            "type": {
+              "kind": "scalar",
+              "sql": "text",
+              "nullable": false
+            }
+          }
+        ],
+        "nullable": false,
+        "module": "rules/todo.ts"
       }
     }
   ]

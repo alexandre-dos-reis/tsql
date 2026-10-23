@@ -70,8 +70,14 @@ function precedenceOf(expr: ExprIR): number {
   }
 }
 
-/** Renders a function's SQL name, schema-qualified when a schema is in use. */
-type Qualifier = (sqlName: string) => string;
+/**
+ * Renders SQL names, schema-qualified when a schema is in use: `q(name)` for a
+ * function, `q.type(composite)` for a composite type.
+ */
+interface Qualifier {
+  (sqlName: string): string;
+  type(composite: CompositeType): string;
+}
 
 function emitExpr(expr: ExprIR, q: Qualifier, minPrecedence = 0): string {
   const precedence = precedenceOf(expr);
@@ -128,6 +134,11 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
     case "cast":
       return `${emitExpr(expr.operand, q, PREC.atom)}::${expr.to}`;
+
+    case "row":
+      // One argument per flattened field, in field order, cast to the named
+      // composite: PostgreSQL composites are nominal, so a bare ROW() will not do.
+      return `ROW(${expr.args.map((a) => emitExpr(a, q)).join(", ")})::${q.type(expr.type)}`;
   }
 }
 
@@ -189,8 +200,9 @@ function typeName(type: PgType, schema: string | undefined): string {
 
 export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string {
   const { schema, orReplace, comments } = { ...DEFAULTS, ...options };
-  const qualify: Qualifier = (sqlName) =>
-    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(sqlName)}` : quoteIdentifier(sqlName);
+  const qualify = ((sqlName: string) =>
+    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(sqlName)}` : quoteIdentifier(sqlName)) as Qualifier;
+  qualify.type = (composite) => typeName(composite, schema);
   const qualified = qualify(fn.sqlName);
 
   const lines: string[] = [];
@@ -199,14 +211,14 @@ export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string 
     for (const param of fn.params) {
       if (isScalar(param.type) && param.type.allowed) lines.push(allowedNote(param.sqlName, param.type.allowed));
     }
-    if (fn.returns.allowed) lines.push(allowedNote("returns", fn.returns.allowed));
+    if (isScalar(fn.returns) && fn.returns.allowed) lines.push(allowedNote("returns", fn.returns.allowed));
   }
 
   const params = fn.params.map((p) => `  ${quoteIdentifier(p.sqlName)} ${typeName(p.type, schema)}`);
   lines.push(`${orReplace ? "CREATE OR REPLACE FUNCTION" : "CREATE FUNCTION"} ${qualified}(`);
   lines.push(params.join(",\n"));
   lines.push(")");
-  lines.push(`RETURNS ${fn.returns.sql}`);
+  lines.push(`RETURNS ${typeName(fn.returns, schema)}`);
   lines.push("LANGUAGE plpgsql");
   lines.push("IMMUTABLE");
   lines.push("AS $$");

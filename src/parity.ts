@@ -11,8 +11,15 @@ import { quoteIdentifier } from "./names.ts";
  * the compiler emits, so every compiled function is covered automatically.
  */
 
-/** Executes `sql` with `params` and returns the single scalar it selects. */
-export type ScalarQuery = (sql: string, params: readonly unknown[]) => Promise<unknown>;
+/**
+ * Executes `sql` with `params` and returns the single row it selects.
+ *
+ * A row rather than a scalar, because a function returning a composite is
+ * queried as `(fn(...)).*` — which hands back one typed column per field and
+ * avoids having to parse PostgreSQL's composite text format, where `""`, NULL
+ * and the literal string `"null"` all look confusingly similar.
+ */
+export type RowQuery = (sql: string, params: readonly unknown[]) => Promise<Record<string, unknown>>;
 
 /**
  * Integers are kept well inside int32 so that arithmetic cannot overflow:
@@ -94,7 +101,9 @@ export function callSql(fn: ManifestFunction, schema: string | null): string {
     return `ROW(${fields})::${qualify(param.type.sqlName)}`;
   });
 
-  return `select ${qualify(fn.sqlName)}(${args.join(", ")}) as value`;
+  const call = `${qualify(fn.sqlName)}(${args.join(", ")})`;
+  // `(fn(...)).* ` expands a composite result into one column per field.
+  return isScalar(fn.returns) ? `select ${call} as value` : `select (${call}).*`;
 }
 
 /**
@@ -113,6 +122,16 @@ export function flattenArgs(fn: ManifestFunction, args: readonly unknown[]): unk
     for (const field of param.type.fields) flat.push(value === null ? null : readPath(value, field.path));
   });
   return flat;
+}
+
+/**
+ * Compare a returned row against the TypeScript result: one column for a scalar
+ * return, or field-by-field for a composite.
+ */
+export function resultEqual(row: Record<string, unknown>, tsValue: unknown, returns: PgType): boolean {
+  if (isScalar(returns)) return valuesEqual(row.value, tsValue, returns);
+  if (tsValue === null || tsValue === undefined) return false;
+  return returns.fields.every((field) => valuesEqual(row[field.sqlName], readPath(tsValue, field.path), field.type));
 }
 
 export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarType): boolean {
@@ -135,6 +154,14 @@ export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarTyp
   }
 }
 
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return Object.is(a, b);
+  const [left, right] = [a as Record<string, unknown>, b as Record<string, unknown>];
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every((key) => deepEqual(left[key], right[key]));
+}
+
 export interface ParityOptions {
   readonly runs?: number;
   readonly seed?: number;
@@ -147,7 +174,7 @@ export interface ParityOptions {
 export async function checkParity(
   fn: ManifestFunction,
   impl: (...args: never[]) => unknown,
-  query: ScalarQuery,
+  query: RowQuery,
   schema: string | null,
   options: ParityOptions = {},
 ): Promise<void> {
@@ -157,7 +184,13 @@ export async function checkParity(
 
   const run = await fc.check(
     fc.asyncProperty(fc.tuple(...arbitraries), async (args) => {
-      return valuesEqual(await query(sql, flattenArgs(fn, args)), call(...args), fn.returns);
+      // Snapshot first: PL/pgSQL passes composites by value, so a TypeScript
+      // function that mutates what it was given has an effect its SQL twin can
+      // never reproduce. Comparing return values alone would not notice.
+      const before = structuredClone(args);
+      const tsValue = call(...args);
+      if (!deepEqual(args, before)) return false;
+      return resultEqual(await query(sql, flattenArgs(fn, args)), tsValue, fn.returns);
     }),
     { numRuns: options.runs ?? 200, ...(options.seed === undefined ? {} : { seed: options.seed }) },
   );
@@ -169,9 +202,14 @@ export async function checkParity(
   const args = run.counterexample?.[0] ?? [];
   let detail: string;
   try {
+    const before = structuredClone(args);
     const tsValue = call(...args);
-    const sqlValue = await query(sql, flattenArgs(fn, args));
-    detail = `TypeScript gave ${JSON.stringify(tsValue)}, PostgreSQL gave ${JSON.stringify(sqlValue)}`;
+    const row = await query(sql, flattenArgs(fn, args));
+    // A scalar return arrives as a one-column row; report the value, not the row.
+    const sqlValue = isScalar(fn.returns) ? row.value : row;
+    detail = !deepEqual(args, before)
+      ? `the TypeScript function mutated its arguments (${JSON.stringify(before)} -> ${JSON.stringify(args)}). PL/pgSQL passes composites by value, so the SQL function cannot do the same; build a new value instead`
+      : `TypeScript gave ${JSON.stringify(tsValue)}, PostgreSQL gave ${JSON.stringify(sqlValue)}`;
   } catch (error) {
     // One side raising where the other does not is itself a divergence —
     // PostgreSQL's integer overflow being the obvious example.

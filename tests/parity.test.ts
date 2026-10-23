@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { compileProject, formatResult } from "../src/compile.ts";
-import { checkParity, type ScalarQuery } from "../src/parity.ts";
+import { checkParity, type RowQuery } from "../src/parity.ts";
 
 const SCHEMA = "app";
 
@@ -22,9 +22,9 @@ if (!result.ok) {
   const db = await PGlite.create();
   await db.exec(result.sql);
 
-  const query: ScalarQuery = async (sql, params) => {
-    const rows = await db.query<{ value: unknown }>(sql, [...params]);
-    return rows.rows[0]!.value;
+  const query: RowQuery = async (sql, params) => {
+    const rows = await db.query<Record<string, unknown>>(sql, [...params]);
+    return rows.rows[0]!;
   };
 
   afterAll(async () => {
@@ -99,5 +99,53 @@ END; $$;`);
     expect(failure?.message).toContain("app.subscription exists as");
     expect(failure?.message).toContain("but the rules expect");
     await fresh.close();
+  });
+}
+
+// Composite returns and the argument-mutation check are exercised against a
+// fixture rather than rules/, so this coverage holds even while rules/ is
+// mid-edit.
+const fixture = await compileProject({
+  tsconfig: "tests/fixtures/tsconfig.json",
+  include: (fileName) => fileName.endsWith("tests/fixtures/spreadReturn.ts"),
+  emit: { schema: SCHEMA },
+});
+
+test("the spread fixture compiles", () => {
+  expect(formatResult(fixture)).toBe("");
+});
+
+if (fixture.ok) {
+  const fixtureDb = await PGlite.create();
+  await fixtureDb.exec(fixture.sql);
+  const fixtureQuery: RowQuery = async (sql, params) =>
+    (await fixtureDb.query<Record<string, unknown>>(sql, [...params])).rows[0]!;
+
+  afterAll(async () => {
+    await fixtureDb.close();
+  });
+
+  for (const fn of fixture.manifest.functions) {
+    test(`${fn.tsName}() === ${SCHEMA}.${fn.sqlName}()`, async () => {
+      const module = (await import(resolve(fn.module))) as Record<string, (...args: never[]) => unknown>;
+      await checkParity(fn, module[fn.tsName]!, fixtureQuery, fixture.manifest.schema);
+    });
+  }
+
+  // The reason copy-at-the-top was the wrong fix: return values agree, so only
+  // an explicit check on the arguments can see the divergence.
+  test("parity detects a TypeScript function that mutates its argument", async () => {
+    const subject = fixture.manifest.functions.find((f) => f.tsName === "grantSeat")!;
+    const mutating = (seat: { plan: string; count: number }) => {
+      seat.count = seat.count + 1;
+      return seat;
+    };
+
+    const failure = await checkParity(subject, mutating as never, fixtureQuery, SCHEMA).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+    expect(failure?.message).toContain("mutated its arguments");
+    expect(failure?.message).toContain("build a new value instead");
   });
 }
