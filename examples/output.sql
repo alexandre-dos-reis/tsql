@@ -3,7 +3,7 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
--- examples/todo.ts: Nested
+-- examples/input-2.ts: Nested
 --   foo_bar: from foo.bar
 DO $$
 DECLARE
@@ -27,7 +27,7 @@ BEGIN
 END
 $$;
 
--- examples/todo.ts: Subscription
+-- examples/input-2.ts: Subscription
 --   plan: one of 'free', 'max', 'pro' (not enforced here)
 DO $$
 DECLARE
@@ -51,7 +51,7 @@ BEGIN
 END
 $$;
 
--- examples/todo.ts: canCreateTodo()
+-- examples/input-2.ts: canCreateTodo()
 CREATE OR REPLACE FUNCTION app.can_create_todo(
   plan text,
   count integer
@@ -65,7 +65,7 @@ BEGIN
 END;
 $$;
 
--- examples/todo.ts: canCreateTodoWithType()
+-- examples/input-2.ts: canCreateTodoWithType()
 CREATE OR REPLACE FUNCTION app.can_create_todo_with_type(
   sub app.subscription,
   count integer
@@ -88,7 +88,7 @@ BEGIN
 END;
 $$;
 
--- examples/billing.ts: isEligibleForTrial()
+-- examples/input-1.ts: isEligibleForTrial()
 --   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.is_eligible_for_trial(
   plan text,
@@ -104,7 +104,7 @@ BEGIN
 END;
 $$;
 
--- examples/billing.ts: priceCents()
+-- examples/input-1.ts: priceCents()
 CREATE OR REPLACE FUNCTION app.price_cents(
   list_cents integer,
   percent_off double precision
@@ -121,7 +121,7 @@ BEGIN
 END;
 $$;
 
--- examples/billing.ts: remainingTodos()
+-- examples/input-1.ts: remainingTodos()
 --   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.remaining_todos(
   plan text,
@@ -142,7 +142,7 @@ BEGIN
 END;
 $$;
 
--- examples/todo.ts: someNestedAssignment()
+-- examples/input-2.ts: someNestedAssignment()
 CREATE OR REPLACE FUNCTION app.some_nested_assignment(
   nested app.nested
 )
@@ -158,7 +158,7 @@ BEGIN
 END;
 $$;
 
--- examples/billing.ts: todoLimit()
+-- examples/input-1.ts: todoLimit()
 --   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.todo_limit(
   plan text

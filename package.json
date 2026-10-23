@@ -49,7 +49,7 @@
     "build:binary": "bun run scripts/buildBinaries.ts",
     "build:packages": "bun run scripts/buildBinaries.ts --packages",
     "prepublishOnly": "bun run typecheck && bun test",
-    "ex:compile": "bun run src/cli.ts compile examples/*.ts --project examples/tsconfig.json --out examples/0001_rules.sql --manifest examples/manifest.json",
+    "ex:compile": "bun run src/cli.ts compile examples/*.ts --project examples/tsconfig.json --out examples/output.sql --manifest examples/manifest.json",
     "ex:check": "bun run src/cli.ts check examples/*.ts --project examples/tsconfig.json"
   },
   "dependencies": {

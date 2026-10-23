@@ -21,7 +21,7 @@
         }
       ],
       "nullable": false,
-      "module": "examples/todo.ts"
+      "module": "examples/input-2.ts"
     },
     {
       "kind": "composite",
@@ -46,14 +46,14 @@
         }
       ],
       "nullable": false,
-      "module": "examples/todo.ts"
+      "module": "examples/input-2.ts"
     }
   ],
   "functions": [
     {
       "tsName": "todoLimit",
       "sqlName": "todo_limit",
-      "module": "examples/billing.ts",
+      "module": "examples/input-1.ts",
       "params": [
         {
           "tsName": "plan",
@@ -79,7 +79,7 @@
     {
       "tsName": "remainingTodos",
       "sqlName": "remaining_todos",
-      "module": "examples/billing.ts",
+      "module": "examples/input-1.ts",
       "params": [
         {
           "tsName": "plan",
@@ -114,7 +114,7 @@
     {
       "tsName": "priceCents",
       "sqlName": "price_cents",
-      "module": "examples/billing.ts",
+      "module": "examples/input-1.ts",
       "params": [
         {
           "tsName": "listCents",
@@ -144,7 +144,7 @@
     {
       "tsName": "isEligibleForTrial",
       "sqlName": "is_eligible_for_trial",
-      "module": "examples/billing.ts",
+      "module": "examples/input-1.ts",
       "params": [
         {
           "tsName": "plan",
@@ -188,7 +188,7 @@
     {
       "tsName": "canCreateTodo",
       "sqlName": "can_create_todo",
-      "module": "examples/todo.ts",
+      "module": "examples/input-2.ts",
       "params": [
         {
           "tsName": "plan",
@@ -218,7 +218,7 @@
     {
       "tsName": "canCreateTodoWithType",
       "sqlName": "can_create_todo_with_type",
-      "module": "examples/todo.ts",
+      "module": "examples/input-2.ts",
       "params": [
         {
           "tsName": "sub",
@@ -246,7 +246,7 @@
               }
             ],
             "nullable": false,
-            "module": "examples/todo.ts"
+            "module": "examples/input-2.ts"
           }
         },
         {
@@ -268,7 +268,7 @@
     {
       "tsName": "someNestedAssignment",
       "sqlName": "some_nested_assignment",
-      "module": "examples/todo.ts",
+      "module": "examples/input-2.ts",
       "params": [
         {
           "tsName": "nested",
@@ -292,7 +292,7 @@
               }
             ],
             "nullable": false,
-            "module": "examples/todo.ts"
+            "module": "examples/input-2.ts"
           }
         }
       ],
@@ -315,7 +315,7 @@
           }
         ],
         "nullable": false,
-        "module": "examples/todo.ts"
+        "module": "examples/input-2.ts"
       }
     }
   ]
