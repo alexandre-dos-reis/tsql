@@ -89,3 +89,29 @@ describe("the CLI compiles the files it is given", () => {
     expect(stderr).not.toContain("at <anonymous>");
   });
 });
+
+describe("the CLI runs on Node, not only Bun", () => {
+  // `erasableSyntaxOnly` keeps the *syntax* Node-compatible at type-check
+  // time, but nothing stops someone reaching for a Bun-only global, which
+  // would type check and then fail for every consumer without Bun. So the
+  // compiler is actually run under node here.
+  async function runOnNode(args: readonly string[]) {
+    const proc = Bun.spawn(["node", "bin/tsql.mjs", ...args], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { stdout, stderr, exitCode: await proc.exited };
+  }
+
+  test("it compiles, and reports the same functions", async () => {
+    const { stdout, stderr, exitCode } = await runOnNode(["check", "examples/input-1.ts", ...PROJECT]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("todo_limit");
+  });
+
+  test("rejections still read as diagnostics", async () => {
+    const { stderr, exitCode } = await runOnNode(["check", "examples/nope.ts", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
+    expect(stderr).not.toContain("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX");
+  });
+});

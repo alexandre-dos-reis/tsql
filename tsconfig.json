@@ -14,7 +14,8 @@
     "noUnusedParameters": true,
     "noImplicitOverride": true,
     "skipLibCheck": true,
-    "types": ["bun"]
+    "types": ["bun"],
+    "erasableSyntaxOnly": true
   },
   "include": ["src", "tests", "scripts"]
 }

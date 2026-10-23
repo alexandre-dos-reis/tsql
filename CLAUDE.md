@@ -136,11 +136,18 @@ bun run release     # changeset publish
   one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
   `unstable/` subpaths may move between 7.x minors. The package therefore has *no* runtime
   dependencies, which `tests/packaging.test.ts` asserts.
-- **`exports` points at `src/*.ts`.** Bun runs TS directly and TypeScript resolves `.ts` as its own
-  types, so there is no build step and no emitted-declaration drift. The cost is that Bun has to be
-  installed; `bin/tsql.mjs` is plain Node-compatible JavaScript precisely so it can start and say so.
-- **`bin/tsql.mjs` must stay Node-compatible.** npm puts it on PATH. If it needed Bun to run, it
-  could not report that Bun is missing.
+- **`exports` points at `src/*.ts`.** Node has stripped types natively since 22.18, Bun always has,
+  and TypeScript resolves `.ts` as its own types — so there is no build step and no
+  emitted-declaration drift. **The price is that every file in `src/` must be erasable**: no enums,
+  no namespaces, no constructor parameter properties, because those generate code rather than only
+  describing types. `erasableSyntaxOnly` in `tsconfig.json` makes that a type error rather than a
+  runtime failure in a consumer's Node.
+- **`bin/tsql.mjs` must stay plain JavaScript.** npm puts it on PATH, so it has to start on a runtime
+  too old to load the rest in order to say so. It `import()`s `src/cli.ts` directly — no subprocess,
+  no bundled runtime, and it runs under whichever of Node or Bun invoked it.
+- **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global
+  type checks and then breaks every consumer on Node. `tests/cli.test.ts` spawns the CLI under `node`
+  for that reason.
 
 The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun. Its
 non-interactive subcommands (`status`, `version`, `publish`) run fine under `bun run`; only

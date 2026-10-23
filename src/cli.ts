@@ -27,7 +27,7 @@ Options:
 `;
 
 const { values, positionals } = parseArgs({
-  args: Bun.argv.slice(2),
+  args: process.argv.slice(2),
   allowPositionals: true,
   options: {
     project: { type: "string", default: "rules/tsconfig.json" },
