@@ -8,7 +8,7 @@
 bun add -d @adr/tsql        # or npm i -D @adr/tsql
 ```
 
-The compiler ships as a prebuilt binary, one npm package per platform (`linux`/`darwin` × `x64`/`arm64`, plus `windows-x64`), selected by npm's `os`/`cpu` fields so an install pulls only the one it can run. Where there is no binary, the launcher runs the TypeScript sources under Bun instead.
+The package is 45 kB of TypeScript sources — no build output, no embedded runtime. It runs under [Bun](https://bun.com), and `typescript@~7.0.2` is a peer dependency: the checker has to be the one that agrees with your own code.
 
 Write rules, annotating anything whose PostgreSQL precision matters:
 
@@ -275,30 +275,21 @@ scripts/            the release build
 
 ### Publishing
 
-The binary is platform-specific, so the release uses npm's own mechanism for that: `@adr/tsql` is a launcher with `optionalDependencies` on one package per platform, each carrying `os`/`cpu` so only the matching binary installs. A Bun binary is ~105 MB unpacked and ~49 MB on the wire, per platform.
-
-Versions and changelogs are handled by [changesets](https://github.com/changesets/changesets):
+The package is **sources only** — 45 kB, twenty files, no build output and no embedded runtime. Versions and changelogs are handled by [changesets](https://github.com/changesets/changesets):
 
 ```
 bun run changeset   # describe a change (interactive)
-bun run version     # bump, write CHANGELOG.md, re-pin the platform packages
-bun run release     # build binaries, publish platform packages, then the launcher
+bun run version     # bump and write CHANGELOG.md
+bun run release     # changeset publish
 ```
 
-Changesets manages the launcher only, because **the platform packages are build artifacts rather than workspace members** — nothing in `.changeset/` knows they exist. Two scripts close that gap:
-
-- `scripts/syncVersion.ts` regenerates `optionalDependencies` from `src/targets.ts` after `changeset version`. The pins have to equal the launcher version exactly, or npm will pair a launcher with a binary from a different release.
-- `scripts/publishBinaries.ts` publishes `dist/tsql-*` before the launcher, treats an already-published version as success so a half-finished release can be re-run, and refuses to publish at all while changesets are pending — that would spend the current version number on a build the changelog does not describe.
-
-`src/targets.ts` is the single list of platforms; a test asserts the `optionalDependencies`, the launcher's own mapping and that list all agree, since a target added to one and not the others ships a release that silently has no binary for someone. `prepublishOnly` runs the type checker and the test suite.
-
-The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun.
+`prepublishOnly` runs the type checker and the test suite. The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun.
 
 Three decisions worth stating:
 
-- **`typescript` stays an ordinary dependency.** The binary bundles the TypeScript *JavaScript*, but the checker it drives is a separate native executable that cannot be bundled into a JS file. Depending on `typescript` lets npm resolve the right one per platform through its own optional dependencies, instead of tsql maintaining a second platform matrix.
-- **The package ships TypeScript sources, not a build.** Bun runs `.ts` directly and TypeScript resolves `.ts` as its own types, so `exports` points straight at `src/`. That removes a build step and an emitted-declarations drift risk; the cost is that the library entry points need Bun rather than Node.
-- **No `--bytecode`.** It requires a CommonJS entry, and the CLI is a flat script with top-level `await`. The startup it would save is noise next to spawning the native type checker.
+- **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op, the runtime ships stripped already, and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever — to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
+- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. The range is `~7.0.2` — patches only, because the `unstable/` subpaths this compiler reads may move between 7.x minors. That leaves the package with no runtime dependencies at all, which a test asserts.
+- **The package ships TypeScript sources, not a build.** Bun runs `.ts` directly and TypeScript resolves `.ts` as its own types, so `exports` points straight at `src/`. That removes a build step and an emitted-declarations drift risk; the cost is that Bun has to be present, which `bin/tsql.mjs` checks for and reports.
 
 ### Keeping `Integer` honest once installed
 
@@ -309,7 +300,7 @@ Three decisions worth stating:
 export type Integer = string;
 ```
 
-A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test, since the compiled binary has no package.json of its own to read.
+A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
 
 ## What the scaffold compiles today
 

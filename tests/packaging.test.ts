@@ -3,17 +3,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isFromPackage } from "../src/origin.ts";
-import { TARGETS } from "../src/targets.ts";
 import { findTscPath, platformPackage } from "../src/tscPath.ts";
 import { PACKAGE_NAME } from "../src/typemap.ts";
 
 const manifest = (await Bun.file("package.json").json()) as {
   name: string;
   version: string;
-  optionalDependencies: Record<string, string>;
   exports: Record<string, string>;
   files: string[];
   bin: Record<string, string>;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
 /** Build a throwaway package tree and return the path to a file inside it. */
@@ -73,13 +73,12 @@ describe("the native compiler is locatable", () => {
 });
 
 describe("the published layout is coherent", () => {
-  test("every build target has a matching optional dependency", () => {
-    const expected = TARGETS.map((t) => `${manifest.name}-${t.name}`).sort();
-    expect(Object.keys(manifest.optionalDependencies).sort()).toEqual(expected);
-  });
-
-  test("the platform packages are pinned to this exact version", () => {
-    for (const range of Object.values(manifest.optionalDependencies)) expect(range).toBe(manifest.version);
+  test("nothing is a runtime dependency", () => {
+    // The package ships sources only. TypeScript is the consumer's to supply:
+    // the checker has to be the one that agrees with their own code, and a
+    // second copy resolved under this package would be a different one.
+    expect(manifest.dependencies ?? {}).toEqual({});
+    expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(["typescript"]);
   });
 
   test("every exported entry point ships and exists", async () => {
@@ -91,16 +90,15 @@ describe("the published layout is coherent", () => {
     }
   });
 
-  test("the launcher ships and agrees with the build targets", async () => {
+  test("the launcher ships, and runs the sources rather than a build", async () => {
     const launcher = manifest.bin["tsql"]!;
     expect(await Bun.file(launcher).exists()).toBe(true);
     expect(manifest.files).toContain(launcher.split("/")[0]!);
 
-    // bin/tsql.mjs restates the platform map in plain JavaScript, so it is
-    // checked against the shared list rather than trusted.
+    // It must stay plain Node-compatible: npm puts it on PATH, so it has to
+    // start in order to report a missing Bun at all.
     const source = await Bun.file(launcher).text();
-    for (const target of TARGETS) {
-      expect(source).toContain(`"${target.os === "win32" ? "win32" : target.os}-${target.cpu}": "${target.name}"`);
-    }
+    expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
+    expect(source).toContain('src", "cli.ts');
   });
 });

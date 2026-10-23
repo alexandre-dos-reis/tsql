@@ -5,6 +5,3 @@ node_modules/
 .devenv*
 devenv.local.nix
 .direnv
-
-# build output
-dist/
