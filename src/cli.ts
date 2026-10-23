@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { compileProject, formatResult } from "./compile.ts";
 
-const USAGE = `ts-to-plpgsql — compile pure TypeScript business rules to PL/pgSQL
+const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 
 Usage:
   bun run src/cli.ts compile [options]   Type check, translate and write SQL

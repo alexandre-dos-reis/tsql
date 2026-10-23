@@ -1,4 +1,6 @@
-# typescript to plpgsql
+# tsql
+
+`tsql` compiles a small, deliberately restricted subset of TypeScript business rules to PL/pgSQL. It refuses anything whose semantics it cannot preserve, and proves the two implementations agree with generated parity tests.
 
 ## Goal
 
@@ -197,7 +199,15 @@ bun run check       # type check + translate, write nothing
 bun run compile     # write generated/0001_rules.sql and generated/manifest.json
 bun test            # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck   # tsc over the compiler and over the rules project
+bun run format      # oxfmt (format:check for CI)
 ```
+
+`.oxfmtrc.json` sets `printWidth` to 120 — measured as the width that reflows this code least — and excludes two things:
+
+- **`generated/**`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting `manifest.json` would produce a diff on every compile, forever.
+- **`**/*.md`** — oxfmt reflows the original design notes above, and flattens the tab-separated type-support table into run-together prose.
+
+oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
 
 ### Layout
 
@@ -230,6 +240,7 @@ Primitives and their mappings, parameters and return values, `if`/`else if`/`els
 | `T \| null` | nullable column type, null checks translated |
 | type alias | resolved at build time |
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
+| a nested object field | flattened to a prefixed column, `foo.bar` -> `foo_bar` |
 
 `Integer`, `Numeric` and `Float` are plain aliases of `number` exported from `src/pgtypes.ts`. They cost nothing in TypeScript and impose no friction at call sites, but they let the compiler resolve the author's intent by name instead of guessing a precision. Provenance is checked, so a locally declared `type Integer = Date` is not mistaken for PostgreSQL's `integer`.
 
@@ -289,7 +300,120 @@ BEGIN
   ...
 ```
 
-Four decisions worth stating:
+Nested shapes are **flattened into prefixed columns** rather than nested composite types:
+
+```ts
+type Nested = { foo: { bar: string } };
+return nested.foo.bar;
+```
+
+```sql
+-- rules/todo.ts: Nested
+--   foo_bar: from foo.bar
+CREATE TYPE app.nested AS (
+  foo_bar text
+);
+
+RETURN (nested).foo_bar;
+```
+
+The inner shape needs no name of its own — only the column does — so an anonymous `{ bar: string }` is fine *inside* a named type even though an anonymous parameter type is not.
+
+The reason is a NULL hazard that flattening removes structurally. With nested composites, the intermediate value can be NULL where TypeScript guarantees one is present:
+
+```
+((ROW(NULL::app.foo)::app.nested).foo).bar  ->  NULL
+```
+
+and the two NULL states are indistinguishable, because `IS NULL` on a composite is true when *every* field is NULL:
+
+```
+(ROW(NULL::app.foo)::app.nested).foo IS NULL             -> true   (no inner row)
+(ROW(ROW(NULL::text)::app.foo)::app.nested).foo IS NULL  -> true   (inner row, NULL field)
+```
+
+With no intermediate value there is nothing to be NULL. Flattening also keeps construction flat (`ROW('x')::app.nested`, not `ROW(ROW('x')::app.foo)::app.nested`) and emits one SQL type per named shape instead of one per level.
+
+What it costs, and what guards those costs:
+
+| Risk | Guard |
+| --- | --- |
+| a flattened column no longer shows its origin | the path is recorded as a comment (`foo_bar: from foo.bar`) |
+| `{ foo: { bar } }` and `{ fooBar }` both want `foo_bar` | collision is a build error naming both fields |
+| PostgreSQL truncates identifiers at 63 bytes **silently** | anything longer is a build error, never truncated |
+| a recursive shape has no fixed column set | `interface A { child: A }` is a build error |
+| arbitrarily deep nesting | capped at 4 levels |
+| a nested shape that may be absent | `{ foo: { bar: string } \| null }` is rejected: no single column can carry "this group is missing" |
+
+### Object literals and spread
+
+A literal builds a composite with `ROW(...)`, which is how a fresh value is produced without mutating anything:
+
+```ts
+export interface Seat {
+  plan: "free" | "pro";
+  count: number;
+}
+
+export function grantSeat(seat: Seat): Seat {
+  return { ...seat, count: seat.count + 1 };
+}
+```
+
+```sql
+CREATE OR REPLACE FUNCTION app.grant_seat(seat app.seat)
+RETURNS app.seat
+...
+  RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
+```
+
+Spreads resolve **by field path**, so they compose with flattening and with each other, last-one-wins exactly as in JavaScript. The mutation case from the previous section becomes:
+
+```ts
+const next: Mutable = { ...nested, foo: { ...nested.foo, bar: "some" } };
+return next.foo.bar;
+```
+
+```sql
+next := ROW('some')::app.mutable;
+RETURN (next).foo_bar;
+```
+
+The nested spread supplies `foo_bar`, then `bar: "some"` overrides it — so the generated row carries the literal, with no intermediate copy to assign into.
+
+Three consequences:
+
+- **A literal needs a named target type.** `ROW(...)` has to be cast to a nominal composite, so the type comes from the contextual type: an annotation, the function's return type, or the parameter being passed to. An unannotated `const x = { ... }` is rejected with that advice.
+- **Composite returns work.** PL/pgSQL always returned them fine; the gap was that nothing in the subset could build one. `RETURNS app.seat` now compiles, and a field can be read straight off the call: `RETURN (app.grant_seat(seat)).count;`
+- **A nested group can be passed by rebuilding it.** `barOf(outer.foo)` is still rejected, because the flattened composite has no column for the group — but `barOf({ ...outer.foo })` compiles to `app.bar_of(ROW((outer).foo_bar)::app.inner)`.
+
+Field access is resolved as *a composite-typed base plus a path*, not as "a property of a variable", so all four of these read the same way:
+
+| Written | Generated |
+| --- | --- |
+| `sub.plan` (parameter) | `(sub).plan` |
+| `next.foo.bar` (local, nested) | `(next).foo_bar` |
+| `grantSeat(seat).count` (call result) | `(app.grant_seat(seat)).count` |
+| `{ ...nested.foo }` (group, in a literal) | `ROW((nested).foo_bar)::app.inner` |
+
+Mutating a field is rejected for a sharper reason than the rest of this list: it is not unsupported syntax, it is untranslatable. The same assignment is perfectly legal PL/pgSQL, but parameters there are passed **by value**, so the change never reaches the caller:
+
+```
+TS:  returned "some" | caller now holds "some"      <- mutation escapes the function
+SQL: returned some, caller still holds original     <- mutation stays on the local copy
+```
+
+Compiling it would silently drop a side effect the TypeScript version has, which is exactly the class of bug this compiler exists to refuse. Build a new value with a spread instead, as above; declaring object fields `readonly` gets TypeScript to reject the assignment at authoring time too.
+
+Copying the argument into a fresh local at the top of the generated function — making the SQL internally consistent — was considered and rejected. PL/pgSQL parameters are *already* copies, so the copy is a no-op; and because the two implementations then agree on every return value, the parity harness would go green while the caller-visible behaviour still differed. The fresh value has to exist in the TypeScript, where both languages can see it.
+
+Referencing a group rather than a leaf is also rejected, since the group has no column of its own:
+
+```
+`outer.foo` is a nested shape, not a value. Reference a leaf instead: `outer.foo.bar`.
+```
+
+Four more decisions worth stating:
 
 - **Keyed to the name, not the shape.** TypeScript object types are structural; PostgreSQL composites are nominal. Two structurally identical TypeScript types stay two distinct SQL types rather than being silently unified, and an anonymous `{ plan: string }` is rejected — there would be no name to generate. Types are emitted before the functions that use them, and only if a compiled function actually mentions them.
 - **`CREATE TYPE` has no `IF NOT EXISTS`,** so the statement is guarded. The guard also compares the shape that already exists against the expected one and raises, turning a field renamed in TypeScript but never migrated into a loud migration failure rather than a function that quietly returns NULL. Changing a shape still needs a deliberate `ALTER TYPE`: the compiler creates, it never rewrites. Both re-runnability and the drift failure are tested.
@@ -319,9 +443,13 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 | generics, `Date` | outside the subset whose semantics can be preserved |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
 | `note?: string` on an object | a composite field is always present — write `T \| null` |
-| an object field that is an object | nested composites are not supported; flatten the shape |
+| an object field that may be absent | no single column can carry "this group is missing" |
+| a recursive shape, or nesting past 4 levels | no fixed set of columns |
+| two fields that flatten to the same column | `{ foo: { bar } }` and `{ fooBar }` collide |
+| referencing a nested group, not a leaf | the group has no column; rebuild it with `{ ...outer.foo }` |
+| `nested.foo.bar = "x"` | TypeScript mutates the caller's object; PL/pgSQL mutates a copy |
 | `===` on two objects | identity in TypeScript, value in SQL |
-| returning an object | nothing in the subset can construct one |
+| an unannotated object literal | `ROW()` must be cast to a nominal type, so a target type is required |
 | an index signature | no fixed composite shape |
 
 **Runtime references.** A compiled function may use its parameters, its local constants, and other compiled functions — nothing else:
@@ -370,6 +498,11 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
 
 That example is a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
 
+Two further checks:
+
+- **Composite returns** are compared field by field, querying `(fn(...)).*` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings.
+- **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
+
 ## Not built yet
 
-Enums, generic substitution, nested composite types, constructing an object to return, the `Numeric` path beyond type mapping, and migration versioning beyond a single emitted file.
+Enums, generic substitution, `RETURNS SETOF` and `RETURNS TABLE`, the `Numeric` path beyond type mapping, and migration versioning beyond a single emitted file.

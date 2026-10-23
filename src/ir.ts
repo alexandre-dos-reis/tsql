@@ -143,7 +143,7 @@ export interface FunctionIR {
   /** Source module, relative to the project root — used by the parity harness. */
   readonly module: string;
   readonly params: readonly ParamIR[];
-  readonly returns: ScalarType;
+  readonly returns: PgType;
   readonly locals: readonly LocalIR[];
   readonly body: readonly StmtIR[];
 }
@@ -179,19 +179,33 @@ export type ExprIR =
   | { readonly kind: "ref"; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: "field"; readonly operand: ExprIR; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: "lit"; readonly value: string | number | boolean | null; readonly type: ScalarType }
-  | { readonly kind: "binary"; readonly op: BinOp; readonly left: ExprIR; readonly right: ExprIR; readonly type: ScalarType }
+  | {
+      readonly kind: "binary";
+      readonly op: BinOp;
+      readonly left: ExprIR;
+      readonly right: ExprIR;
+      readonly type: ScalarType;
+    }
   | { readonly kind: "not"; readonly operand: ExprIR; readonly type: ScalarType }
   | { readonly kind: "neg"; readonly operand: ExprIR; readonly type: ScalarType }
   | { readonly kind: "nullTest"; readonly operand: ExprIR; readonly negated: boolean; readonly type: ScalarType }
   | { readonly kind: "coalesce"; readonly left: ExprIR; readonly right: ExprIR; readonly type: PgType }
-  | { readonly kind: "case"; readonly cond: ExprIR; readonly whenTrue: ExprIR; readonly whenFalse: ExprIR; readonly type: PgType }
+  | {
+      readonly kind: "case";
+      readonly cond: ExprIR;
+      readonly whenTrue: ExprIR;
+      readonly whenFalse: ExprIR;
+      readonly type: PgType;
+    }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
-  | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType };
+  | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
+  // `ROW(a, b)::app.thing` — one argument per flattened field, in field order.
+  | { readonly kind: "row"; readonly args: readonly ExprIR[]; readonly type: CompositeType };
 
 /** Signature-only view of a function, used to check calls before bodies are lowered. */
 export interface SignatureIR {
   readonly tsName: string;
   readonly sqlName: string;
   readonly params: readonly ParamIR[];
-  readonly returns: ScalarType;
+  readonly returns: PgType;
 }

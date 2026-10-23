@@ -2,7 +2,7 @@ import { SyntaxKind, type FunctionDeclaration, type SourceFile } from "typescrip
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
-import type { CompositeType, FunctionIR, PgType, ScalarType, SignatureIR } from "./ir.ts";
+import type { CompositeType, FunctionIR, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
 
@@ -19,11 +19,11 @@ export interface ManifestFunction {
   readonly sqlName: string;
   readonly module: string;
   readonly params: readonly { readonly tsName: string; readonly sqlName: string; readonly type: PgType }[];
-  readonly returns: ScalarType;
+  readonly returns: PgType;
 }
 
 export interface Manifest {
-  readonly generatedBy: "ts-to-plpgsql";
+  readonly generatedBy: "tsql";
   readonly schema: string | null;
   readonly types: readonly CompositeType[];
   readonly functions: readonly ManifestFunction[];
@@ -118,7 +118,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       composites: used,
       sql: ok ? emitMigration(functions, used, options.emit) : "",
       manifest: {
-        generatedBy: "ts-to-plpgsql",
+        generatedBy: "tsql",
         schema: options.emit?.schema ?? null,
         types: used,
         functions: functions.map((fn) => ({
@@ -138,7 +138,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
 }
 
 function emptyManifest(options: CompileOptions): Manifest {
-  return { generatedBy: "ts-to-plpgsql", schema: options.emit?.schema ?? null, types: [], functions: [] };
+  return { generatedBy: "tsql", schema: options.emit?.schema ?? null, types: [], functions: [] };
 }
 
 /**
@@ -151,8 +151,8 @@ function usedComposites(
 ): CompositeType[] {
   const names = new Set<string>();
   for (const fn of functions) {
-    for (const param of fn.params) {
-      if (param.type.kind === "composite") names.add(param.type.sqlName);
+    for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) {
+      if (type.kind === "composite") names.add(type.sqlName);
     }
   }
   return [...names].sort().flatMap((name) => {

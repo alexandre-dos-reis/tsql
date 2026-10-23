@@ -29,6 +29,7 @@ type Nested = {
   foo: { bar: string };
 };
 
-export function someNestedTest(nested: Nested): string {
-  return nested.foo.bar;
+export function someNestedAssignment(nested: Nested): Nested {
+  const _nested: Nested = { ...nested, foo: { ...nested.foo, bar: "some" } };
+  return _nested;
 }

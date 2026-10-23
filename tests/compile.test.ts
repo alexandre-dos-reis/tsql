@@ -51,6 +51,7 @@ $$;`,
       "is_eligible_for_trial",
       "price_cents",
       "remaining_todos",
+      "some_nested_assignment",
       "todo_limit",
     ]);
   });
@@ -64,7 +65,12 @@ $$;`,
   test("keeps the values of a string-literal union for the reader", async () => {
     const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "todoLimit")!;
-    expect(fn.params[0]!.type).toEqual({ kind: "scalar", sql: "text", nullable: false, allowed: ["enterprise", "free", "pro"] });
+    expect(fn.params[0]!.type).toEqual({
+      kind: "scalar",
+      sql: "text",
+      nullable: false,
+      allowed: ["enterprise", "free", "pro"],
+    });
   });
 
   test("translates a nullable comparison to IS DISTINCT FROM, not <>", async () => {
@@ -147,9 +153,7 @@ describe("object types", () => {
 
   test("types are emitted before the functions that use them", async () => {
     const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
-    expect(result.sql.indexOf("CREATE TYPE app.subscription")).toBeLessThan(
-      result.sql.indexOf("sub app.subscription"),
-    );
+    expect(result.sql.indexOf("CREATE TYPE app.subscription")).toBeLessThan(result.sql.indexOf("sub app.subscription"));
   });
 
   test("only types a compiled function uses are emitted", async () => {
@@ -159,27 +163,118 @@ describe("object types", () => {
     expect(result.composites).toEqual([]);
   });
 
-  test("a nested anonymous shape is reported as nesting, not as anonymity", async () => {
-    // The outer type is named, so complaining about a missing name sends the
-    // reader looking in the wrong place.
-    const result = await compileFixture("nestedAnonymous.ts");
-    const error = result.errors[0]!;
-    expect(error.message).toContain("`Nested.foo` is itself an object");
-    expect(error.message).not.toContain("Anonymous object types");
-    // And it points at the field, not at the parameter that referenced it.
-    expect(error.line).toBe(3);
-    expect(error.format()).toContain("foo: { bar: string };");
-  });
-
   rejects([
     ["anonymousObject.ts", "Anonymous object types are not supported"],
     ["optionalProperty.ts", "`Account.note` is optional"],
-    ["nestedObject.ts", "Nested composite types are not supported"],
-    ["nestedAnonymous.ts", "Nested composite types are not supported"],
     ["objectEquality.ts", "Objects compare by identity in TypeScript"],
-    ["compositeReturn.ts", "Returning an object is not supported"],
     ["indexSignature.ts", "`Bag` has an index signature"],
     ["collisionTypes.ts", "already used by `PlanInfo`"],
+  ]);
+});
+
+describe("nested object types", () => {
+  test("an anonymous nested shape flattens to a prefixed column", async () => {
+    // The inner shape needs no name of its own: only the column does.
+    const result = await compileFixture("nestedAnonymous.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.composites[0]!.fields).toEqual([
+      { path: ["foo", "bar"], sqlName: "foo_bar", type: { kind: "scalar", sql: "text", nullable: false } },
+    ]);
+    expect(result.sql).toContain("foo_bar text");
+    expect(result.sql).toContain("RETURN (nested).foo_bar;");
+  });
+
+  test("a named nested type flattens the same way", async () => {
+    const result = await compileFixture("nestedObject.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    // One flat type, not one per level — and no app.inner.
+    expect(result.composites.map((c) => c.sqlName)).toEqual(["outer"]);
+    expect(result.composites[0]!.fields.map((f) => f.sqlName)).toEqual(["label", "inner_count"]);
+    expect(result.sql).toContain("inner_count double precision");
+    expect(result.sql).toContain("(outer).inner_count > 10");
+  });
+
+  test("the rules project flattens the nested shape", async () => {
+    const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
+    expect(result.sql).toContain("CREATE TYPE app.nested AS (");
+    expect(result.sql).toContain("foo_bar text");
+    // The rule rebuilds the shape with a spread rather than mutating it.
+    expect(result.sql).toContain("_nested := ROW('some')::app.nested;");
+    expect(result.sql).toContain("RETURN _nested;");
+  });
+
+  test("mutating a field explains the by-value divergence, not `const`", async () => {
+    // The same assignment is legal PL/pgSQL, but on a copy: TypeScript's
+    // mutation is visible to the caller and SQL's is not.
+    const result = await compileFixture("mutateField.ts");
+    const error = result.errors[0]!;
+    expect(error.message).toContain("mutates the caller's object in TypeScript");
+    expect(error.message).toContain("passes a composite by value");
+    expect(error.message).not.toContain("computes values with `const`");
+    // And it names the construct that replaces it.
+    expect(error.message).toContain("{ ...nested, field: x }");
+    expect(error.format()).toContain('nested.foo.bar = "some";');
+  });
+
+  rejects([
+    ["mutateField.ts", "the caller would never see the change"],
+    // A group of columns cannot be referenced as a value once flattened.
+    ["partialPath.ts", "`outer.foo` is a nested shape, not a value. Reference a leaf instead: `outer.foo.bar`"],
+    ["nullableNested.ts", "is an object that may be absent"],
+    ["recursiveShape.ts", "makes the shape recursive"],
+    ["deepNesting.ts", "nests more than 4 levels deep"],
+    // `{ foo: { bar } }` and `{ fooBar }` would both want the column foo_bar.
+    ["flattenCollision.ts", "both flatten to the column `foo_bar`"],
+    // PostgreSQL truncates past 63 bytes silently, which could collide.
+    ["longFieldName.ts", "longer than PostgreSQL's 63-byte identifier limit"],
+  ]);
+});
+
+describe("object literals and spread", () => {
+  test("a spread rebuild compiles where mutation does not", async () => {
+    const result = await compileFixture("spreadUpdate.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    // The nested spread supplies foo_bar, then `bar: "some"` overrides it.
+    expect(result.sql).toContain("next := ROW('some')::app.mutable;");
+    expect(result.sql).toContain("RETURN (next).foo_bar;");
+  });
+
+  test("a function can return a composite built from a spread", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURNS app.seat");
+    // One ROW argument per flattened field, in field order.
+    expect(result.sql).toContain("RETURN ROW((seat).plan, (seat).count + 1)::app.seat;");
+  });
+
+  test("a field can be read off a call that returns a composite", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.sql).toContain("RETURN (app.grant_seat(seat)).count;");
+  });
+
+  test("a composite can be returned unchanged", async () => {
+    const result = await compileFixture("compositeReturn.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURNS app.plan");
+    expect(result.sql).toContain("RETURN plan;");
+  });
+
+  test("the composite type a return value needs is emitted", async () => {
+    const result = await compileFixture("spreadReturn.ts");
+    expect(result.composites.map((c) => c.sqlName)).toEqual(["seat"]);
+  });
+
+  test("a nested group can be passed by spreading it into a literal", async () => {
+    // `barOf(outer.foo)` is still rejected — the group has no column — but
+    // `barOf({ ...outer.foo })` rebuilds it, which does.
+    const result = await compileFixture("groupSpread.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain("RETURN app.bar_of(ROW((outer).foo_bar)::app.inner);");
+  });
+
+  rejects([
+    // ROW() has to be cast to a named type, so the literal needs a target.
+    ["unannotatedLiteral.ts", "needs a named target type"],
   ]);
 });
 

@@ -1,14 +1,37 @@
 {
-  "generatedBy": "ts-to-plpgsql",
+  "generatedBy": "tsql",
   "schema": "app",
   "types": [
+    {
+      "kind": "composite",
+      "tsName": "Nested",
+      "sqlName": "nested",
+      "fields": [
+        {
+          "path": [
+            "foo",
+            "bar"
+          ],
+          "sqlName": "foo_bar",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false
+          }
+        }
+      ],
+      "nullable": false,
+      "module": "rules/todo.ts"
+    },
     {
       "kind": "composite",
       "tsName": "Subscription",
       "sqlName": "subscription",
       "fields": [
         {
-          "tsName": "plan",
+          "path": [
+            "plan"
+          ],
           "sqlName": "plan",
           "type": {
             "kind": "scalar",
@@ -206,7 +229,9 @@
             "sqlName": "subscription",
             "fields": [
               {
-                "tsName": "plan",
+                "path": [
+                  "plan"
+                ],
                 "sqlName": "plan",
                 "type": {
                   "kind": "scalar",
@@ -238,6 +263,59 @@
         "kind": "scalar",
         "sql": "boolean",
         "nullable": false
+      }
+    },
+    {
+      "tsName": "someNestedAssignment",
+      "sqlName": "some_nested_assignment",
+      "module": "rules/todo.ts",
+      "params": [
+        {
+          "tsName": "nested",
+          "sqlName": "nested",
+          "type": {
+            "kind": "composite",
+            "tsName": "Nested",
+            "sqlName": "nested",
+            "fields": [
+              {
+                "path": [
+                  "foo",
+                  "bar"
+                ],
+                "sqlName": "foo_bar",
+                "type": {
+                  "kind": "scalar",
+                  "sql": "text",
+                  "nullable": false
+                }
+              }
+            ],
+            "nullable": false,
+            "module": "rules/todo.ts"
+          }
+        }
+      ],
+      "returns": {
+        "kind": "composite",
+        "tsName": "Nested",
+        "sqlName": "nested",
+        "fields": [
+          {
+            "path": [
+              "foo",
+              "bar"
+            ],
+            "sqlName": "foo_bar",
+            "type": {
+              "kind": "scalar",
+              "sql": "text",
+              "nullable": false
+            }
+          }
+        ],
+        "nullable": false,
+        "module": "rules/todo.ts"
       }
     }
   ]
