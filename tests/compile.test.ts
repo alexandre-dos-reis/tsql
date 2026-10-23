@@ -62,6 +62,37 @@ $$;`,
     expect(fn.params.map((p) => (p.type.kind === "scalar" ? p.type.sql : p.type.sqlName))).toEqual(["text", "integer"]);
   });
 
+  test("naming files narrows the build to those rules", async () => {
+    const result = await compileProject({
+      tsconfig: "rules/tsconfig.json",
+      files: ["rules/billing.ts"],
+      emit: { schema: "app" },
+    });
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
+      "is_eligible_for_trial",
+      "price_cents",
+      "remaining_todos",
+      "todo_limit",
+    ]);
+  });
+
+  test("naming a file the project does not hold is an error, not an empty build", async () => {
+    // Reporting success having translated nothing is the quiet wrongness this
+    // compiler exists to refuse, so a misspelled path has to say so.
+    const failure = await compileProject({
+      tsconfig: "rules/tsconfig.json",
+      files: ["rules/nope.ts"],
+      emit: { schema: "app" },
+    }).then(
+      () => undefined,
+      (error: Error) => error,
+    );
+    expect(failure?.message).toContain("`rules/nope.ts` is not a rule file in rules/tsconfig.json");
+    // The message names what the project does hold, so the fix is visible.
+    expect(failure?.message).toContain("rules/billing.ts");
+  });
+
   test("an identically named local alias is not mistaken for the real Integer", async () => {
     // Provenance is the package the declaration belongs to, so a rules file
     // with its own `type Integer = number` gets `number`'s mapping. Were this

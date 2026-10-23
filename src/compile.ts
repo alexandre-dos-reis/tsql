@@ -11,6 +11,15 @@ export interface CompileOptions {
   readonly tsconfig: string;
   /** Restrict compilation to specific files (used by tests). */
   readonly include?: (fileName: string) => boolean;
+  /**
+   * Restrict compilation to these files, named by the caller.
+   *
+   * Unlike `include`, every path here must turn out to be a file the project
+   * actually holds. A name that matches nothing is an error rather than an
+   * empty build: silently compiling no rules because a path was misspelled is
+   * the sort of quiet wrongness this compiler exists to refuse.
+   */
+  readonly files?: readonly string[];
   readonly emit?: EmitOptions;
 }
 
@@ -70,7 +79,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
     }
 
     const ctx = { project, checker: project.checker, composites };
-    const files = await rulesFiles(project, projectRoot, options.include);
+    const files = await rulesFiles(project, projectRoot, options);
 
     // Pass 1: every signature, so call checking does not depend on file order.
     const signatures = new Map<string, SignatureIR>();
@@ -165,12 +174,16 @@ function usedComposites(
 async function rulesFiles(
   project: Awaited<ReturnType<typeof openProject>>["project"],
   projectRoot: string,
-  include?: (fileName: string) => boolean,
+  options: CompileOptions,
 ): Promise<SourceFile[]> {
-  const names = (await project.program.getSourceFileNames())
+  const inProject = (await project.program.getSourceFileNames())
     .filter((name) => !name.endsWith(".d.ts") && !name.includes("node_modules"))
-    .filter((name) => resolve(name).startsWith(`${projectRoot}/`))
-    .filter((name) => include?.(name) ?? true)
+    .filter((name) => resolve(name).startsWith(`${projectRoot}/`));
+
+  const requested = selected(inProject, options);
+  const names = inProject
+    .filter((name) => requested?.has(resolve(name)) ?? true)
+    .filter((name) => options.include?.(name) ?? true)
     .sort();
 
   const files: SourceFile[] = [];
@@ -179,6 +192,37 @@ async function rulesFiles(
     if (file) files.push(file);
   }
   return files;
+}
+
+/**
+ * The named files, checked against what the project holds.
+ *
+ * `undefined` means "no selection, compile everything". A name that is not one
+ * of the project's own rule files is rejected here, where the reason can still
+ * be explained — the alternative is a build that reports success having
+ * translated nothing.
+ */
+function selected(inProject: readonly string[], options: CompileOptions): Set<string> | undefined {
+  if (!options.files || options.files.length === 0) return undefined;
+
+  const available = new Set(inProject.map((name) => resolve(name)));
+  const wanted = new Set<string>();
+  for (const file of options.files) {
+    const path = resolve(file);
+    if (!available.has(path)) {
+      const where = relative(process.cwd(), path);
+      const known = [...available]
+        .map((name) => `  ${relative(process.cwd(), name)}`)
+        .sort()
+        .join("\n");
+      throw new Error(
+        `\`${where}\` is not a rule file in ${relative(process.cwd(), options.tsconfig)}.\n\n` +
+          `The project holds:\n\n${known}\n`,
+      );
+    }
+    wanted.add(path);
+  }
+  return wanted;
 }
 
 function* exportedFunctions(file: SourceFile): Generator<FunctionDeclaration> {

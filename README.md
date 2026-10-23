@@ -25,9 +25,12 @@ export function todoLimit(plan: "free" | "pro", count: Integer): Integer {
 ```
 
 ```
-tsql check     # type check + translate, write nothing
-tsql compile   # write generated/0001_rules.sql and generated/manifest.json
+tsql check                     # type check + translate, write nothing
+tsql compile                   # write generated/0001_rules.sql and generated/manifest.json
+tsql check rules/billing.ts    # narrow to one file while iterating
 ```
+
+Naming files narrows the build to those rules. A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing.
 
 `tsql --help` lists `--project`, `--out`, `--manifest`, `--schema` and `--no-comments`. Both commands exit non-zero on a rejection, so `tsql check` belongs in CI next to the type checker.
 

@@ -6,8 +6,11 @@ import { compileProject, formatResult } from "./compile.ts";
 const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 
 Usage:
-  tsql compile [options]   Type check, translate and write SQL
-  tsql check   [options]   Type check and translate, writing nothing
+  tsql compile [options] [files...]   Type check, translate and write SQL
+  tsql check   [options] [files...]   Type check and translate, writing nothing
+
+Named files narrow the build to those rules; with none, the whole project
+compiles. A file the project does not hold is an error, not an empty build.
 
 Options:
   --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
@@ -40,6 +43,7 @@ if (values.help || !["compile", "check"].includes(command)) {
 // tsconfig — is a message to the user, not a stack trace through bundled code.
 const result = await compileProject({
   tsconfig: values.project,
+  files: positionals.slice(1),
   emit: { schema: values.schema, comments: !values["no-comments"] },
 }).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));

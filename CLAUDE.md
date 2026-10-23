@@ -31,7 +31,11 @@ bun run format                  # oxfmt (format:check in CI)
 bun run build:packages          # per-platform binaries + their npm packages, into dist/
 ```
 
-`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`.
+`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, plus file
+positionals that narrow the build. Narrowing is validated in `compile.ts#selected`: a named file that
+is not one of the project's rule files throws, listing what the project holds, because reporting
+success having translated nothing is the same class of quiet wrongness the translator refuses.
+`CompileOptions.include` is the unvalidated predicate form, used by the tests.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
 `typecheck` script, never the compiler API the translator depends on. The `check` script shadows the
