@@ -63,7 +63,7 @@ describe("the native compiler is locatable", () => {
   });
 
   test("an executable is found, with its library files beside it", async () => {
-    const exe = findTscPath({ near: "examples/rules/tsconfig.json" });
+    const exe = findTscPath({ near: "examples/tsconfig.json" });
     expect(exe).toBeDefined();
     // Both halves matter: handed an executable whose lib.*.d.ts are missing,
     // the native compiler hangs rather than reporting anything.

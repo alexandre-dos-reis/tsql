@@ -6,14 +6,14 @@ import { checkParity, type RowQuery } from "../src/parity.ts";
 
 const SCHEMA = "app";
 
-const result = await compileProject({ tsconfig: "examples/rules/tsconfig.json", emit: { schema: SCHEMA } });
+const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: SCHEMA } });
 
 // Parity needs SQL to compare against, so a rules project that does not compile
 // is reported as one failing test carrying the compiler's own message — rather
 // than a module-scope throw, which buries the real error under cascading
-// failures in every other test that reads examples/rules/.
+// failures in every other test that reads examples/.
 if (!result.ok) {
-  test("examples/rules/ must compile before parity can run", () => {
+  test("examples/ must compile before parity can run", () => {
     expect(formatResult(result)).toBe("");
   });
 } else {
@@ -37,7 +37,7 @@ if (!result.ok) {
   });
 
   // One generated test per compiled function. The list comes from the manifest,
-  // so adding a rule under examples/rules/ adds a parity test with no edit here.
+  // so adding a rule under examples/ adds a parity test with no edit here.
   for (const fn of result.manifest.functions) {
     test(`${fn.tsName}() === ${SCHEMA}.${fn.sqlName}()`, async () => {
       const module = (await import(resolve(fn.module))) as Record<string, (...args: never[]) => unknown>;
@@ -60,7 +60,7 @@ END; $$;`);
     const subject = {
       tsName: "todoLimit",
       sqlName: "wrong_limit",
-      module: "examples/rules/billing.ts",
+      module: "examples/billing.ts",
       params: [
         {
           tsName: "plan",
@@ -70,7 +70,7 @@ END; $$;`);
       ],
       returns: { kind: "scalar" as const, sql: "integer" as const, nullable: false },
     };
-    const { todoLimit } = await import(resolve("examples/rules/billing.ts"));
+    const { todoLimit } = await import(resolve("examples/billing.ts"));
 
     const failure = await checkParity(subject, todoLimit, query, SCHEMA).then(
       () => undefined,
@@ -103,7 +103,7 @@ END; $$;`);
 }
 
 // Composite returns and the argument-mutation check are exercised against a
-// fixture rather than examples/rules/, so this coverage holds even while examples/rules/ is
+// fixture rather than examples/, so this coverage holds even while examples/ is
 // mid-edit.
 const fixture = await compileProject({
   tsconfig: "tests/fixtures/tsconfig.json",

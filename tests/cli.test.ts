@@ -3,14 +3,17 @@ import { describe, expect, test } from "bun:test";
 /**
  * The CLI's own contract, which the library tests cannot see: which
  * invocations are refused, and what the exit code is. Only `check` is used —
- * `compile` writes, and a test suite has no business rewriting `generated/`.
+ * `compile` writes, and a test suite has no business rewriting the example
+ * output that is checked in.
  */
+
 /**
  * The CLI defaults to `rules/tsconfig.json`, which describes a consuming
- * project rather than this repo — the demo rules live under `examples/`.
+ * project rather than this repo — the demo rules live in `examples/`.
  */
-const PROJECT = ["--project", "examples/rules/tsconfig.json"];
+const PROJECT = ["--project", "examples/tsconfig.json"];
 
+/** Run the CLI as a user would, and capture both streams and the exit code. */
 async function run(args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, "src/cli.ts", ...args], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
@@ -36,7 +39,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   });
 
   test("an unknown command shows usage and fails", async () => {
-    const { stdout, exitCode } = await run(["frobnicate", "examples/rules/billing.ts"]);
+    const { stdout, exitCode } = await run(["frobnicate", "examples/billing.ts"]);
     expect(exitCode).toBe(1);
     expect(stdout).toContain("Usage:");
   });
@@ -50,17 +53,17 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
 
 describe("the CLI compiles the files it is given", () => {
   test("named files succeed and report only their own rules", async () => {
-    const { stdout, exitCode } = await run(["check", "examples/rules/billing.ts", ...PROJECT]);
+    const { stdout, exitCode } = await run(["check", "examples/billing.ts", ...PROJECT]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
     expect(stdout).not.toContain("can_create_todo");
   });
 
   test("a file the project does not hold fails with advice, not a stack trace", async () => {
-    const { stderr, exitCode } = await run(["check", "examples/rules/nope.ts", ...PROJECT]);
+    const { stderr, exitCode } = await run(["check", "examples/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in examples/rules/tsconfig.json");
-    expect(stderr).toContain("examples/rules/billing.ts");
+    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
+    expect(stderr).toContain("examples/billing.ts");
     expect(stderr).not.toContain("at <anonymous>");
   });
 });

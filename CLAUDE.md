@@ -21,8 +21,8 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 ## Commands
 
 ```
-bun run check                   # type check + translate, write nothing
-bun run compile                 # write examples/*.sql + manifest from examples/rules/
+bun run ex:check                # type check + translate the examples, write nothing
+bun run ex:compile              # write examples/0001_rules.sql + manifest from examples/*.ts
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
@@ -36,7 +36,7 @@ file positionals** — no files prints usage and exits 1. There is deliberately 
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a
 subset writes a migration holding only that subset, which is why the repo's own scripts pass
-`examples/rules/*.ts` rather than a single file.
+`examples/*.ts` rather than a single file.
 
 Narrowing is validated in `compile.ts#selected`: a named file that is not one of the project's rule
 files throws, listing what the project holds, because reporting success having translated nothing is
@@ -48,11 +48,12 @@ The CLI's `--project` default (`rules/tsconfig.json`) and `--out`/`--manifest` d
 pass paths explicitly.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
-`typecheck` script, never the compiler API the translator depends on. The `check` script shadows the
-built-in subcommand, hence `--no-script` in `typecheck`.
+`typecheck` script, never the compiler API the translator depends on. A script named `check` would
+shadow the built-in subcommand, which is part of why the example scripts are `ex:check`/`ex:compile`;
+`--no-script` stays in `typecheck` so the built-in wins even if a `check` script reappears.
 
-After any change that alters generated SQL, re-run `bun run compile` and commit the result:
-`examples/0001_rules.sql` and `examples/manifest.json`, which sit beside the `examples/rules/` they
+After any change that alters generated SQL, re-run `bun run ex:compile` and commit the result:
+`examples/0001_rules.sql` and `examples/manifest.json`, which sit beside the `examples/*.ts` they
 are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
 `examples/manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
 compile, forever.
@@ -179,7 +180,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 ## Three tsconfigs, deliberately
 
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`.
-- `examples/rules/tsconfig.json` — the demo **input**, `types: []`. This is load-bearing: `process`, `Bun`
+- `examples/tsconfig.json` — the demo **input**, `types: []`. This is load-bearing: `process`, `Bun`
   and `require` become *type errors* before the translator ever runs, so one class of rejection costs
   no compiler code.
 - `tests/fixtures/tsconfig.json` — fixtures are valid TypeScript that falls outside the subset, so
@@ -197,7 +198,7 @@ raises on drift. The compiler creates types; it never rewrites them.
   installed layout, that the native executable is locatable with its library files, and that the
   platform list, `optionalDependencies` and the launcher agree.
 - `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
-  generates one test per manifest function — so **adding a rule under `examples/rules/` adds a parity test with
+  generates one test per manifest function — so **adding a rule under `examples/` adds a parity test with
   no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
   PostgreSQL type, 200 inputs per function; composite returns are compared field by field via
   `(fn(...)).*`; arguments are snapshotted before the TypeScript call and compared after, so a mutating

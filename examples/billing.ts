@@ -1,4 +1,4 @@
-import type { Float, Integer } from "../../src/pgtypes";
+import type { Float, Integer } from "../src/pgtypes";
 
 export type Plan = "free" | "pro" | "enterprise";
 
