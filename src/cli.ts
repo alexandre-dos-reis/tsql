@@ -6,8 +6,8 @@ import { compileProject, formatResult } from "./compile.ts";
 const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 
 Usage:
-  bun run src/cli.ts compile [options]   Type check, translate and write SQL
-  bun run src/cli.ts check   [options]   Type check and translate, writing nothing
+  tsql compile [options]   Type check, translate and write SQL
+  tsql check   [options]   Type check and translate, writing nothing
 
 Options:
   --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
