@@ -26,9 +26,8 @@ bun run ex:compile              # write examples/output.sql + manifest from exam
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
-bun run typecheck               # bun check over src+tests+scripts, and over the rules project
+bun run typecheck               # bun check over src+tests, and over the examples project
 bun run format                  # oxfmt (format:check in CI)
-bun run build:packages          # per-platform binaries + their npm packages, into dist/
 ```
 
 `src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, and **requires
@@ -72,11 +71,12 @@ Never switch to `typescript/unstable/sync`: it reads `stdout._handle.fd` off the
 process, which Bun does not expose, so it throws on construction. `src/program.ts` is the only file
 that touches the API surface directly.
 
-The API drives a **separate 23 MB native executable**, and `src/tscPath.ts` is what finds it, passed
-as `tsserverPath`. Do not drop that and let `typescript` resolve its own binary: `getExePath()` reads
-`../package.json` relative to its module URL, which inside a `bun build --compile` binary is
-`/$bunfs/root/…`, so it dies with ENOENT before anything is translated. Two properties of that
-resolver are load-bearing:
+The API drives a **separate 23 MB native executable**, which comes from the consumer's own
+`typescript` install, and `src/tscPath.ts` finds it and passes it as `tsserverPath`. Letting the
+`typescript` package resolve its own binary works only when that package can see itself from its own
+module URL — it could not inside the compiled binary that used to be shipped, and explicit resolution
+is still the right call now that the executable belongs to the consumer rather than to us. Two
+properties of that resolver are load-bearing:
 
 - It requires `lib.es5.d.ts` beside the executable. Handed an executable without its library files,
   the native compiler **hangs** rather than erroring — a missing-file message is much better.
@@ -116,39 +116,31 @@ dumb?"
 
 ## Publishing
 
-`@adr/tsql` is a launcher (`bin/tsql.mjs`, plain Node-compatible JS because npm puts it on PATH)
-with `optionalDependencies` on one `@adr/tsql-<platform>` package per platform, each gated by
-`os`/`cpu`. `src/targets.ts` is the single platform list; `tests/packaging.test.ts` asserts the
-`optionalDependencies`, the launcher's own mapping and that list all agree, because a target added
-to one and not the others ships a release with no binary for someone.
-
-- `exports` points at `src/*.ts` — Bun runs TS directly and TypeScript resolves `.ts` as its own
-  types, so there is no build step and no emitted-declaration drift. The cost is that library
-  consumers need Bun.
-- `typescript` is a real `dependency`. The binary bundles its JavaScript but not the native
-  executable, and depending on the package lets npm resolve the right platform build.
-- No `--bytecode` in the build: it needs a CommonJS entry and `src/cli.ts` has top-level `await`.
-- Platform packages must be published **before** the launcher, or its optional deps will not resolve.
-
-### Releasing, via changesets
+The package is **sources only** — `bin/tsql.mjs` plus `src/`, 45 kB, no build output. Releases go
+through changesets:
 
 ```
 bun run changeset   # describe a change (interactive — needs a TTY)
-bun run version     # changeset version, then sync the pins, then the lockfile
-bun run release     # build binaries, publish platform packages, then changeset publish
+bun run version     # bump and write CHANGELOG.md
+bun run release     # changeset publish
 ```
 
-Changesets manages the launcher only: **the platform packages are build artifacts, not workspace
-members**, so nothing in `.changeset/` knows they exist. Two scripts close that gap.
-
-- `scripts/syncVersion.ts` regenerates `optionalDependencies` from `src/targets.ts` after
-  `changeset version`. The pins must equal the launcher version exactly — npm would otherwise pair a
-  launcher with a binary from a different release — and `changeset version` has no reason to touch
-  them. It generates the block rather than patching it, so adding a target to `src/targets.ts` is
-  enough; `tests/packaging.test.ts` then catches any hand-editing that drifts back out of step.
-- `scripts/publishBinaries.ts` publishes `dist/tsql-*` and treats an existing version as success, so
-  a release that failed halfway can be re-run. It **refuses to publish while changesets are pending**,
-  since that would spend the current version number on a build the changelog does not describe.
+- **No compiled binary, deliberately.** `bun build --compile` was implemented and then removed. The
+  embedded Bun runtime is the whole weight — a `console.log("hi")` binary is 104 MB and this compiler
+  adds 0.5 MB to it; `strip` is a no-op because the runtime ships stripped. Five platforms cost
+  231 MB per release, permanently, to solve a problem (no JavaScript runtime present) that nobody
+  installing from npm has. Do not reintroduce it for npm; a GitHub Release artifact is the right home
+  if a standalone download is ever wanted.
+- **`typescript` is a `peerDependency` (`~7.0.2`), never a dependency.** The checker must be the one
+  that agrees with the consumer's own code; a copy resolved under this package would be a different
+  one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
+  `unstable/` subpaths may move between 7.x minors. The package therefore has *no* runtime
+  dependencies, which `tests/packaging.test.ts` asserts.
+- **`exports` points at `src/*.ts`.** Bun runs TS directly and TypeScript resolves `.ts` as its own
+  types, so there is no build step and no emitted-declaration drift. The cost is that Bun has to be
+  installed; `bin/tsql.mjs` is plain Node-compatible JavaScript precisely so it can start and say so.
+- **`bin/tsql.mjs` must stay Node-compatible.** npm puts it on PATH. If it needed Bun to run, it
+  could not report that Bun is missing.
 
 The changesets CLI is a Node tool, which is why `devenv.nix` pins `nodejs_24` alongside Bun. Its
 non-interactive subcommands (`status`, `version`, `publish`) run fine under `bun run`; only
@@ -219,8 +211,8 @@ raises on drift. The compiler creates types; it never rewrites them.
   visible to the library tests. It only ever runs `check` — `compile` writes, and a test suite has no
   business rewriting the emitted example output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
-  installed layout, that the native executable is locatable with its library files, and that the
-  platform list, `optionalDependencies` and the launcher agree.
+  installed layout, that the native executable is locatable with its library files, that the package
+  has no runtime dependencies, and that the launcher stays Node-compatible.
 - `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
   generates one test per manifest function — so **adding a rule under `examples/` adds a parity test with
   no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
