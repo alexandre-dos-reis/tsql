@@ -1,21 +1,73 @@
 {
-  "name": "tsql",
-  "version": "0.0.1",
-  "private": true,
+  "name": "@adr/tsql",
+  "version": "0.1.0",
+  "description": "Compiles a restricted subset of TypeScript business rules to PL/pgSQL, refusing anything whose semantics it cannot preserve",
+  "keywords": [
+    "bun",
+    "business-rules",
+    "compiler",
+    "parity-testing",
+    "plpgsql",
+    "postgresql",
+    "sql",
+    "typescript"
+  ],
+  "homepage": "https://github.com/alexandre-dos-reis/ts-to-plpgsql#readme",
+  "bugs": {
+    "url": "https://github.com/alexandre-dos-reis/ts-to-plpgsql/issues"
+  },
+  "license": "MIT",
+  "author": "Alexandre Dos Reis",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexandre-dos-reis/ts-to-plpgsql.git"
+  },
+  "bin": {
+    "tsql": "bin/tsql.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./pgtypes": "./src/pgtypes.ts",
+    "./parity": "./src/parity.ts",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "postinstall": "ln -sf tsc node_modules/.bin/tsgo",
     "compile": "bun run src/cli.ts compile",
     "check": "bun run src/cli.ts check",
     "test": "bun test",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
-    "typecheck": "tsc -p tsconfig.json && tsc -p rules/tsconfig.json"
+    "typecheck": "bun check --no-script && bun check --no-script -p rules/tsconfig.json",
+    "build:binary": "bun run scripts/buildBinaries.ts",
+    "build:packages": "bun run scripts/buildBinaries.ts --packages",
+    "prepublishOnly": "bun run typecheck && bun test"
+  },
+  "dependencies": {
+    "typescript": "7.0.2"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.11",
     "@types/bun": "^1.4.2",
-    "fast-check": "4.10.2",
-    "typescript": "7.0.2"
+    "fast-check": "4.10.2"
+  },
+  "optionalDependencies": {
+    "@adr/tsql-darwin-arm64": "0.1.0",
+    "@adr/tsql-darwin-x64": "0.1.0",
+    "@adr/tsql-linux-arm64": "0.1.0",
+    "@adr/tsql-linux-x64": "0.1.0",
+    "@adr/tsql-windows-x64": "0.1.0"
+  },
+  "engines": {
+    "bun": ">=1.4.4"
   }
 }

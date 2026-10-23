@@ -62,6 +62,18 @@ $$;`,
     expect(fn.params.map((p) => (p.type.kind === "scalar" ? p.type.sql : p.type.sqlName))).toEqual(["text", "integer"]);
   });
 
+  test("an identically named local alias is not mistaken for the real Integer", async () => {
+    // Provenance is the package the declaration belongs to, so a rules file
+    // with its own `type Integer = number` gets `number`'s mapping. Were this
+    // to resolve by name, the generated column would silently be `integer`.
+    const result = await compileFixture("localIntegerAlias.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.ok).toBe(true);
+    const fn = result.functions.find((f) => f.tsName === "shippingCents")!;
+    expect(fn.params[0]!.type).toMatchObject({ sql: "double precision" });
+    expect(fn.returns).toMatchObject({ sql: "double precision" });
+  });
+
   test("keeps the values of a string-literal union for the reader", async () => {
     const result = await compileProject({ tsconfig: "rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "todoLimit")!;

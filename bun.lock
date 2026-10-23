@@ -4,11 +4,20 @@
   "workspaces": {
     "": {
       "name": "ts-to-plpgsql",
+      "dependencies": {
+        "typescript": "7.0.2",
+      },
       "devDependencies": {
         "@electric-sql/pglite": "0.5.11",
         "@types/bun": "^1.4.2",
         "fast-check": "4.10.2",
-        "typescript": "7.0.2",
+      },
+      "optionalDependencies": {
+        "@adr/tsql-darwin-arm64": "0.1.0",
+        "@adr/tsql-darwin-x64": "0.1.0",
+        "@adr/tsql-linux-arm64": "0.1.0",
+        "@adr/tsql-linux-x64": "0.1.0",
+        "@adr/tsql-windows-x64": "0.1.0",
       },
     },
   },

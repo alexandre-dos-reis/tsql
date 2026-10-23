@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Path } from "typescript/unstable/ast";
 import type { Project } from "typescript/unstable/async";
 
@@ -17,6 +19,49 @@ export async function originOfPath(path: Path, project: Project): Promise<Origin
   if (metadata.isDefaultLibrary) return "default-library";
   if (metadata.isFromExternalLibrary) return "external-library";
   return "project";
+}
+
+/**
+ * Does `path` belong to the npm package `packageName`?
+ *
+ * Answered by walking up to the nearest `package.json` and reading its name,
+ * rather than by matching the path. tsql's own authoring vocabulary has to be
+ * recognised both in this repo (`src/pgtypes.ts` beside the compiler) and once
+ * installed (`node_modules/<pkg>/src/pgtypes.ts`), and a suffix match that
+ * covered both would also trust a *consumer's* `src/pgtypes.ts` — letting a
+ * local `type Integer = Date` masquerade as PostgreSQL's `integer`, which is
+ * the confusion this check exists to prevent.
+ */
+export function isFromPackage(path: string, packageName: string): boolean {
+  let dir = dirname(resolve(path));
+  for (;;) {
+    const cached = ownership.get(dir);
+    if (cached !== undefined) return cached === packageName;
+
+    const manifest = join(dir, "package.json");
+    if (existsSync(manifest)) {
+      const name = readName(manifest);
+      ownership.set(dir, name);
+      return name === packageName;
+    }
+
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+/** Directory -> the name of the package that owns it, or `null` if unreadable. */
+const ownership = new Map<string, string | null>();
+
+function readName(manifest: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(manifest, "utf8"));
+    const name = (parsed as { name?: unknown }).name;
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 /** `/…/node_modules/fast-check/lib/x.d.ts` -> `fast-check`. */

@@ -2,6 +2,35 @@
 
 `tsql` compiles a small, deliberately restricted subset of TypeScript business rules to PL/pgSQL. It refuses anything whose semantics it cannot preserve, and proves the two implementations agree with generated parity tests.
 
+## Install
+
+```
+bun add -d @adr/tsql        # or npm i -D @adr/tsql
+```
+
+The compiler ships as a prebuilt binary, one npm package per platform (`linux`/`darwin` × `x64`/`arm64`, plus `windows-x64`), selected by npm's `os`/`cpu` fields so an install pulls only the one it can run. Where there is no binary, the launcher runs the TypeScript sources under Bun instead.
+
+Write rules, annotating anything whose PostgreSQL precision matters:
+
+```ts
+// rules/billing.ts
+import type { Integer } from "@adr/tsql/pgtypes";
+
+export function todoLimit(plan: "free" | "pro", count: Integer): Integer {
+  if (plan === "free") {
+    return 3;
+  }
+  return count * 2;
+}
+```
+
+```
+tsql check     # type check + translate, write nothing
+tsql compile   # write generated/0001_rules.sql and generated/manifest.json
+```
+
+`tsql --help` lists `--project`, `--out`, `--manifest`, `--schema` and `--no-comments`. Both commands exit non-zero on a rejection, so `tsql check` belongs in CI next to the type checker.
+
 ## Goal
 
 The goal is to transform typescript function into plpgsql language. 
@@ -176,30 +205,37 @@ This gives developers a familiar authoring experience without promising that eve
 
 ## Toolchain
 
-Verified working on this machine, 2026-10-22:
+Verified working on this machine, 2026-10-23:
 
 | Tool | Version | Role |
 | --- | --- | --- |
-| Bun | 1.4.2 | runtime, package manager, test runner |
-| TypeScript | 7.0.2 (pinned) | type checking, and the compiler API the translator reads |
+| Bun | 1.4.4 | runtime, package manager, test runner, type checker, and the binary's runtime |
+| TypeScript | 7.0.2 (pinned) | the compiler API the translator reads, and the native checker it drives |
 | PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
 | fast-check | 4.10.2 | input generation for parity tests |
 
-No runtime dependencies: the compiler is Bun plus the TypeScript API, and the emitter is string building.
+`devenv.nix` pins Bun, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
 
-Two things worth knowing about TypeScript 7:
+The only runtime dependency is `typescript` — not for its JavaScript, which the binary bundles, but for the 23 MB native executable it drives. The emitter is string building.
+
+Three things worth knowing about TypeScript 7:
 
 - **Use the async API.** `typescript/unstable/sync` reads `stdout._handle.fd` off the spawned compiler process, which Bun does not expose, so it throws on construction. `typescript/unstable/async` speaks the same protocol over ordinary streams and works on Bun and Node alike. The AST is in process — traversal, `getText()` and positions are synchronous — so only checker queries are awaited.
 - **It is `unstable/` on purpose.** The version is pinned exactly (`"typescript": "7.0.2"`, no caret) because these subpaths may move between 7.x minors.
+- **The executable is located by tsql, not by the package.** `typescript` finds its own binary relative to its module URL, which inside a compiled binary is `/$bunfs/root/…` — the lookup dies with ENOENT before anything is translated. The API takes a `tsserverPath` option for exactly this, and `src/tscPath.ts` supplies it.
+
+`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. Note that a project script named `check` shadows the built-in subcommand, which is why `typecheck` passes `--no-script`.
 
 ### Commands
 
 ```
-bun run check       # type check + translate, write nothing
-bun run compile     # write generated/0001_rules.sql and generated/manifest.json
-bun test            # unit tests, rejection tests, and TS-vs-PostgreSQL parity
-bun run typecheck   # tsc over the compiler and over the rules project
-bun run format      # oxfmt (format:check for CI)
+bun run check            # type check + translate, write nothing
+bun run compile          # write generated/0001_rules.sql and generated/manifest.json
+bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
+bun run typecheck        # bun check over the compiler and over the rules project
+bun run format           # oxfmt (format:check for CI)
+bun run build:binary     # compile a binary per platform into dist/
+bun run build:packages   # ...and lay out the npm package around each one
 ```
 
 `.oxfmtrc.json` sets `printWidth` to 120 — measured as the width that reflows this code least — and excludes two things:
@@ -215,16 +251,52 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 rules/              business rules — the compiler's input, its own isolated tsconfig
 src/pgtypes.ts      the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts      TypeScript 7 API wrapper
+src/tscPath.ts      finds the native executable the API drives
 src/typemap.ts      TypeScript types -> PostgreSQL types
 src/references.ts   classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts       where a declaration lives: this project, the standard library, or a package
 src/lower.ts        AST -> IR; every restriction is enforced here
 src/emit.ts         IR -> PL/pgSQL, with precedence-aware parenthesising
 src/parity.ts       parity harness, driven by the emitted manifest
+src/index.ts        the library entry point
+src/targets.ts      the platforms a binary is published for
+bin/tsql.mjs        launcher: picks the platform binary, or falls back to the sources
+scripts/            the release build
 generated/          emitted migration + manifest
 ```
 
 `rules/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
+
+### Publishing
+
+The binary is platform-specific, so the release uses npm's own mechanism for that: `@adr/tsql` is a launcher with `optionalDependencies` on one package per platform, each carrying `os`/`cpu` so only the matching binary installs. A Bun binary is ~105 MB unpacked and ~49 MB on the wire, per platform.
+
+```
+bun run build:packages
+npm publish dist/tsql-linux-x64     # platform packages first, so the
+npm publish dist/tsql-darwin-arm64  # launcher's optional deps resolve
+...
+npm publish                         # then the launcher
+```
+
+`src/targets.ts` is the single list of platforms; a test asserts the `optionalDependencies`, the launcher's own mapping and that list all agree, since a target added to one and not the others ships a release that silently has no binary for someone. `prepublishOnly` runs the type checker and the test suite.
+
+Three decisions worth stating:
+
+- **`typescript` stays an ordinary dependency.** The binary bundles the TypeScript *JavaScript*, but the checker it drives is a separate native executable that cannot be bundled into a JS file. Depending on `typescript` lets npm resolve the right one per platform through its own optional dependencies, instead of tsql maintaining a second platform matrix.
+- **The package ships TypeScript sources, not a build.** Bun runs `.ts` directly and TypeScript resolves `.ts` as its own types, so `exports` points straight at `src/`. That removes a build step and an emitted-declarations drift risk; the cost is that the library entry points need Bun rather than Node.
+- **No `--bytecode`.** It requires a CommonJS entry, and the CLI is a flat script with top-level `await`. The startup it would save is noise next to spawning the native type checker.
+
+### Keeping `Integer` honest once installed
+
+`Integer`, `Numeric` and `Float` are resolved by name, so the compiler has to be sure the name it found is *its* name. That check asks which npm package declared the symbol — walking up to the nearest `package.json` — rather than matching the path:
+
+```ts
+// a consumer's own src/pgtypes.ts
+export type Integer = string;
+```
+
+A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test, since the compiled binary has no package.json of its own to read.
 
 ## What the scaffold compiles today
 

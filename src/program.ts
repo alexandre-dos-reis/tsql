@@ -1,5 +1,6 @@
 import { API, DiagnosticCategory, type Project } from "typescript/unstable/async";
 import { resolve } from "node:path";
+import { describeSearch, findTscPath } from "./tscPath.ts";
 
 /**
  * Thin wrapper over the TypeScript 7 compiler API.
@@ -21,7 +22,14 @@ export interface OpenProject {
 
 export async function openProject(tsconfigPath: string): Promise<OpenProject> {
   const configFileName = resolve(tsconfigPath);
-  const api = new API({ cwd: process.cwd() });
+
+  // The executable is resolved here rather than left to the `typescript`
+  // package, which finds it relative to its own module URL — inside a compiled
+  // binary that URL is `/$bunfs/root/…` and the lookup dies with ENOENT.
+  const tsserverPath = findTscPath({ near: configFileName });
+  if (!tsserverPath) throw new Error(describeSearch({ near: configFileName }));
+
+  const api = new API({ cwd: process.cwd(), tsserverPath });
   const snapshot = await api.updateSnapshot({ openProjects: [configFileName] });
   const project = (await snapshot.getProjects()).find((p) => p.configFileName === configFileName);
   if (!project) {

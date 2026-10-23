@@ -1,2 +1,10 @@
 node_modules/
 *.log
+
+# devenv
+.devenv*
+devenv.local.nix
+.direnv
+
+# build output
+dist/

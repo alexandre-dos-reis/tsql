@@ -32,7 +32,7 @@ import {
   type PgType,
 } from "./ir.ts";
 import { toSnakeCase } from "./names.ts";
-import { originOfPath, packageName } from "./origin.ts";
+import { isFromPackage, originOfPath, packageName } from "./origin.ts";
 import { relativize } from "./program.ts";
 
 export interface TypeCtx {
@@ -56,7 +56,21 @@ const NUMERIC_ALIASES: Record<string, PgScalar> = {
   Float: "double precision",
 };
 
-const PGTYPES_MODULE = "src/pgtypes.ts";
+/**
+ * This package's own name, which is how `Integer`, `Numeric` and `Float` are
+ * told apart from identically named local aliases. Kept in step with
+ * package.json by a test rather than read at runtime, since the compiled
+ * binary has no package.json of its own to read.
+ */
+export const PACKAGE_NAME = "@adr/tsql";
+
+/** `pgtypes.ts` when running from source; the published package may carry `.d.ts`/`.js`. */
+const PGTYPES_FILE = /(^|\/)pgtypes\.(ts|d\.ts|js)$/;
+
+/** Was this declaration written in tsql's own authoring vocabulary? */
+function isPgTypes(path: string): boolean {
+  return PGTYPES_FILE.test(path) && isFromPackage(path, PACKAGE_NAME);
+}
 
 /**
  * Map an explicit TypeScript type annotation to a PostgreSQL type.
@@ -136,7 +150,7 @@ async function resolveNumericAlias(node: TypeReferenceNode, ctx: TypeCtx): Promi
   if (!local) return undefined;
   const declared = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
   const declaredIn = declared.declarations.map((d) => d.path.replaceAll("\\", "/"));
-  if (!declaredIn.some((p) => p.endsWith(PGTYPES_MODULE))) return undefined;
+  if (!declaredIn.some(isPgTypes)) return undefined;
   return scalar;
 }
 

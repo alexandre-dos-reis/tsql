@@ -36,9 +36,14 @@ if (values.help || !["compile", "check"].includes(command)) {
   process.exit(values.help ? 0 : 1);
 }
 
+// A toolchain that cannot be assembled — no native compiler, an unreadable
+// tsconfig — is a message to the user, not a stack trace through bundled code.
 const result = await compileProject({
   tsconfig: values.project,
   emit: { schema: values.schema, comments: !values["no-comments"] },
+}).catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 });
 
 if (!result.ok) {
