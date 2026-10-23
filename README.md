@@ -1,4 +1,6 @@
-# typescript to plpgsql
+# tsql
+
+`tsql` compiles a small, deliberately restricted subset of TypeScript business rules to PL/pgSQL. It refuses anything whose semantics it cannot preserve, and proves the two implementations agree with generated parity tests.
 
 ## Goal
 

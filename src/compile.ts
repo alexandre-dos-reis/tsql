@@ -23,7 +23,7 @@ export interface ManifestFunction {
 }
 
 export interface Manifest {
-  readonly generatedBy: "ts-to-plpgsql";
+  readonly generatedBy: "tsql";
   readonly schema: string | null;
   readonly types: readonly CompositeType[];
   readonly functions: readonly ManifestFunction[];
@@ -118,7 +118,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       composites: used,
       sql: ok ? emitMigration(functions, used, options.emit) : "",
       manifest: {
-        generatedBy: "ts-to-plpgsql",
+        generatedBy: "tsql",
         schema: options.emit?.schema ?? null,
         types: used,
         functions: functions.map((fn) => ({
@@ -138,7 +138,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
 }
 
 function emptyManifest(options: CompileOptions): Manifest {
-  return { generatedBy: "ts-to-plpgsql", schema: options.emit?.schema ?? null, types: [], functions: [] };
+  return { generatedBy: "tsql", schema: options.emit?.schema ?? null, types: [], functions: [] };
 }
 
 /**

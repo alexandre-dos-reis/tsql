@@ -1,5 +1,5 @@
 {
-  "generatedBy": "ts-to-plpgsql",
+  "generatedBy": "tsql",
   "schema": "app",
   "types": [
     {
