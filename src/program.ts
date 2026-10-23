@@ -1,5 +1,7 @@
 import { API, DiagnosticCategory, type Project } from "typescript/unstable/async";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { ProjectNotFoundError } from "./errors.ts";
 import { describeSearch, findTscPath } from "./tscPath.ts";
 
 /**
@@ -22,6 +24,10 @@ export interface OpenProject {
 
 export async function openProject(tsconfigPath: string): Promise<OpenProject> {
   const configFileName = resolve(tsconfigPath);
+
+  // Checked before opening, because the API reports a missing config the same
+  // way it reports a malformed one — as simply having no such project.
+  if (!existsSync(configFileName)) throw new ProjectNotFoundError(configFileName);
 
   // The executable is resolved here rather than left to the `typescript`
   // package, which finds it relative to its own module URL — inside a compiled

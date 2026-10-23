@@ -191,8 +191,8 @@
       "module": "examples/input-1.ts",
       "params": [
         {
-          "tsName": "isPresent",
-          "sqlName": "is_present",
+          "tsName": "string",
+          "sqlName": "string",
           "type": {
             "kind": "scalar",
             "sql": "text",
