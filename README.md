@@ -251,7 +251,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -481,11 +481,12 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | Rejected | Why |
 | --- | --- |
 | `if (name)` | truthiness has no faithful SQL translation — compare explicitly |
-| `let` / `var`, loops | would need mutable state or iteration this subset does not model |
+| `var`, loops | `var` is hoisted and function-scoped; iteration is not part of the subset yet |
 | `switch` without `default` | a `CASE` that matches nothing raises, and PostgreSQL does not enforce a union's values |
 | `switch` fallthrough | a non-empty clause running into the next has no `CASE` equivalent — end it with `break` or `return` |
 | `break` anywhere but the end of a `switch` clause | it would need control flow a `CASE` branch does not model |
-| `n = n + 1` | assignment: values are computed with `const` and returned |
+| reassigning a parameter; an assignment used as a value; `??=`, `\|\|=`, `&&=`, `**=` | copy the parameter into a `let`; assign on a line of its own; write logical assignments out |
+| a fraction assigned to an integer `let` | a `let` takes the type of its initial value; PostgreSQL would round, so annotate it wider |
 | `n + 1;` as a statement | a discarded value has no effect in a pure function |
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |

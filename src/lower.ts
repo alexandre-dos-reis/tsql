@@ -63,6 +63,8 @@ import { mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
 interface Binding {
   readonly sqlName: string;
   readonly type: PgType;
+  /** Only a `let` local can be reassigned; parameters and `const`s cannot. */
+  readonly kind: "param" | "const" | "let";
 }
 
 interface State extends TypeCtx {
@@ -154,7 +156,7 @@ export async function lowerFunction(
   const state: State = {
     ...ctx,
     signatures,
-    scope: new Map(signature.params.map((p) => [p.tsName, { sqlName: p.sqlName, type: p.type }])),
+    scope: new Map(signature.params.map((p) => [p.tsName, { sqlName: p.sqlName, type: p.type, kind: "param" as const }])),
     locals: [],
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
@@ -228,9 +230,12 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
       );
 
     case SyntaxKind.ExpressionStatement: {
+      const expression = (node as ExpressionStatement).expression;
+      const assignment = await lowerAssignment(expression, s);
+      if (assignment) return [assignment];
       // Lower it first: if it reaches for a runtime global, that is the more
       // useful error to report.
-      await lowerExpr((node as ExpressionStatement).expression, s);
+      await lowerExpr(expression, s);
       throw CompileError.at(node, "This statement's value is discarded, which has no effect in a pure function.");
     }
 
@@ -438,14 +443,19 @@ function asStatements(node: Statement): readonly Statement[] {
 }
 
 async function lowerVariableStatement(node: VariableStatement, s: State): Promise<StmtIR[]> {
-  if (!(node.declarationList.flags & NodeFlags.Const)) {
-    throw CompileError.at(node, "Only `const` declarations are supported; `let` and `var` would need mutable state.");
+  const flags = node.declarationList.flags;
+  const kind = flags & NodeFlags.Const ? "const" : flags & NodeFlags.Let ? "let" : undefined;
+  if (!kind) {
+    throw CompileError.at(
+      node,
+      "`var` is not supported: it is function-scoped and hoisted. Use `const`, or `let` for a value that changes.",
+    );
   }
 
   const out: StmtIR[] = [];
   for (const declaration of node.declarationList.declarations) {
     if (declaration.name.kind === SyntaxKind.ObjectBindingPattern) {
-      out.push(...(await lowerDestructuring(declaration.name as ObjectBindingPattern, declaration, s)));
+      out.push(...(await lowerDestructuring(declaration.name as ObjectBindingPattern, declaration, kind, s)));
       continue;
     }
     if (declaration.name.kind !== SyntaxKind.Identifier) {
@@ -463,17 +473,105 @@ async function lowerVariableStatement(node: VariableStatement, s: State): Promis
     }
 
     const init = await lowerExpr(declaration.initializer, s);
+    // Without an annotation, a `let` takes the type of its initial value, like a
+    // `const`. TypeScript widens `let total = 0` to `number`; here it is an
+    // `integer`, and assigning it 0.5 later is refused with a hint to annotate —
+    // never silently rounded.
     const declared = declaration.type
       ? await mapTypeNode(declaration.type, s)
       : await inferLocalType(init, declaration.initializer, s);
     requireAssignable(init.type, declared, declaration.initializer, `initialiser for \`${tsName}\``);
 
     const sqlName = uniqueName(toSnakeCase(tsName), s.used);
-    s.scope.set(tsName, { sqlName, type: declared });
+    s.scope.set(tsName, { sqlName, type: declared, kind });
     s.locals.push({ tsName, sqlName, type: declared });
     out.push({ kind: "assign", sqlName, expr: coerce(init, declared) });
   }
   return out;
+}
+
+const COMPOUND: ReadonlyMap<SyntaxKind, SyntaxKind> = new Map([
+  [SyntaxKind.PlusEqualsToken, SyntaxKind.PlusToken],
+  [SyntaxKind.MinusEqualsToken, SyntaxKind.MinusToken],
+  [SyntaxKind.AsteriskEqualsToken, SyntaxKind.AsteriskToken],
+  [SyntaxKind.SlashEqualsToken, SyntaxKind.SlashToken],
+  [SyntaxKind.PercentEqualsToken, SyntaxKind.PercentToken],
+]);
+
+/**
+ * `x = v;`, `x += v;` (and `-=`, `*=`, `/=`, `%=`), `x++;`, `x--;` as statements
+ * of their own, on a `let` local. Returns undefined for any other statement.
+ *
+ * Reassigning a local is faithful: a PL/pgSQL variable is overwritten exactly
+ * as a TypeScript one. A compound assignment is lowered as its operator would
+ * be (`x += y` is `x = x + y`), so it inherits every rule of that operator, and
+ * the result must still fit the variable's type — `total /= 2` on an `integer`
+ * is refused, as PostgreSQL would round where TypeScript keeps the fraction.
+ */
+async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR | undefined> {
+  let target: Expression;
+  let value: (current: ExprIR) => Promise<ExprIR>;
+
+  if (expression.kind === SyntaxKind.BinaryExpression) {
+    const binary = expression as BinaryExpression;
+    const op = binary.operatorToken.kind;
+    if (!ASSIGNMENT_OPERATORS.has(op)) return undefined;
+    if (binary.left.kind !== SyntaxKind.Identifier) return undefined; // field mutation: lowerBinary explains
+    target = binary.left;
+    if (op === SyntaxKind.EqualsToken) {
+      value = () => lowerExpr(binary.right, s);
+    } else {
+      const base = COMPOUND.get(op);
+      if (base === undefined) {
+        throw CompileError.at(
+          binary.operatorToken,
+          `\`${binary.operatorToken.getText()}\` is not supported; write the assignment out (\`x = x … y\`).`,
+        );
+      }
+      value = async (current) => combine(base, current, await lowerExpr(binary.right, s), binary);
+    }
+  } else if (
+    expression.kind === SyntaxKind.PostfixUnaryExpression ||
+    expression.kind === SyntaxKind.PrefixUnaryExpression
+  ) {
+    const unary = expression as { readonly operator: SyntaxKind; readonly operand: Expression };
+    if (unary.operator !== SyntaxKind.PlusPlusToken && unary.operator !== SyntaxKind.MinusMinusToken) return undefined;
+    if (unary.operand.kind !== SyntaxKind.Identifier) return undefined;
+    target = unary.operand;
+    const op = unary.operator === SyntaxKind.PlusPlusToken ? SyntaxKind.PlusToken : SyntaxKind.MinusToken;
+    value = async (current) => {
+      if (!isNumeric(current.type)) {
+        throw CompileError.at(expression, `\`${expression.getText()}\` needs a number.`);
+      }
+      return arithmetic(op === SyntaxKind.PlusToken ? "+" : "-", current, { kind: "lit", value: 1, type: scalarType("integer") }, expression);
+    };
+  } else {
+    return undefined;
+  }
+
+  const name = (target as Identifier).text;
+  const binding = s.scope.get(name);
+  if (!binding) throw await referenceError(name, target, target, s);
+  if (binding.kind === "param") {
+    throw CompileError.at(
+      target,
+      `\`${name}\` is a parameter, and parameters are not reassigned. Copy it into a variable first: \`let ${name}Value = ${name};\`.`,
+    );
+  }
+  if (binding.kind === "const") {
+    throw CompileError.at(target, `\`${name}\` is a \`const\`; declare it with \`let\` to reassign it.`);
+  }
+
+  const current: ExprIR = { kind: "ref", sqlName: binding.sqlName, type: binding.type };
+  const next = await value(current);
+  if (isNumeric(next.type) && isNumeric(binding.type) && !assignable(next.type, binding.type)) {
+    throw CompileError.at(
+      expression,
+      `\`${name}\` is \`${describe(binding.type)}\` but this assigns a \`${describe(next.type)}\`, which PostgreSQL would round silently. Declare the variable wider, e.g. \`let ${name}: number = …\`.`,
+    );
+  }
+  requireAssignable(next.type, binding.type, expression, `value assigned to \`${name}\``);
+  return { kind: "assign", sqlName: binding.sqlName, expr: coerce(next, binding.type) };
 }
 
 /**
@@ -490,6 +588,7 @@ async function lowerVariableStatement(node: VariableStatement, s: State): Promis
 async function lowerDestructuring(
   pattern: ObjectBindingPattern,
   declaration: VariableStatement["declarationList"]["declarations"][number],
+  kind: "const" | "let",
   s: State,
 ): Promise<StmtIR[]> {
   if (!declaration.initializer) throw CompileError.at(declaration, "A destructuring must be initialised.");
@@ -561,7 +660,7 @@ async function lowerDestructuring(
         throw CompileError.at(name, `\`${tsName}\` shadows an existing binding.`);
       }
       const sqlName = uniqueName(toSnakeCase(tsName), s.used);
-      s.scope.set(tsName, { sqlName, type: field.type });
+      s.scope.set(tsName, { sqlName, type: field.type, kind });
       s.locals.push({ tsName, sqlName, type: field.type });
       out.push({ kind: "assign", sqlName, expr: { kind: "field", operand: base, sqlName: field.sqlName, type: field.type } });
     }
@@ -1057,7 +1156,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
     }
     throw CompileError.at(
       node.operatorToken,
-      "Assignment is not supported: a compiled function computes values with `const` and returns them.",
+      "An assignment is only supported as a statement of its own (`x = …;`), not inside an expression.",
     );
   }
 
@@ -1078,7 +1177,14 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
 
   const left = await lowerExpr(node.left, s);
   const right = await lowerExpr(node.right, s);
+  return combine(op, left, right, node);
+}
 
+/**
+ * The value of `left op right`, both already lowered. Shared by binary
+ * expressions and compound assignment (`x += y` is `x = x + y`).
+ */
+function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpression): ExprIR {
   switch (op) {
     case SyntaxKind.EqualsEqualsEqualsToken:
     case SyntaxKind.ExclamationEqualsEqualsToken: {
