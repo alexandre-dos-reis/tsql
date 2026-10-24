@@ -2,14 +2,6 @@ import type { Integer } from "../../src/pgtypes";
 
 /**
  * A branch that does more than return keeps the CASE statement, where grouped labels share one WHEN.
- *
- * Expected SQL: CASE tier
- * Expected SQL: WHEN 'free', 'starter' THEN
- * Expected SQL: off := 5;
- * Expected SQL: RETURN amount - off;
- * Expected SQL: ELSE
- * Expected SQL: RETURN amount;
- * Expected SQL: END CASE;
  */
 export type Tier = "free" | "starter" | "pro" | "enterprise";
 
@@ -43,3 +35,55 @@ export function shippingCents(region: Region, weightGrams: Integer): Integer {
       return 9999;
   }
 }
+
+/** The SQL this case must compile to: each block appears, in this order, as written. */
+export const sqlExpected = `
+--   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
+CREATE OR REPLACE FUNCTION app.discounted(
+  tier text,
+  amount integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  off integer;
+BEGIN
+  CASE tier
+    WHEN 'free', 'starter' THEN
+      off := 5;
+      RETURN amount - off;
+    ELSE
+      RETURN amount;
+  END CASE;
+END;
+$$;
+
+--   region: one of 'apac', 'eu', 'us' (not enforced here)
+CREATE OR REPLACE FUNCTION app.shipping_cents(
+  region text,
+  weight_grams integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  base integer;
+BEGIN
+  CASE region
+    WHEN 'eu', 'us' THEN
+      base := 500;
+      RETURN base + weight_grams * 2;
+    WHEN 'apac' THEN
+      IF weight_grams > 1000 THEN
+        RETURN 4000;
+      END IF;
+      RETURN 2500;
+    ELSE
+      RETURN 9999;
+  END CASE;
+END;
+$$;
+`;

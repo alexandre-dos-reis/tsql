@@ -1,11 +1,6 @@
 /**
  * A nullable discriminant keeps the simple CASE form: NULL matches no WHEN and reaches the ELSE, as
  * `null === "bob"` is false.
- *
- * Expected SQL: RETURN CASE name
- * Expected SQL: WHEN 'bob' THEN 'hi bob'
- * Expected SQL: ELSE 'hi'
- * Expected SQL: END;
  */
 export function greeting(name: string | null): string {
   switch (name) {
@@ -15,3 +10,21 @@ export function greeting(name: string | null): string {
       return "hi";
   }
 }
+
+/** The SQL this case must compile to: each block appears, in this order, as written. */
+export const sqlExpected = `
+CREATE OR REPLACE FUNCTION app.greeting(
+  name text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN CASE name
+    WHEN 'bob' THEN 'hi bob'
+    ELSE 'hi'
+  END;
+END;
+$$;
+`;

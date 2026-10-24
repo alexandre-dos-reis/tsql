@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { compileProject, formatResult, type ManifestFunction } from "../src/compile.ts";
 import { checkParity, type RowQuery } from "../src/parity.ts";
@@ -10,15 +10,19 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * Every case in tests/parity/ is accepted by the compiler and agrees with its
  * TypeScript.
  *
- * This file holds no cases. Each case is a file, `name.ts`, and for each one:
+ * This file holds no cases. Each case is a file, `name.ts`, holding the rule and,
+ * in `export const sqlExpected`, the SQL it must compile to. For each case:
  *
- * 1. compiled alone, its SQL contains each `Expected SQL:` line of its header, in
- *    order — the *shape* of the SQL, which parity cannot see (a quoted
- *    identifier, the form of a CASE, the types in a signature). Cases where the
- *    shape does not matter have none;
+ * 1. compiled alone, its SQL contains each block of `sqlExpected` (blocks are
+ *    separated by a blank line), in order, each block as consecutive lines —
+ *    indentation aside. This pins the *shape* of the SQL, which parity cannot
+ *    see: a quoted identifier, the form of a CASE, the types in a signature.
+ *    The type guard's boilerplate and the provenance comments are left out;
  * 2. every function in it agrees with its TypeScript on 200 random inputs, on
  *    PGlite and, when TSQL_TEST_DB_URL names one, on a real PostgreSQL — through
  *    the same `openDatabase` that `tsql parity` uses.
+ *
+ * `sqlExpected` is an exported constant, not a function, so the compiler ignores it.
  *
  * That the harness can fail at all is proven in tests/divergent.test.ts.
  */
@@ -40,11 +44,25 @@ test("all cases compile together, as one project", () => {
   expect(formatResult(project)).toBe("");
 });
 
-describe("each case compiles to the SQL its header expects", () => {
+/** Lines without their indentation, so `sqlExpected` can be laid out for reading. */
+function lines(text: string): string[] {
+  return text.split("\n").map((line) => line.trim());
+}
+
+/** Blocks of `sqlExpected`: runs of non-blank lines, separated by blank lines. */
+function blocks(text: string): string[][] {
+  return text
+    .split(/\n\s*\n/)
+    .map((block) => lines(block).filter((line) => line !== ""))
+    .filter((block) => block.length > 0);
+}
+
+describe("each case compiles to its sqlExpected", () => {
   for (const name of cases) {
     test(name, async () => {
       const path = resolve(DIR, `${name}.ts`);
-      const expected = [...readFileSync(path, "utf8").matchAll(/^ \* Expected SQL: (.+)$/gm)].map((m) => m[1]!);
+      const { sqlExpected } = (await import(path)) as { sqlExpected?: unknown };
+      expect(typeof sqlExpected).toBe("string");
 
       const result = await compileProject({
         tsconfig: TSCONFIG,
@@ -53,14 +71,18 @@ describe("each case compiles to the SQL its header expects", () => {
       });
       expect(formatResult(result)).toBe("");
 
-      // In order: each fragment must appear after the previous one.
+      // Each block as consecutive lines, the blocks in order.
+      const emitted = lines(result.sql);
       let from = 0;
-      for (const fragment of expected) {
-        const at = result.sql.indexOf(fragment, from);
-        if (at === -1) {
-          throw new Error(`${DIR}/${name}.ts: expected, after position ${from}, the SQL\n  ${fragment}\nin\n${result.sql}`);
+      for (const block of blocks(sqlExpected as string)) {
+        let at = -1;
+        for (let i = from; i + block.length <= emitted.length && at === -1; i++) {
+          if (block.every((line, k) => emitted[i + k] === line)) at = i;
         }
-        from = at + fragment.length;
+        if (at === -1) {
+          throw new Error(`${DIR}/${name}.ts: this block of sqlExpected was not emitted (in order):\n\n${block.join("\n")}\n\nEmitted:\n\n${result.sql}`);
+        }
+        from = at + block.length;
       }
     });
   }
