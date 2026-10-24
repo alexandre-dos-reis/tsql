@@ -300,6 +300,8 @@ A file the project does not hold is an error listing what it does hold, rather t
 
 PostgreSQL raises on `integer` overflow where TypeScript silently continues. The parity harness generates integers well inside int32 rather than pretending this is handled; narrowing `Integer` to a checked domain would be the real fix.
 
+PostgreSQL likewise raises on `double precision` underflow — a result too small to represent, such as `5e-324 / 10`, is the error `value out of range: underflow` — where TypeScript quietly gives 0 (and on overflow, where TypeScript gives `Infinity`). The parity harness generates doubles away from the subnormal range and within ±1e9 for the same reason.
+
 ## Object types
 
 A named `interface` or `type` object shape becomes a PostgreSQL composite type, and field access becomes a parenthesised field reference:
