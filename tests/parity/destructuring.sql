@@ -10,7 +10,7 @@ CREATE TYPE app.purchase AS (
   shipping_express boolean
 );
 
-CREATE OR REPLACE FUNCTION app.purchase_summary(
+CREATE OR REPLACE FUNCTION app.bonus_quantity(
   purchase app.purchase
 )
 RETURNS integer
@@ -18,12 +18,12 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 DECLARE
+  destructured app.purchase;
   quantity integer;
-  express boolean;
 BEGIN
-  quantity := (purchase).quantity;
-  express := (purchase).shipping_express;
-  RETURN CASE WHEN express THEN quantity + 1 ELSE quantity END;
+  destructured := app.with_bonus(purchase);
+  quantity := (destructured).quantity;
+  RETURN quantity;
 END;
 $$;
 
@@ -42,7 +42,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION app.bonus_quantity(
+CREATE OR REPLACE FUNCTION app.purchase_summary(
   purchase app.purchase
 )
 RETURNS integer
@@ -50,11 +50,11 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 DECLARE
-  destructured app.purchase;
   quantity integer;
+  express boolean;
 BEGIN
-  destructured := app.with_bonus(purchase);
-  quantity := (destructured).quantity;
-  RETURN quantity;
+  quantity := (purchase).quantity;
+  express := (purchase).shipping_express;
+  RETURN CASE WHEN express THEN quantity + 1 ELSE quantity END;
 END;
 $$;

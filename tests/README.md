@@ -26,7 +26,7 @@ test file.
 - **`parity/`** tests the compiler: accepted, translated as expected, and the SQL behaves like the
   TypeScript. `name.sql` holds the types and functions the case compiles to, laid out like the real
   output. Each block (separated by a blank line) must appear in the output, in order, as consecutive
-  lines — indentation aside; a block of comments only is a note and is ignored. The type guard's
+  lines — indentation aside; a block of comments only is a note and is ignored. Types come first, then functions in alphabetical order of their TypeScript names, which is how the compiler emits them. The type guard's
   boilerplate and the provenance comments are left out, so the file is not runnable on its own. It pins
   what parity cannot see: a quoted identifier, the form of a `CASE`, the types in a signature. All cases also
   compile together as one project, so function and type names must stay unique across the folder.
