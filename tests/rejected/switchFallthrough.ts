@@ -8,6 +8,8 @@
  *
  * so the SQL would skip clause "b" where TypeScript runs it. End each non-empty
  * clause with `break` or `return` (empty clauses grouping labels are fine).
+ *
+ * Expected: falls through into the next one
  */
 export function score(grade: string, bonus: boolean): number {
   switch (grade) {

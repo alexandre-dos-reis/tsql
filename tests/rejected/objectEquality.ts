@@ -7,6 +7,8 @@
  *     SELECT ROW('free')::app.plan = ROW('free')::app.plan;  -- true
  *
  * No faithful translation exists. Compare the fields you care about.
+ *
+ * Expected: Objects compare by identity in TypeScript
  */
 interface Plan {
   name: string;

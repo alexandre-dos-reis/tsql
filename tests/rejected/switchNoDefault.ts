@@ -9,6 +9,8 @@
  *     -- ERROR: case not found
  *
  * Add a `default` that handles any other value; it becomes the `ELSE`.
+ *
+ * Expected: A `switch` needs a `default`
  */
 export type Plan = "free" | "pro";
 

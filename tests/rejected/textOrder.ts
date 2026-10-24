@@ -8,6 +8,8 @@
  *     "a" < "B"          // false in TypeScript
  *
  * Ordering comparisons are supported on numbers only.
+ *
+ * Expected: Ordering comparisons are only supported on numbers
  */
 export function sortsBefore(a: string, b: string): boolean {
   return a < b;

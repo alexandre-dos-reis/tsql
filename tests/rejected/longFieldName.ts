@@ -8,6 +8,8 @@
  *     -- would be cut to 63 bytes
  *
  * Shorten the field names.
+ *
+ * Expected: longer than PostgreSQL's 63-byte identifier limit
  */
 type LongNames = {
   someVeryLongOuterFieldNameThatGoesOnAndOn: {

@@ -4,6 +4,8 @@
  * The compiled subset has no iteration: a business rule here is a decision over
  * its inputs, and modelling loops faithfully (mutation, termination) is out of
  * scope. Express the rule without iteration.
+ *
+ * Expected: WhileStatement is not supported
  */
 export function spin(n: number): number {
   while (n > 0) {

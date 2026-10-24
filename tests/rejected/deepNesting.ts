@@ -5,6 +5,8 @@
  * Nesting this deep is more likely a modelling mistake than a business rule,
  * and the column names grow towards PostgreSQL's 63-byte identifier limit.
  * Flatten the shape in TypeScript.
+ *
+ * Expected: nests more than 4 levels deep
  */
 type Deep = {
   a: { b: { c: { d: { e: string } } } };

@@ -7,6 +7,8 @@
  *     CREATE TYPE app.clashing AS (foo_bar text, foo_bar text);  -- invalid
  *
  * Rename one of the fields.
+ *
+ * Expected: both flatten to the column `foo_bar`
  */
 type Clashing = {
   foo: { bar: string };

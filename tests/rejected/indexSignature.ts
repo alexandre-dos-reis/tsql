@@ -3,6 +3,8 @@
  *
  * A composite type has a fixed, named list of columns; `{ [key: string]: string }`
  * has an open set of keys, so there is no column list to generate.
+ *
+ * Expected: `Bag` has an index signature
  */
 interface Bag {
   [key: string]: string;

@@ -4,6 +4,8 @@
  * `Date` is a built-in JavaScript class, not a plain object shape, so it is not
  * turned into a composite type; and its semantics (millisecond epoch, local time
  * zone) do not match `timestamptz`. Pass a number of milliseconds, or a string.
+ *
+ * Expected: `Date` is a built-in JavaScript type
  */
 export function isPast(when: Date): boolean {
   return when.getTime() < 0;

@@ -5,6 +5,8 @@
  * type to aim at. `{ plan, limit: 3 }` has none. Annotate it
  * (`const policy: Policy = { ... }`) or return it from a function with a named
  * return type.
+ *
+ * Expected: needs a named target type
  */
 export function limitOf(plan: string): number {
   const policy = { plan: plan, limit: 3 };

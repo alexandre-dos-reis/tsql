@@ -5,6 +5,8 @@
  * pure: the same rule would give different answers on each call, and
  * `new Date()` (client clock) is not `now()` (transaction start, server clock).
  * Pass the instant in as a parameter instead.
+ *
+ * Expected: `Date` is a JavaScript runtime global
  */
 export function stamp(): number {
   return new Date().getTime();

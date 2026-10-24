@@ -8,6 +8,11 @@
  *
  * In TypeScript the caller's object changes; in SQL the caller never sees it.
  * Build a new value instead: `const next: Mutable = { ...nested, foo: { bar: "some" } }`.
+ *
+ * Expected: mutates the caller's object in TypeScript
+ * Expected: passes a composite by value
+ * Expected: the caller would never see the change
+ * Expected: { ...nested, field: x }
  */
 type Mutable = {
   foo: { bar: string };
