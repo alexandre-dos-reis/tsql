@@ -10,21 +10,3 @@ export function greeting(name: string | null): string {
       return "hi";
   }
 }
-
-/** The SQL this case must compile to: each block appears, in this order, as written. */
-export const sqlExpected = `
-CREATE OR REPLACE FUNCTION app.greeting(
-  name text
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE name
-    WHEN 'bob' THEN 'hi bob'
-    ELSE 'hi'
-  END;
-END;
-$$;
-`;

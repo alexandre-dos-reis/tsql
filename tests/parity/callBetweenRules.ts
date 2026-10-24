@@ -17,39 +17,3 @@ export function remainingTodos(plan: Plan, count: Integer): Integer {
   }
   return limit - count;
 }
-
-/** The SQL this case must compile to: each block appears, in this order, as written. */
-export const sqlExpected = `
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
-CREATE OR REPLACE FUNCTION app.plan_cap(
-  plan text
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE WHEN plan = 'free' THEN 3 ELSE 100 END;
-END;
-$$;
-
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
-CREATE OR REPLACE FUNCTION app.remaining_todos(
-  plan text,
-  count integer
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  "limit" integer;
-BEGIN
-  "limit" := app.plan_cap(plan);
-  IF count >= "limit" THEN
-    RETURN 0;
-  END IF;
-  RETURN "limit" - count;
-END;
-$$;
-`;

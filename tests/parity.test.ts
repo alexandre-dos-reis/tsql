@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { compileProject, formatResult, type ManifestFunction } from "../src/compile.ts";
 import { checkParity, type RowQuery } from "../src/parity.ts";
@@ -10,19 +10,18 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * Every case in tests/parity/ is accepted by the compiler and agrees with its
  * TypeScript.
  *
- * This file holds no cases. Each case is a file, `name.ts`, holding the rule and,
- * in `export const sqlExpected`, the SQL it must compile to. For each case:
+ * This file holds no cases. Each case is a pair: `name.ts`, the rule, and
+ * `name.sql`, the SQL it must compile to. For each case:
  *
- * 1. compiled alone, its SQL contains each block of `sqlExpected` (blocks are
- *    separated by a blank line), in order, each block as consecutive lines —
- *    indentation aside. This pins the *shape* of the SQL, which parity cannot
- *    see: a quoted identifier, the form of a CASE, the types in a signature.
- *    The type guard's boilerplate and the provenance comments are left out;
+ * 1. compiled alone, its SQL contains each block of `name.sql` (blocks are
+ *    separated by a blank line; a block of comments only is ignored), in order,
+ *    each block as consecutive lines — indentation aside. This pins the *shape*
+ *    of the SQL, which parity cannot see: a quoted identifier, the form of a
+ *    CASE, the types in a signature. `name.sql` lists the types and functions
+ *    only, without the type guard's boilerplate or the provenance comments;
  * 2. every function in it agrees with its TypeScript on 200 random inputs, on
  *    PGlite and, when TSQL_TEST_DB_URL names one, on a real PostgreSQL — through
  *    the same `openDatabase` that `tsql parity` uses.
- *
- * `sqlExpected` is an exported constant, not a function, so the compiler ignores it.
  *
  * That the harness can fail at all is proven in tests/divergent.test.ts.
  */
@@ -44,25 +43,24 @@ test("all cases compile together, as one project", () => {
   expect(formatResult(project)).toBe("");
 });
 
-/** Lines without their indentation, so `sqlExpected` can be laid out for reading. */
+/** Lines without their indentation, so the expected `.sql` can be laid out for reading. */
 function lines(text: string): string[] {
   return text.split("\n").map((line) => line.trim());
 }
 
-/** Blocks of `sqlExpected`: runs of non-blank lines, separated by blank lines. */
+/** Blocks of an expected `.sql`: runs of non-blank lines, separated by blank lines. A block of comments only is a note to the reader, not SQL to find. */
 function blocks(text: string): string[][] {
   return text
     .split(/\n\s*\n/)
     .map((block) => lines(block).filter((line) => line !== ""))
-    .filter((block) => block.length > 0);
+    .filter((block) => block.length > 0 && !block.every((line) => line.startsWith("--")));
 }
 
-describe("each case compiles to its sqlExpected", () => {
+describe("each case compiles to its .sql", () => {
   for (const name of cases) {
     test(name, async () => {
       const path = resolve(DIR, `${name}.ts`);
-      const { sqlExpected } = (await import(path)) as { sqlExpected?: unknown };
-      expect(typeof sqlExpected).toBe("string");
+      const expected = readFileSync(resolve(DIR, `${name}.sql`), "utf8");
 
       const result = await compileProject({
         tsconfig: TSCONFIG,
@@ -74,13 +72,13 @@ describe("each case compiles to its sqlExpected", () => {
       // Each block as consecutive lines, the blocks in order.
       const emitted = lines(result.sql);
       let from = 0;
-      for (const block of blocks(sqlExpected as string)) {
+      for (const block of blocks(expected)) {
         let at = -1;
         for (let i = from; i + block.length <= emitted.length && at === -1; i++) {
           if (block.every((line, k) => emitted[i + k] === line)) at = i;
         }
         if (at === -1) {
-          throw new Error(`${DIR}/${name}.ts: this block of sqlExpected was not emitted (in order):\n\n${block.join("\n")}\n\nEmitted:\n\n${result.sql}`);
+          throw new Error(`${DIR}/${name}.ts: this block of ${name}.sql was not emitted (in order):\n\n${block.join("\n")}\n\nEmitted:\n\n${result.sql}`);
         }
         from = at + block.length;
       }

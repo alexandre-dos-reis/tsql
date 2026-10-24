@@ -11,26 +11,3 @@ export function describeCode(code: string | null): string {
       return "some";
   }
 }
-
-/** The SQL this case must compile to: each block appears, in this order, as written. */
-export const sqlExpected = `
-CREATE OR REPLACE FUNCTION app.describe_code(
-  code text
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  word text;
-BEGIN
-  CASE
-    WHEN code IS NULL THEN
-      word := 'none';
-      RETURN word;
-    ELSE
-      RETURN 'some';
-  END CASE;
-END;
-$$;
-`;

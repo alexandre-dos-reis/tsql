@@ -19,33 +19,3 @@ export function canCreateTodoWithType(sub: Subscription, count: Integer): boolea
   }
   return count <= 9;
 }
-
-/** The SQL this case must compile to: each block appears, in this order, as written. */
-export const sqlExpected = `
-IF to_regtype('app.subscription') IS NULL THEN
-  CREATE TYPE app.subscription AS (
-    plan text
-  );
-
-CREATE OR REPLACE FUNCTION app.can_create_todo_with_type(
-  sub app.subscription,
-  count integer
-)
-RETURNS boolean
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  plan text;
-BEGIN
-  plan := (sub).plan;
-  IF plan = 'free' THEN
-    RETURN count <= 3;
-  END IF;
-  IF plan = 'pro' THEN
-    RETURN count <= 6;
-  END IF;
-  RETURN count <= 9;
-END;
-$$;
-`;

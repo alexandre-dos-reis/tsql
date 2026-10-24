@@ -19,16 +19,16 @@ test file.
 
 | Folder | The case | What must happen |
 | --- | --- | --- |
-| `parity/` | `name.ts`: the rule, and in `export const sqlExpected` the SQL it must compile to | it compiles to that SQL, and every function agrees with its TypeScript on 200 random inputs |
+| `parity/` | `name.ts`, the rule, and `name.sql`, the SQL it must compile to | it compiles to that SQL, and every function agrees with its TypeScript on 200 random inputs |
 | `rejected/` | `name.ts`, a rule outside the subset; its header says why, and the expected message on `Expected:` lines | the build refuses it with that message (and at the line marked `// ← rejected here`, if any) |
 | `divergent/` | `name.ts` and `name.sql`, a hand-written TypeScript / SQL pair that disagrees | the parity harness reports the divergence |
 
 - **`parity/`** tests the compiler: accepted, translated as expected, and the SQL behaves like the
-  TypeScript. `sqlExpected` is a template literal laid out like the real SQL: the types and functions the
-  case compiles to. Each block (separated by a blank line) must appear in the output, in order, as
-  consecutive lines — indentation aside; the type guard's boilerplate and provenance comments are left
-  out. It pins what parity cannot see: a quoted identifier, the form of a `CASE`, the types in a
-  signature. It is an exported constant, not a function, so the compiler ignores it. All cases also
+  TypeScript. `name.sql` holds the types and functions the case compiles to, laid out like the real
+  output. Each block (separated by a blank line) must appear in the output, in order, as consecutive
+  lines — indentation aside; a block of comments only is a note and is ignored. The type guard's
+  boilerplate and the provenance comments are left out, so the file is not runnable on its own. It pins
+  what parity cannot see: a quoted identifier, the form of a `CASE`, the types in a signature. All cases also
   compile together as one project, so function and type names must stay unique across the folder.
 - **`rejected/`** tests the compiler: refused at build time, because no faithful SQL translation exists.
   Each file's header explains why, often with the SQL that would have diverged.
@@ -40,7 +40,7 @@ test file.
 
 | File | Runs |
 | --- | --- |
-| `parity.test.ts` | every case in `parity/`: its `sqlExpected`, then parity on PGlite and PostgreSQL; plus the migration as a whole (applies twice; refuses a drifted type) |
+| `parity.test.ts` | every case in `parity/`: its `.sql`, then parity on PGlite and PostgreSQL; plus the migration as a whole (applies twice; refuses a drifted type) |
 | `rejected.test.ts` | every case in `rejected/` |
 | `divergent.test.ts` | every pair in `divergent/`, on PGlite and PostgreSQL |
 | `cli.test.ts` | the `tsql` command as a user runs it, under Bun and Node: refused invocations, messages, exit codes, narrowing to named files, `tsql parity` with PGlite and `--db-url` |

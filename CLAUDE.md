@@ -214,9 +214,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 - `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
   `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
   costs no compiler code.
-- `tests/parity/tsconfig.json` — **accepted cases**, one per file: the rule, and in
-  `export const sqlExpected` (a template literal, ignored by the compiler since it is not a function) the
-  types and functions it must compile to. Isolated the same way (`types: []`). They share one SQL namespace, so function and
+- `tests/parity/tsconfig.json` — **accepted cases**, one per pair: `name.ts`, the rule, and `name.sql`, the
+  types and functions it must compile to (blocks matched in order, indentation aside; not runnable on its
+  own). Isolated the same way (`types: []`). They share one SQL namespace, so function and
   type names must stay unique across the folder.
 - `tests/rejected/tsconfig.json` — **rejected cases**, one file per case: valid TypeScript that falls
   outside the subset, so rejection tests exercise the translator rather than `tsc`. Each file opens with a
@@ -237,7 +237,7 @@ test file. `tests/README.md` explains the three.
 `tests/README.md` is the map. In short:
 
 - `tests/parity.test.ts` runs every case in `tests/parity/`: compiled alone, its SQL must contain each
-  block of `sqlExpected` (blocks separated by a blank line) as consecutive lines, in order, indentation
+  block of `name.sql` (blocks separated by a blank line) as consecutive lines, in order, indentation
   aside; then the whole folder is compiled as one project and every function is checked through
   `openDatabase` (the path `tsql parity` takes) on PGlite, and on PostgreSQL when `TSQL_TEST_DB_URL` is
   set (CI sets it, with a `postgres:18` service). `src/parity.ts` derives a fast-check arbitrary per

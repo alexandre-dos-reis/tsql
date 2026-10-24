@@ -13,24 +13,3 @@ export function bucket(n: Integer): string {
   }
   return "plain";
 }
-
-/** The SQL this case must compile to: each block appears, in this order, as written. */
-export const sqlExpected = `
-CREATE OR REPLACE FUNCTION app.bucket(
-  n integer
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  CASE n % 3
-    WHEN 0 THEN
-      RETURN 'fizz';
-    ELSE
-      NULL;
-  END CASE;
-  RETURN 'plain';
-END;
-$$;
-`;
