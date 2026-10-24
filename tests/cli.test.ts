@@ -90,11 +90,11 @@ describe("the CLI compiles the files it is given", () => {
   });
 });
 
-describe("tsql test proves the SQL agrees with the TypeScript", () => {
+describe("tsql parity proves the SQL agrees with the TypeScript", () => {
   // Few runs: this checks the command's wiring, while tests/parity.test.ts
   // carries the full 200-input property checks and the negative control.
   test("every compiled function is checked and reported", async () => {
-    const { stdout, stderr, exitCode } = await run(["test", "examples/input-1.ts", "--runs", "10", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "10", ...PROJECT]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
@@ -103,25 +103,25 @@ describe("tsql test proves the SQL agrees with the TypeScript", () => {
 
   test("it writes nothing", async () => {
     const out = "generated/should-not-exist.sql";
-    await run(["test", "examples/input-1.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    await run(["parity", "examples/input-1.ts", "--runs", "1", "--out", out, ...PROJECT]);
     expect(await Bun.file(out).exists()).toBe(false);
   });
 
   test("a malformed --runs is named rather than turned into NaN", async () => {
-    const { stderr, exitCode } = await run(["test", "examples/input-1.ts", "--runs", "lots", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "lots", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--runs expects an integer of at least 1, got `lots`");
   });
 
   test("a --db-url that is not a postgres URL is refused", async () => {
-    const { stderr, exitCode } = await run(["test", "examples/input-1.ts", "--db-url=mysql://x", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--db-url=mysql://x", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--db-url expects a postgres:// or postgresql:// URL");
   });
 
   test("an unreachable server is a message, with the password hidden", async () => {
     const url = "postgres://someone:hunter2@127.0.0.1:1/nowhere";
-    const { stderr, exitCode } = await run(["test", "examples/input-1.ts", `--db-url=${url}`, ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", `--db-url=${url}`, ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Could not connect to postgres://someone:***@127.0.0.1:1/nowhere");
     expect(stderr).not.toContain("hunter2");
@@ -132,7 +132,7 @@ describe("tsql test proves the SQL agrees with the TypeScript", () => {
   const dbUrl = process.env.TSQL_TEST_DB_URL;
   test.skipIf(!dbUrl)("--db-url runs against a real PostgreSQL and leaves it untouched", async () => {
     const { stdout, stderr, exitCode } = await run([
-      "test",
+      "parity",
       "examples/input-1.ts",
       "examples/input-2.ts",
       "examples/input-3.ts",
@@ -158,7 +158,7 @@ describe("tsql test proves the SQL agrees with the TypeScript", () => {
   });
 
   test("a rule that does not compile is reported before any test runs", async () => {
-    const { stderr, exitCode } = await run(["test", "examples/nope.ts", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "examples/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
   });
@@ -182,8 +182,8 @@ describe("the CLI runs on Node, not only Bun", () => {
     expect(stdout).toContain("todo_limit");
   });
 
-  test("tsql test runs PGlite and the harness under node too", async () => {
-    const { stdout, stderr, exitCode } = await runOnNode(["test", "examples/input-1.ts", "--runs", "5", ...PROJECT]);
+  test("tsql parity runs PGlite and the harness under node too", async () => {
+    const { stdout, stderr, exitCode } = await runOnNode(["parity", "examples/input-1.ts", "--runs", "5", ...PROJECT]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");

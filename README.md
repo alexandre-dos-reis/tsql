@@ -92,7 +92,7 @@ Point your migration tool at the emitted file. `tsql check` does the same withou
 
 `compile` also writes a manifest (`generated/manifest.json`) describing every function it emitted. That manifest is what the next step reads.
 
-> **`check` and `compile` translate; `tsql test` proves.** Compiling gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree with the TypeScript. `tsql test rules/*.ts` does that — see [Prove it](#prove-it-parity-tests-with-fast-check).
+> **`check` and `compile` translate; `tsql parity` proves.** Compiling gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree with the TypeScript. `tsql parity rules/*.ts` does that — see [Prove it](#prove-it-parity-tests-with-fast-check).
 
 ## More examples
 
@@ -210,7 +210,7 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
 Run it with one command — no test file, no database to set up:
 
 ```bash
-tsql test rules/*.ts
+tsql parity rules/*.ts
 ```
 
 ```
@@ -221,14 +221,16 @@ tsql test rules/*.ts
 ok — 3 function(s) agree with their TypeScript on 200 random inputs each.
 ```
 
-`tsql test` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
+`tsql parity` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
+
+> **This is not a substitute for testing your rules.** `tsql parity` checks one thing: that the generated SQL gives the *same answer* as your TypeScript, on random inputs. It says nothing about whether that answer is *right*. If `todoLimit("free")` returns 30 where your business wanted 3, both implementations agree on 30 and `tsql parity` passes. Keep writing your own unit tests for the domain — they test the TypeScript, and `tsql parity` carries that guarantee over to the database.
 
 `--runs 1000` raises the inputs per function; `--seed=-315639818` replays a failure with the seed it printed.
 
 **Against your own PostgreSQL.** PGlite is the default, but it is not your server: a different version, no extensions, none of your settings. To check the rules on the PostgreSQL you actually deploy to, give it a URL:
 
 ```bash
-tsql test rules/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
+tsql parity rules/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
 ```
 
 Everything — the migration and every check — runs in one transaction that is rolled back at the end, so nothing is committed and other sessions never see the generated functions. `CREATE OR REPLACE FUNCTION` still locks any same-named function while the run lasts, so point it at a test database, not production. The password is never printed.
@@ -237,7 +239,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 
 ### In your own test suite
 
-`tsql test` is the harness with a database wired in. To run it inside your own test runner instead, use `@adr/tsql/parity` directly on the files `tsql compile` wrote:
+`tsql parity` is the harness with a database wired in. To run it inside your own test runner instead, use `@adr/tsql/parity` directly on the files `tsql compile` wrote:
 
 ```ts
 // tests/parity.test.ts
@@ -294,22 +296,22 @@ mapping. You don't need it to use `tsql`, but you will want it before changing h
 ```
 tsql compile <files...> [options]   Type check, translate and write SQL
 tsql check   <files...> [options]   Type check and translate, writing nothing
-tsql test    <files...> [options]   Type check, translate, and run the parity tests in PGlite, writing nothing
+tsql parity  <files...> [options]   Type check, translate, and run the parity tests in PGlite, writing nothing
 
   --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
   --out <file>           Migration to write     (default: generated/0001_rules.sql)
   --manifest <file>      Manifest to write      (default: generated/manifest.json)
   --schema <name>        Schema to qualify with (default: app)
   --no-comments          Omit provenance comments from the generated SQL
-  --runs <n>             test: random inputs per function (default: 200)
-  --seed <n>             test: replay a failure; a negative seed needs `--seed=-123`
-  --db-url <url>         test: run against this PostgreSQL instead of an in-process PGlite,
+  --runs <n>             parity: random inputs per function (default: 200)
+  --seed <n>             parity: replay a failure; a negative seed needs `--seed=-123`
+  --db-url <url>         parity: run against this PostgreSQL instead of an in-process PGlite,
                          inside a transaction that is rolled back (default: PGlite)
 ```
 
 Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
 
-A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. All three commands exit non-zero on a rejection; `test` also exits non-zero when any function diverges from its TypeScript.
+A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. All three commands exit non-zero on a rejection; `parity` also exits non-zero when any function diverges from its TypeScript.
 
 ## Semantics that are decided, not inferred
 
@@ -551,7 +553,7 @@ Rejections carry a file, line, column and the offending source line.
 
 ## Parity tests
 
-This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) above is the *what* and the setup. `tsql test` (`src/runParity.ts`) and the harness in `@adr/tsql/parity` are the same check: the command only adds PGlite and the reporting.
+This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) above is the *what* and the setup. `tsql parity` (`src/runParity.ts`) and the harness in `@adr/tsql/parity` are the same check: the command only adds PGlite and the reporting.
 
 `src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a rule adds a parity test with no edit to the test file.
 

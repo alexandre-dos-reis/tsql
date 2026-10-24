@@ -10,7 +10,7 @@ const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 Usage:
   tsql compile <files...> [options]   Type check, translate and write SQL
   tsql check   <files...> [options]   Type check and translate, writing nothing
-  tsql test    <files...> [options]   Type check, translate, and prove the SQL agrees with the
+  tsql parity  <files...> [options]   Type check, translate, and prove the SQL agrees with the
                                       TypeScript: fast-check parity tests in PGlite, writing nothing
 
 Rules are named explicitly, because the migration is written from exactly the
@@ -26,9 +26,9 @@ Options:
   --manifest <file>      Manifest to write      (default: generated/manifest.json)
   --schema <name>        Schema to qualify with (default: app)
   --no-comments          Omit provenance comments from the generated SQL
-  --runs <n>             test: random inputs per function (default: 200)
-  --seed <n>             test: replay a failure; a negative seed needs \`--seed=-123\`
-  --db-url <url>         test: run against this PostgreSQL instead of an in-process PGlite,
+  --runs <n>             parity: random inputs per function (default: 200)
+  --seed <n>             parity: replay a failure; a negative seed needs \`--seed=-123\`
+  --db-url <url>         parity: run against this PostgreSQL instead of an in-process PGlite,
                          inside a transaction that is rolled back (default: PGlite)
 `;
 
@@ -48,7 +48,7 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const COMMANDS: readonly string[] = ["compile", "check", "test"];
+const COMMANDS: readonly string[] = ["compile", "check", "parity"];
 
 const command = positionals[0] ?? "";
 const files = positionals.slice(1);
@@ -73,7 +73,7 @@ if (!COMMANDS.includes(command)) {
   console.error(
     looksLikeAFile
       ? `tsql: expected a command, got \`${command}\`.\n\n  Did you mean:  tsql compile ${positionals.join(" ")}\n`
-      : `tsql: unknown command \`${command}\`. Expected compile, check or test.\n\n${USAGE}`,
+      : `tsql: unknown command \`${command}\`. Expected compile, check or parity.\n\n${USAGE}`,
   );
   process.exit(1);
 }
@@ -133,7 +133,7 @@ if (!result.ok) {
 
 const names = result.functions.map((fn) => fn.sqlName).sort();
 
-if (command === "test") {
+if (command === "parity") {
   // Loaded only here: PGlite brings a PostgreSQL in WebAssembly, which
   // `check` and `compile` have no use for.
   const { redact, runParity } = await import("./runParity.ts");

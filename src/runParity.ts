@@ -4,7 +4,7 @@ import type { CompileResult, ManifestFunction } from "./compile.ts";
 import { checkParity, type ParityOptions, type RowQuery } from "./parity.ts";
 
 /**
- * `tsql test`: the parity harness with nothing to wire up.
+ * `tsql parity`: the parity harness with nothing to wire up.
  *
  * The migration a successful compile produced is loaded into a database and
  * every compiled function is checked against the TypeScript it came from. By
