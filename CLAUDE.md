@@ -23,6 +23,7 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 ```
 bun run ex:check                # type check + translate the examples, write nothing
 bun run ex:compile              # write examples/output.sql + manifest from examples/*.ts
+bun run ex:parity               # tsql parity on the examples (PGlite; add --db-url=… for a server)
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name

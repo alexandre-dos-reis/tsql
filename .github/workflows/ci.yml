@@ -43,6 +43,15 @@ jobs:
 
       - run: bun test
 
+      # The command users run, end to end on every example, 200 inputs per
+      # function: once on the default in-process PGlite, once on the real
+      # PostgreSQL service through --db-url.
+      - name: tsql parity (PGlite)
+        run: bun run ex:parity
+
+      - name: tsql parity (PostgreSQL 18)
+        run: bun run ex:parity --db-url="$TSQL_TEST_DB_URL"
+
       # The compiler owns examples/output.sql and manifest.json and guarantees
       # byte-identical re-runs, so a stale committed copy is a build failure.
       - name: Generated examples are up to date

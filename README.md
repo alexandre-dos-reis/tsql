@@ -573,6 +573,7 @@ Three things worth knowing about TypeScript 7:
 ```
 bun run ex:check         # type check + translate the examples, write nothing
 bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
+bun run ex:parity        # tsql parity on the examples, in PGlite (add --db-url=… for a server)
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the examples project
 bun run format           # oxfmt, pinned as a dev dependency
@@ -592,7 +593,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
 3. `bun test` — including the PGlite parity tests
-4. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+4. `bun run ex:parity`, then again with `--db-url` against a PostgreSQL 18 service: `tsql parity` end to end on every example
+5. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 

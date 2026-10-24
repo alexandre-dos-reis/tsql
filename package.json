@@ -49,6 +49,7 @@
     "prepublishOnly": "bun run typecheck && bun test",
     "ex:compile": "bun run src/cli.ts compile examples/*.ts --project examples/tsconfig.json --out examples/output.sql --manifest examples/manifest.json",
     "ex:check": "bun run src/cli.ts check examples/*.ts --project examples/tsconfig.json",
+    "ex:parity": "bun run src/cli.ts parity examples/*.ts --project examples/tsconfig.json",
     "changeset": "changeset",
     "version": "changeset version && bun install --lockfile-only",
     "release": "changeset publish"
