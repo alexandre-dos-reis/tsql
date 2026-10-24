@@ -46,7 +46,8 @@ export interface CompositeField {
   /** The TypeScript access path from the object root, e.g. `["foo", "bar"]`. */
   readonly path: readonly string[];
   readonly sqlName: string;
-  readonly type: ScalarType;
+  /** A scalar, or an array: an array is a leaf, one column of array type. */
+  readonly type: ScalarType | ArrayType;
 }
 
 /** How a field path reads in a message: `foo.bar`. */
@@ -55,7 +56,8 @@ export function fieldLabel(path: readonly string[]): string {
 }
 
 /**
- * A `readonly T[]` parameter, mapped to a PostgreSQL array of the element type.
+ * A `readonly T[]` parameter, local or object field, mapped to a PostgreSQL
+ * array of the element type.
  *
  * Only read-only arrays exist: PL/pgSQL passes an array by value, so a `push`
  * in TypeScript would change the caller's array while the SQL changed a copy.
@@ -162,7 +164,12 @@ export function widenNumeric(a: PgScalar, b: PgScalar): PgScalar {
 
 /** The field list that identifies a composite's shape, for collision checks. */
 export function shapeOf(composite: CompositeType): string {
-  return composite.fields.map((f) => `${f.sqlName} ${f.type.sql}`).join(", ");
+  return composite.fields.map((f) => `${f.sqlName} ${columnType(f.type)}`).join(", ");
+}
+
+function columnType(type: ScalarType | ArrayType): string {
+  if (!isArray(type)) return type.sql;
+  return `${isScalar(type.element) ? type.element.sql : type.element.sqlName}[]`;
 }
 
 export interface ParamIR {

@@ -49,6 +49,11 @@ export interface TypeCtx {
    * named TypeScript object type; the emitter turns each into a `CREATE TYPE`.
    */
   readonly composites: Map<string, CompositeType>;
+  /**
+   * Composites being mapped right now, by SQL name. A shape that reaches itself
+   * through an array field would otherwise be mapped forever.
+   */
+  readonly mapping: Set<string>;
 }
 
 /** `null` carries no scalar of its own; it only contributes nullability to a union. */
@@ -351,7 +356,20 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
     throw CompileError.at(at, `\`${tsName}\` has no properties, so there is nothing to map.`);
   }
 
-  const fields = await flattenFields(type, tsName, [], [type.id], at, ctx);
+  const sqlName = toSnakeCase(tsName);
+  if (ctx.mapping.has(sqlName)) {
+    throw CompileError.at(
+      at,
+      `\`${tsName}\` contains itself through an array. PostgreSQL cannot create a composite type holding an array of itself, and the shape has no fixed depth.`,
+    );
+  }
+  ctx.mapping.add(sqlName);
+  let fields: CompositeField[];
+  try {
+    fields = await flattenFields(type, tsName, [], [type.id], at, ctx);
+  } finally {
+    ctx.mapping.delete(sqlName);
+  }
 
   const seen = new Map<string, readonly string[]>();
   for (const field of fields) {
@@ -373,7 +391,6 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
     seen.set(field.sqlName, field.path);
   }
 
-  const sqlName = toSnakeCase(tsName);
   const module = declaration ? relativize(declaration.path) : undefined;
   const composite = compositeType(tsName, sqlName, fields, false, module);
 
@@ -455,15 +472,14 @@ async function mapField(
   const propertyType = await ctx.checker.getTypeOfSymbol(property);
   if (!propertyType) throw CompileError.at(site, `The type of ${where} could not be resolved.`);
 
-  if (propertyType.isObjectType() && ((await ctx.checker.isArrayType(propertyType)) || (await ctx.checker.isTupleType(propertyType)))) {
-    throw CompileError.at(
-      site,
-      `${where} is an array. Arrays are supported as parameters, not yet as fields of an object type.`,
-    );
-  }
+  // An array is not flattened: it is a leaf, one column of array type, mapped
+  // below like any other leaf.
+  const isArrayLike =
+    propertyType.isObjectType() &&
+    ((await ctx.checker.isArrayType(propertyType)) || (await ctx.checker.isTupleType(propertyType)));
 
   // A nested object is flattened into prefixed columns.
-  if (propertyType.isObjectType()) {
+  if (propertyType.isObjectType() && !isArrayLike) {
     if (ancestors.includes(propertyType.id)) {
       throw CompileError.at(
         site,
@@ -484,7 +500,7 @@ async function mapField(
   // column to carry "the whole group is missing".
   if (propertyType.isUnionType()) {
     for (const member of await propertyType.getTypes()) {
-      if (member.isObjectType()) {
+      if (member.isObjectType() && !(await ctx.checker.isArrayType(member))) {
         throw CompileError.at(
           site,
           `${where} is an object that may be absent. Flattening cannot represent a missing group of columns — give each field its own \`T | null\`.`,
@@ -504,7 +520,7 @@ async function mapField(
   if (mapped === NULL_ONLY) {
     throw CompileError.at(site, `${where} is \`null\` alone; write \`T | null\`.`);
   }
-  if (!isScalar(mapped)) {
+  if (!isScalar(mapped) && !isArray(mapped)) {
     throw CompileError.at(site, `${where} cannot be mapped to a single column.`);
   }
   return [{ path, sqlName: path.map(toSnakeCase).join("_"), type: mapped }];
@@ -523,7 +539,7 @@ function merge(parts: readonly Mapped[], at: Node): Mapped {
     if (isArray(part)) {
       throw CompileError.at(
         at,
-        `\`${describe(part)}\` cannot appear in a union: an array parameter is never null. Pass an empty array instead.`,
+        `\`${describe(part)}\` cannot appear in a union: an array is never null. Use an empty array for "nothing".`,
       );
     }
     if (!isScalar(part)) {
