@@ -528,18 +528,20 @@ async function lowerDestructuring(
           "Default values in a destructuring are not supported: they apply on `undefined`, which has no SQL equivalent.",
         );
       }
-      const key = element.propertyName ?? element.name;
+      const name = element.name;
+      if (!name) throw CompileError.at(element, "Only plain property names can be destructured.");
+      const key = element.propertyName ?? name;
       if (key.kind !== SyntaxKind.Identifier) {
         throw CompileError.at(key, "Only plain property names can be destructured.");
       }
       const path = [...prefix, (key as Identifier).text];
 
-      if (element.name.kind === SyntaxKind.ObjectBindingPattern) {
-        await bind((element.name as ObjectBindingPattern).elements, path);
+      if (name.kind === SyntaxKind.ObjectBindingPattern) {
+        await bind((name as ObjectBindingPattern).elements, path);
         continue;
       }
-      if (element.name.kind !== SyntaxKind.Identifier) {
-        throw CompileError.at(element.name, "Array destructuring is not supported: arrays are not part of the compiled subset.");
+      if (name.kind !== SyntaxKind.Identifier) {
+        throw CompileError.at(name, "Array destructuring is not supported: arrays are not part of the compiled subset.");
       }
 
       const composite = base.type as CompositeType;
@@ -554,9 +556,9 @@ async function lowerDestructuring(
         );
       }
 
-      const tsName = (element.name as Identifier).text;
+      const tsName = (name as Identifier).text;
       if (s.scope.has(tsName)) {
-        throw CompileError.at(element.name, `\`${tsName}\` shadows an existing binding.`);
+        throw CompileError.at(name, `\`${tsName}\` shadows an existing binding.`);
       }
       const sqlName = uniqueName(toSnakeCase(tsName), s.used);
       s.scope.set(tsName, { sqlName, type: field.type });
