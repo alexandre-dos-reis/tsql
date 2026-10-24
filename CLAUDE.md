@@ -27,7 +27,7 @@ bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
 bun run typecheck               # bun check over src+tests, and over the examples project
-bun run format                  # oxfmt (format:check in CI)
+bun run format                  # oxfmt (dev dependency; not checked in CI)
 ```
 
 `src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, and **requires

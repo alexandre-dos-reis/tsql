@@ -155,6 +155,19 @@ export type StmtIR =
       readonly kind: "if";
       readonly branches: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
       readonly orElse?: readonly StmtIR[];
+    }
+  /** `CASE subject WHEN v1, v2 THEN … ELSE … END CASE`: matches with `=`. */
+  | {
+      readonly kind: "simpleCase";
+      readonly subject: ExprIR;
+      readonly whens: readonly { readonly values: readonly ExprIR[]; readonly body: readonly StmtIR[] }[];
+      readonly orElse: readonly StmtIR[];
+    }
+  /** `CASE WHEN cond THEN … ELSE … END CASE`. */
+  | {
+      readonly kind: "searchedCase";
+      readonly whens: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
+      readonly orElse: readonly StmtIR[];
     };
 
 export type BinOp =
@@ -195,6 +208,24 @@ export type ExprIR =
       readonly cond: ExprIR;
       readonly whenTrue: ExprIR;
       readonly whenFalse: ExprIR;
+      readonly type: PgType;
+    }
+  /**
+   * `CASE subject WHEN v THEN r … ELSE e END`, the expression form. Unlike the
+   * PL/pgSQL statement, SQL's expression takes one value per `WHEN`.
+   */
+  | {
+      readonly kind: "simpleCaseExpr";
+      readonly subject: ExprIR;
+      readonly whens: readonly { readonly value: ExprIR; readonly result: ExprIR }[];
+      readonly orElse: ExprIR;
+      readonly type: PgType;
+    }
+  /** `CASE WHEN cond THEN r … ELSE e END`. */
+  | {
+      readonly kind: "searchedCaseExpr";
+      readonly whens: readonly { readonly cond: ExprIR; readonly result: ExprIR }[];
+      readonly orElse: ExprIR;
       readonly type: PgType;
     }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }

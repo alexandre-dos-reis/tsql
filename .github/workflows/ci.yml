@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Bun as devenv.nix: `bun check` (used by `typecheck`) arrived in 1.4.3.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for >=22.18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      # The compiler owns examples/output.sql and manifest.json and guarantees
+      # byte-identical re-runs, so a stale committed copy is a build failure.
+      - name: Generated examples are up to date
+        run: bun run ex:compile
+
+      - name: Upload generated examples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples
+          path: |
+            examples/output.sql
+            examples/manifest.json
+
+      # On drift, the diff is also posted as an annotation, so it can be read
+      # (and applied with `git apply`) from the PR without downloading anything.
+      - name: Fail if generated examples drifted
+        run: |
+          if ! git diff --quiet -- examples/output.sql examples/manifest.json; then
+            diff=$(git diff -- examples/output.sql examples/manifest.json)
+            diff=${diff//'%'/'%25'}
+            diff=${diff//$'\r'/'%0D'}
+            diff=${diff//$'\n'/'%0A'}
+            echo "::error title=Generated examples are stale — run bun run ex:compile::${diff}"
+            exit 1
+          fi

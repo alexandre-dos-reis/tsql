@@ -4,7 +4,9 @@ import {
   formatSyntaxKind,
   type BinaryExpression,
   type Block,
+  type BreakStatement,
   type CallExpression,
+  type CaseClause,
   type ConditionalExpression,
   type Expression,
   type ExpressionStatement,
@@ -24,6 +26,7 @@ import {
   type SpreadAssignment,
   type Statement,
   type StringLiteral,
+  type SwitchStatement,
   type VariableStatement,
 } from "typescript/unstable/ast";
 import { CompileError } from "./errors.ts";
@@ -186,8 +189,19 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.IfStatement:
       return [await lowerIf(node as IfStatement, s)];
 
+    case SyntaxKind.SwitchStatement:
+      return lowerSwitch(node as SwitchStatement, s);
+
     case SyntaxKind.VariableStatement:
       return lowerVariableStatement(node as VariableStatement, s);
+
+    case SyntaxKind.BreakStatement:
+      throw CompileError.at(
+        node,
+        (node as BreakStatement).label
+          ? "Labelled `break` is not supported."
+          : "`break` is only supported as the last statement of a `switch` clause.",
+      );
 
     case SyntaxKind.ExpressionStatement: {
       // Lower it first: if it reaches for a runtime global, that is the more
@@ -199,7 +213,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     default:
       throw CompileError.at(
         node,
-        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` declarations, \`if\`/\`else\` and \`return\`.`,
+        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` declarations, \`if\`/\`else\`, \`switch\` and \`return\`.`,
       );
   }
 }
@@ -229,6 +243,170 @@ async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
   }
 
   return orElse ? { kind: "if", branches, orElse } : { kind: "if", branches };
+}
+
+/**
+ * `switch` lowers to a PL/pgSQL `CASE` statement. What lowering has to prove is
+ * that the `CASE` means the same thing as the TypeScript:
+ *
+ * - **A `default` is required.** A `CASE` with no matching `WHEN` and no `ELSE`
+ *   raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness over a union does
+ *   not carry over: PostgreSQL holds the value as `text`, unconstrained. With a
+ *   `default` there is always an `ELSE`, so the generated function cannot raise.
+ * - **Matching is `===`.** The simple form, `CASE x WHEN 'a', 'b'`, compares
+ *   with `=`. A NULL discriminant matches no `WHEN` and reaches the `ELSE`, which
+ *   is what `null === 'a'` does too, so a nullable discriminant is fine. What the
+ *   simple form cannot express is a label that is itself NULL — `case null`, or a
+ *   nullable label expression — so those switches use the searched form,
+ *   `CASE WHEN x IS NULL`, with the same equality rules as an explicit `===`.
+ * - **The discriminant is evaluated once**, as in JavaScript. The simple form
+ *   does that natively; the searched form holds it in a local first unless it is
+ *   a plain reference or literal.
+ * - **Fallthrough has no `CASE` equivalent**, so a clause that has statements
+ *   must end in `break`, always return, or be the last clause. Empty clauses
+ *   group their labels with the next clause, which is the one fallthrough form
+ *   that maps onto `WHEN a, b`.
+ * - **`default` is the `ELSE`** wherever it is written, since it only runs when no
+ *   label matched. Labels grouped with it keep their place in the chain, because
+ *   an earlier match must still win over a later duplicate label.
+ * - **When every branch only returns a value**, the whole `switch` becomes
+ *   `RETURN CASE … END`: the expression form, with the same matching rules. SQL's
+ *   expression takes one value per `WHEN`, so grouped labels each get their own
+ *   `WHEN` with the same result — a pure expression, of which only one runs.
+ */
+async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
+  const clauses = node.caseBlock.clauses;
+  if (!clauses.some((clause) => clause.kind === SyntaxKind.DefaultClause)) {
+    throw CompileError.at(
+      node,
+      "A `switch` needs a `default`. TypeScript may consider it exhaustive, but PostgreSQL does not constrain the value, and a `CASE` that matches nothing raises — add a `default` that handles any other value.",
+    );
+  }
+
+  const subject = await lowerExpr(node.expression, s);
+  if (isComposite(subject.type)) {
+    throw CompileError.at(
+      node.expression,
+      "Objects compare by identity in TypeScript and by value in SQL, so a `switch` on an object has no faithful translation. Switch on a field instead.",
+    );
+  }
+
+  // Lower every label before deciding the form: the decision depends on all of them.
+  const groups: { labels: { node: Expression; value: ExprIR | null }[]; body: StmtIR[] }[] = [];
+  let orElse: StmtIR[] = [];
+  let labels: { node: Expression; value: ExprIR | null }[] = [];
+  let hasDefault = false;
+
+  for (const [i, clause] of clauses.entries()) {
+    if (clause.kind === SyntaxKind.CaseClause) {
+      const label = (clause as CaseClause).expression;
+      if (isNullLiteral(label)) {
+        labels.push({ node: label, value: null });
+      } else {
+        const value = await lowerExpr(label, s);
+        checkStrictEquality(subject, value, label);
+        labels.push({ node: label, value });
+      }
+    } else {
+      hasDefault = true;
+    }
+
+    const isLast = i === clauses.length - 1;
+    if (clause.statements.length === 0 && !isLast) continue;
+
+    const body = await lowerClauseBody(clause, isLast, s);
+    if (labels.length > 0) groups.push({ labels, body });
+    if (hasDefault) orElse = body;
+    labels = [];
+    hasDefault = false;
+  }
+
+  if (groups.length === 0) return orElse;
+
+  const simple = groups.every((g) => g.labels.every((l) => l.value !== null && !l.value.type.nullable));
+  const elseValue = returnedValue(orElse);
+  const allReturn = elseValue !== undefined && groups.every((g) => returnedValue(g.body) !== undefined);
+
+  if (simple && allReturn) {
+    const whens = groups.flatMap((g) => g.labels.map((l) => ({ value: l.value!, result: returnedValue(g.body)! })));
+    return [{ kind: "return", expr: { kind: "simpleCaseExpr", subject, whens, orElse: elseValue, type: s.returns } }];
+  }
+  if (simple) {
+    return [
+      {
+        kind: "simpleCase",
+        subject,
+        whens: groups.map((g) => ({ values: g.labels.map((l) => l.value!), body: g.body })),
+        orElse,
+      },
+    ];
+  }
+
+  const out: StmtIR[] = [];
+  let ref = subject;
+  if (subject.kind !== "ref" && subject.kind !== "lit") {
+    const sqlName = uniqueName("switch_value", s.used);
+    s.locals.push({ tsName: sqlName, sqlName, type: subject.type });
+    out.push({ kind: "assign", sqlName, expr: subject });
+    ref = { kind: "ref", sqlName, type: subject.type };
+  }
+  const whens = groups.map((g) => ({
+    cond: g.labels
+      .map((l): ExprIR =>
+        l.value === null
+          ? { kind: "nullTest", operand: ref, negated: false, type: scalarType("boolean") }
+          : strictEquality(ref, l.value, false, l.node),
+      )
+      .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") })),
+    body: g.body,
+  }));
+  if (allReturn) {
+    const exprWhens = whens.map((w) => ({ cond: w.cond, result: returnedValue(w.body)! }));
+    out.push({
+      kind: "return",
+      expr: { kind: "searchedCaseExpr", whens: exprWhens, orElse: elseValue, type: s.returns },
+    });
+    return out;
+  }
+  out.push({ kind: "searchedCase", whens, orElse });
+  return out;
+}
+
+/** The value of a branch that does nothing but `return value`, already coerced to the return type. */
+function returnedValue(body: readonly StmtIR[]): ExprIR | undefined {
+  const [only] = body;
+  return body.length === 1 && only!.kind === "return" ? only!.expr : undefined;
+}
+
+async function lowerClauseBody(
+  clause: SwitchStatement["caseBlock"]["clauses"][number],
+  isLast: boolean,
+  s: State,
+): Promise<StmtIR[]> {
+  // `case x: { ...; break; }` is the same clause written with a block.
+  const statements: readonly Statement[] =
+    clause.statements.length === 1 && clause.statements[0]!.kind === SyntaxKind.Block
+      ? (clause.statements[0] as Block).statements
+      : clause.statements;
+
+  const breakAt = statements.findIndex((st) => st.kind === SyntaxKind.BreakStatement);
+  if (breakAt !== -1) {
+    const brk = statements[breakAt] as BreakStatement;
+    if (brk.label) throw CompileError.at(brk, "Labelled `break` is not supported.");
+    if (breakAt !== statements.length - 1) {
+      throw CompileError.at(statements[breakAt + 1]!, "Unreachable code after `break`.");
+    }
+    return lowerStatements(statements.slice(0, breakAt), s);
+  }
+
+  const body = await lowerStatements(statements, s);
+  if (!isLast && !alwaysReturns(body)) {
+    throw CompileError.at(
+      clause,
+      "This `switch` clause falls through into the next one, which has no PL/pgSQL equivalent. End it with `break` or `return`.",
+    );
+  }
+  return body;
 }
 
 function asStatements(node: Statement): readonly Statement[] {
@@ -716,6 +894,27 @@ function columnFor(target: CompositeType, path: readonly string[]): string | und
   return target.fields.find((f) => samePath(f.path, path))?.sqlName;
 }
 
+/** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */
+function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void {
+  if (isComposite(left.type) || isComposite(right.type)) {
+    throw CompileError.at(
+      at,
+      "Objects compare by identity in TypeScript and by value in SQL, so `===` on an object has no faithful translation. Compare the fields you care about.",
+    );
+  }
+  requireComparable(left.type, right.type, at);
+}
+
+/** `===` / `!==` between two lowered operands; also how a searched `switch` label matches. */
+function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node): ExprIR {
+  checkStrictEquality(left, right, at);
+  // TypeScript's equality is total; SQL's `=` is three-valued. When either
+  // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
+  const nullable = left.type.nullable || right.type.nullable;
+  const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
+  return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+}
+
 async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   const op = node.operatorToken.kind;
 
@@ -757,19 +956,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   switch (op) {
     case SyntaxKind.EqualsEqualsEqualsToken:
     case SyntaxKind.ExclamationEqualsEqualsToken: {
-      if (isComposite(left.type) || isComposite(right.type)) {
-        throw CompileError.at(
-          node,
-          "Objects compare by identity in TypeScript and by value in SQL, so `===` on an object has no faithful translation. Compare the fields you care about.",
-        );
-      }
-      requireComparable(left.type, right.type, node);
-      const negated = op === SyntaxKind.ExclamationEqualsEqualsToken;
-      // TypeScript's equality is total; SQL's `=` is three-valued. When either
-      // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
-      const nullable = left.type.nullable || right.type.nullable;
-      const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
-      return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+      return strictEquality(left, right, op === SyntaxKind.ExclamationEqualsEqualsToken, node);
     }
 
     case SyntaxKind.LessThanToken:
@@ -948,6 +1135,14 @@ function alwaysReturns(body: readonly StmtIR[]): boolean {
       statement.kind === "if" &&
       statement.orElse !== undefined &&
       statement.branches.every((b) => alwaysReturns(b.body)) &&
+      alwaysReturns(statement.orElse)
+    ) {
+      return true;
+    }
+    // A `CASE` always has its `ELSE` (lowering requires the `default`).
+    if (
+      (statement.kind === "simpleCase" || statement.kind === "searchedCase") &&
+      statement.whens.every((w) => alwaysReturns(w.body)) &&
       alwaysReturns(statement.orElse)
     ) {
       return true;

@@ -148,6 +148,33 @@ BEGIN
 
 (`limit` is a reserved word in PostgreSQL, so it gets quoted. You don't have to think about it.)
 
+**`switch` becomes a `CASE`**, and the `default` is required. TypeScript may know `tier` is one of four strings, but PostgreSQL only sees `text`, so something has to answer for any other value — and a `CASE` with no `ELSE` would raise instead:
+
+```ts
+export function seatLimit(tier: Tier, extraSeats: Integer): Integer {
+  switch (tier) {
+    case "free":
+    case "starter":
+      return 1;
+    case "pro":
+      return 10 + extraSeats;
+    default:
+      return 100 + extraSeats * 2;
+  }
+}
+```
+
+```sql
+RETURN CASE tier
+  WHEN 'free' THEN 1
+  WHEN 'starter' THEN 1
+  WHEN 'pro' THEN 10 + extra_seats
+  ELSE 100 + extra_seats * 2
+END;
+```
+
+When every branch only returns a value, as here, the `switch` becomes a single `RETURN CASE … END`. A branch that does more — a `const`, a nested `if` — keeps the PL/pgSQL `CASE … END CASE` statement, where grouped labels share one `WHEN 'free', 'starter'`.
+
 ## It refuses rather than guesses
 
 This is the part worth buying. Every rejection is a thing that *looks* fine and would have compiled to subtly wrong SQL:
@@ -160,7 +187,7 @@ rules/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
       |       ^
 ```
 
-A few others: `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
+A few others: a `switch` without `default` (PostgreSQL does not enforce a union's values, so the `CASE` could match nothing), `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
 
 ## Parity tests, for free
 
@@ -188,7 +215,7 @@ Adding a rule adds a test. You don't write it.
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Plus `if`/`else if`/`else`, `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -220,6 +247,7 @@ A file the project does not hold is an error listing what it does hold, rather t
 
 - **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
 - **`x === null`** becomes `IS NULL` rather than a comparison.
+- **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, but PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
@@ -413,6 +441,9 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 | --- | --- |
 | `if (name)` | truthiness has no faithful SQL translation — compare explicitly |
 | `let` / `var`, loops | would need mutable state or iteration this subset does not model |
+| `switch` without `default` | a `CASE` that matches nothing raises, and PostgreSQL does not enforce a union's values |
+| `switch` fallthrough | a non-empty clause running into the next has no `CASE` equivalent — end it with `break` or `return` |
+| `break` anywhere but the end of a `switch` clause | it would need control flow a `CASE` branch does not model |
 | `n = n + 1` | assignment: values are computed with `const` and returned |
 | `n + 1;` as a statement | a discarded value has no effect in a pure function |
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |
@@ -482,6 +513,7 @@ A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, 
 | TypeScript | 7.0.2 (peer) | the compiler API the translator reads, and the native checker it drives |
 | PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
 | fast-check | 4.10.2 | input generation for parity tests |
+| oxfmt | 0.74.0 | formatter (`bun run format`) |
 
 `devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
 
@@ -500,7 +532,7 @@ bun run ex:check         # type check + translate the examples, write nothing
 bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the examples project
-bun run format           # oxfmt (format:check for CI)
+bun run format           # oxfmt, pinned as a dev dependency
 ```
 
 `.oxfmtrc.json` sets `printWidth` to 120 and excludes two things:
@@ -509,6 +541,17 @@ bun run format           # oxfmt (format:check for CI)
 - **`**/*.md`** — oxfmt reflows prose and flattens tables.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
+
+### CI
+
+`.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`):
+
+1. `bun install --frozen-lockfile`
+2. `bun run typecheck`
+3. `bun test` — including the PGlite parity tests
+4. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+
+Formatting is not checked in CI; run `bun run format` before committing.
 
 ### Layout
 
@@ -527,6 +570,7 @@ src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
 src/parity.ts           parity harness, driven by the emitted manifest
 src/index.ts            the library entry point
 bin/tsql.mjs            the launcher npm puts on PATH
+.github/workflows/      CI: type check, tests, parity, example drift
 ```
 
 `examples/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.

@@ -46,12 +46,17 @@ $$;`,
     expect(result.errors.map((e) => e.format())).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
+      "bonus_points",
       "can_create_todo",
       "can_create_todo_with_type",
+      "coupon_label",
       "is_eligible_for_trial",
       "is_not_empty",
       "price_cents",
       "remaining_todos",
+      "salutation",
+      "seat_limit",
+      "shipping_cents",
       "some_nested_assignment",
       "todo_limit",
     ]);
@@ -161,6 +166,10 @@ describe("rejections — language constructs", () => {
     ["unsupportedType.ts", "`Date` is a built-in JavaScript type"],
     ["undefinedType.ts", "`undefined` has no SQL equivalent"],
     ["generic.ts", "Generic functions are not supported"],
+    ["switchFallthrough.ts", "falls through into the next one"],
+    ["switchBreak.ts", "`break` is only supported as the last statement of a `switch` clause"],
+    ["switchObject.ts", "a `switch` on an object has no faithful translation"],
+    ["switchNoDefault.ts", "A `switch` needs a `default`"],
   ]);
 
   test("a rejection points at the offending line", async () => {
@@ -169,6 +178,67 @@ describe("rejections — language constructs", () => {
     expect(error.fileName).toEndWith("tests/fixtures/truthiness.ts");
     expect(error.line).toBe(2);
     expect(error.format()).toContain("if (name) {");
+  });
+});
+
+describe("switch", () => {
+  test("a switch that only returns becomes RETURN CASE … END, one WHEN per label", async () => {
+    // SQL's CASE expression takes one value per WHEN, so grouped labels repeat the result.
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain(`  RETURN CASE tier
+    WHEN 'free' THEN 1
+    WHEN 'starter' THEN 1
+    WHEN 'pro' THEN 10
+    ELSE 100
+  END;`);
+  });
+
+  test("keeps the simple form for a nullable discriminant", async () => {
+    // NULL = 'bob' is not true, so a NULL name reaches the ELSE, as null === "bob" is false.
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain(`  RETURN CASE name
+    WHEN 'bob' THEN 'hi bob'
+    ELSE 'hi'
+  END;`);
+  });
+
+  test("uses the searched form for case null", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain(`  RETURN CASE
+    WHEN code IS NULL THEN 'none'
+    WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha'
+    ELSE 'other'
+  END;`);
+  });
+
+  test("a branch doing more than return keeps the CASE statement, with grouped labels", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain(`  CASE tier
+    WHEN 'free', 'starter' THEN
+      off := 5;
+      RETURN amount - off;
+    ELSE
+      RETURN amount;
+  END CASE;`);
+    expect(result.sql).toContain(`  CASE
+    WHEN code IS NULL THEN
+      word := 'none';
+      RETURN word;
+    ELSE
+      RETURN 'some';
+  END CASE;`);
+  });
+
+  test("evaluates a computed discriminant once and fills an empty branch with NULL;", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).not.toContain("switch_value");
+    expect(result.sql).toContain(`  CASE n % 3
+    WHEN 0 THEN
+      RETURN 'fizz';
+    ELSE
+      NULL;
+  END CASE;`);
   });
 });
 

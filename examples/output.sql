@@ -51,6 +51,25 @@ BEGIN
 END
 $$;
 
+-- examples/input-4.ts: bonusPoints()
+CREATE OR REPLACE FUNCTION app.bonus_points(
+  spent_cents integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  CASE spent_cents % 3
+    WHEN 0 THEN
+      RETURN 30;
+    ELSE
+      NULL;
+  END CASE;
+  RETURN 10;
+END;
+$$;
+
 -- examples/input-2.ts: canCreateTodo()
 CREATE OR REPLACE FUNCTION app.can_create_todo(
   plan text,
@@ -85,6 +104,23 @@ BEGIN
     RETURN count <= 6;
   END IF;
   RETURN count <= 9;
+END;
+$$;
+
+-- examples/input-4.ts: couponLabel()
+CREATE OR REPLACE FUNCTION app.coupon_label(
+  code text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN CASE
+    WHEN code IS NULL THEN 'no coupon'
+    WHEN code IS NOT DISTINCT FROM 'WELCOME' THEN 'welcome offer'
+    ELSE 'other coupon'
+  END;
 END;
 $$;
 
@@ -155,6 +191,70 @@ BEGIN
     RETURN 0;
   END IF;
   RETURN "limit" - count;
+END;
+$$;
+
+-- examples/input-4.ts: salutation()
+CREATE OR REPLACE FUNCTION app.salutation(
+  name text
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN CASE name
+    WHEN '' THEN 'anonymous'
+    ELSE 'hello'
+  END;
+END;
+$$;
+
+-- examples/input-3.ts: seatLimit()
+--   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
+CREATE OR REPLACE FUNCTION app.seat_limit(
+  tier text,
+  extra_seats integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN CASE tier
+    WHEN 'free' THEN 1
+    WHEN 'starter' THEN 1
+    WHEN 'pro' THEN 10 + extra_seats
+    ELSE 100 + extra_seats * 2
+  END;
+END;
+$$;
+
+-- examples/input-4.ts: shippingCents()
+--   region: one of 'apac', 'eu', 'us' (not enforced here)
+CREATE OR REPLACE FUNCTION app.shipping_cents(
+  region text,
+  weight_grams integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  base integer;
+BEGIN
+  CASE region
+    WHEN 'eu', 'us' THEN
+      base := 500;
+      RETURN base + weight_grams * 2;
+    WHEN 'apac' THEN
+      IF weight_grams > 1000 THEN
+        RETURN 4000;
+      END IF;
+      RETURN 2500;
+    ELSE
+      RETURN 9999;
+  END CASE;
 END;
 $$;
 

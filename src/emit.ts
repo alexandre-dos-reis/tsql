@@ -124,6 +124,16 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "case":
       return `CASE WHEN ${emitExpr(expr.cond, q)} THEN ${emitExpr(expr.whenTrue, q)} ELSE ${emitExpr(expr.whenFalse, q)} END`;
 
+    case "simpleCaseExpr":
+      return `CASE ${emitExpr(expr.subject, q)} ${expr.whens
+        .map((w) => `WHEN ${emitExpr(w.value, q)} THEN ${emitExpr(w.result, q)}`)
+        .join(" ")} ELSE ${emitExpr(expr.orElse, q)} END`;
+
+    case "searchedCaseExpr":
+      return `CASE ${expr.whens
+        .map((w) => `WHEN ${emitExpr(w.cond, q)} THEN ${emitExpr(w.result, q)}`)
+        .join(" ")} ELSE ${emitExpr(expr.orElse, q)} END`;
+
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 
@@ -163,13 +173,31 @@ function operatorText(op: string): string {
   return op === "and" || op === "or" || op.startsWith("is ") ? op.toUpperCase() : op;
 }
 
+/** A `CASE` branch with nothing to do still needs a statement: `NULL;` is PL/pgSQL's no-op. */
+function emitBranch(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {
+  return body.length > 0 ? emitStatements(body, q, indent) : [`${indent}NULL;`];
+}
+
 function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {
   const lines: string[] = [];
   for (const statement of body) {
     switch (statement.kind) {
-      case "return":
-        lines.push(`${indent}RETURN ${emitExpr(statement.expr, q)};`);
+      case "return": {
+        // A returned CASE expression is laid out one WHEN per line: on a single
+        // line it is short but hard to read. Nested ones stay inline.
+        const expr = statement.expr;
+        if (expr.kind === "simpleCaseExpr" || expr.kind === "searchedCaseExpr") {
+          lines.push(`${indent}RETURN CASE${expr.kind === "simpleCaseExpr" ? ` ${emitExpr(expr.subject, q)}` : ""}`);
+          for (const when of expr.whens) {
+            const test = "value" in when ? when.value : when.cond;
+            lines.push(`${indent}  WHEN ${emitExpr(test, q)} THEN ${emitExpr(when.result, q)}`);
+          }
+          lines.push(`${indent}  ELSE ${emitExpr(expr.orElse, q)}`, `${indent}END;`);
+          break;
+        }
+        lines.push(`${indent}RETURN ${emitExpr(expr, q)};`);
         break;
+      }
 
       case "assign":
         lines.push(`${indent}${quoteIdentifier(statement.sqlName)} := ${emitExpr(statement.expr, q)};`);
@@ -187,6 +215,24 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         lines.push(`${indent}END IF;`);
         break;
       }
+
+      case "simpleCase":
+        lines.push(`${indent}CASE ${emitExpr(statement.subject, q)}`);
+        for (const when of statement.whens) {
+          lines.push(`${indent}  WHEN ${when.values.map((v) => emitExpr(v, q)).join(", ")} THEN`);
+          lines.push(...emitBranch(when.body, q, `${indent}    `));
+        }
+        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        break;
+
+      case "searchedCase":
+        lines.push(`${indent}CASE`);
+        for (const when of statement.whens) {
+          lines.push(`${indent}  WHEN ${emitExpr(when.cond, q)} THEN`);
+          lines.push(...emitBranch(when.body, q, `${indent}    `));
+        }
+        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        break;
     }
   }
   return lines;
