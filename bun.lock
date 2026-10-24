@@ -4,11 +4,14 @@
   "workspaces": {
     "": {
       "name": "ts-to-plpgsql",
+      "dependencies": {
+        "@electric-sql/pglite": "^0.5.11",
+        "fast-check": "^4.10.2",
+        "postgres": "^3.4.9",
+      },
       "devDependencies": {
         "@changesets/cli": "^3.0.3",
-        "@electric-sql/pglite": "0.5.11",
         "@types/bun": "1.4.4",
-        "fast-check": "4.10.2",
         "oxfmt": "0.74.0",
         "typescript": "7.0.2",
       },
@@ -175,6 +178,8 @@
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
 
     "picomatch": ["picomatch@4.0.7", "", {}, "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="],
+
+    "postgres": ["postgres@3.4.9", "", {}, "sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw=="],
 
     "pure-rand": ["pure-rand@8.4.2", "", {}, "sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng=="],
 

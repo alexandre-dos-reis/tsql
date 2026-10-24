@@ -23,6 +23,7 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 ```
 bun run ex:check                # type check + translate the examples, write nothing
 bun run ex:compile              # write examples/output.sql + manifest from examples/*.ts
+bun run ex:parity               # tsql parity on the examples (PGlite; add --db-url=… for a server)
 bun test                        # unit + rejection + packaging + parity tests
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
@@ -30,8 +31,13 @@ bun run typecheck               # bun check over src+tests, and over the example
 bun run format                  # oxfmt (dev dependency; not checked in CI)
 ```
 
-`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, and **requires
-file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
+`src/cli.ts` has three commands — `compile` (writes), `check` (writes nothing) and `parity` (writes
+nothing, then runs the parity harness via `src/runParity.ts`, imported lazily so `check`/`compile`
+never load a database). `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
+then it runs on one reserved postgres.js connection inside a transaction that is always rolled back,
+with a savepoint around each query so one raising check does not abort the rest. The CLI takes
+`--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, `--runs`, `--seed`, `--db-url`, and
+**requires file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a
 subset writes a migration holding only that subset, which is why the repo's own scripts pass
@@ -134,8 +140,9 @@ bun run release     # changeset publish
 - **`typescript` is a `peerDependency` (`~7.0.2`), never a dependency.** The checker must be the one
   that agrees with the consumer's own code; a copy resolved under this package would be a different
   one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
-  `unstable/` subpaths may move between 7.x minors. The package therefore has *no* runtime
-  dependencies, which `tests/packaging.test.ts` asserts.
+  `unstable/` subpaths may move between 7.x minors. Its only runtime
+  dependencies are `fast-check`, `@electric-sql/pglite` and `postgres`, for the parity harness and
+  `tsql parity`, which `tests/packaging.test.ts` asserts.
 - **`exports` points at `src/*.ts`.** Node has stripped types natively since 22.18, Bun always has,
   and TypeScript resolves `.ts` as its own types — so there is no build step and no
   emitted-declaration drift. **The price is that every file in `src/` must be erasable**: no enums,
@@ -215,11 +222,11 @@ raises on drift. The compiler creates types; it never rewrites them.
   test sees only its own errors. **Every rejection has a test here plus a fixture in `tests/fixtures/`.**
   Adding a rejection means adding both.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
-  visible to the library tests. It only ever runs `check` — `compile` writes, and a test suite has no
-  business rewriting the emitted example output.
+  visible to the library tests. It runs `check` and `parity`, never `compile` — `compile` writes, and a test
+  suite has no business rewriting the emitted example output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
-  has no runtime dependencies, and that the launcher stays Node-compatible.
+  has no runtime dependencies but `fast-check`, `@electric-sql/pglite` and `postgres`, and that the launcher stays Node-compatible.
 - `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
   generates one test per manifest function — so **adding a rule under `examples/` adds a parity test with
   no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
@@ -231,9 +238,11 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 ## Constraints to preserve
 
-- **One runtime dependency, `typescript`.** The compiler is Bun plus the TypeScript API; the emitter
-  is string building. PGlite and fast-check stay devDependencies — the parity harness takes a
-  `RowQuery` callback, so a consumer brings their own database.
+- **Three runtime dependencies, `fast-check`, `@electric-sql/pglite` and `postgres`; `typescript` is a
+  peer.** The compiler is Bun plus the TypeScript API; the emitter is string building. Parity testing is
+  a product feature: `tsql parity` runs the fast-check harness (`src/parity.ts`) against PGlite or, with
+  `--db-url`, a real server through postgres.js. The harness is internal, not exported: its `RowQuery`
+  callback is what lets `src/runParity.ts` swap one database for the other.
 - **Compile pure business rules only** — no database operations. A rule is portable; obtaining the
   trusted plan and counting rows belongs in PostgreSQL.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional

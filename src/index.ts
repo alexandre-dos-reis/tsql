@@ -1,10 +1,10 @@
 /**
  * The compiler as a library.
  *
- * The CLI in `src/cli.ts` is a thin shell over `compileProject`; anything it
- * can do is available here, which is what the parity harness and the test
- * suite use. Rules authors want `@adr/tsql/pgtypes` instead — the authoring
- * vocabulary — and test suites want `@adr/tsql/parity`.
+ * The CLI in `src/cli.ts` is a thin shell over `compileProject`; compiling is
+ * available here too, which is what the test suite uses. Rules authors want
+ * `@adr/tsql/pgtypes` instead — the authoring vocabulary. Parity checking is
+ * not exported: `tsql parity` runs it, against PGlite or `--db-url`.
  */
 
 export { compileProject, formatResult } from "./compile.ts";

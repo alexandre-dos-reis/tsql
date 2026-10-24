@@ -73,11 +73,14 @@ describe("the native compiler is locatable", () => {
 });
 
 describe("the published layout is coherent", () => {
-  test("nothing is a runtime dependency", () => {
-    // The package ships sources only. TypeScript is the consumer's to supply:
-    // the checker has to be the one that agrees with their own code, and a
-    // second copy resolved under this package would be a different one.
-    expect(manifest.dependencies ?? {}).toEqual({});
+  test("the parity harness's engines are the only runtime dependencies", () => {
+    // Parity testing is part of the product: `tsql parity` runs the fast-check
+    // harness against PGlite, or against a real
+    // server through postgres.js, so all three ship with the package. TypeScript is the
+    // consumer's to supply: the checker has to be the one that agrees with
+    // their own code, and a second copy resolved under this package would be
+    // a different one.
+    expect(Object.keys(manifest.dependencies ?? {}).sort()).toEqual(["@electric-sql/pglite", "fast-check", "postgres"]);
     expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(["typescript"]);
   });
 

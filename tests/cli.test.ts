@@ -90,6 +90,80 @@ describe("the CLI compiles the files it is given", () => {
   });
 });
 
+describe("tsql parity proves the SQL agrees with the TypeScript", () => {
+  // Few runs: this checks the command's wiring, while tests/parity.test.ts
+  // carries the full 200-input property checks and the negative control.
+  test("every compiled function is checked and reported", async () => {
+    const { stdout, stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "10", ...PROJECT]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
+    expect(stdout).toContain("5 function(s) agree with their TypeScript on 10 random inputs each");
+  });
+
+  test("it writes nothing", async () => {
+    const out = "generated/should-not-exist.sql";
+    await run(["parity", "examples/input-1.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    expect(await Bun.file(out).exists()).toBe(false);
+  });
+
+  test("a malformed --runs is named rather than turned into NaN", async () => {
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "lots", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--runs expects an integer of at least 1, got `lots`");
+  });
+
+  test("a --db-url that is not a postgres URL is refused", async () => {
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--db-url=mysql://x", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--db-url expects a postgres:// or postgresql:// URL");
+  });
+
+  test("an unreachable server is a message, with the password hidden", async () => {
+    const url = "postgres://someone:hunter2@127.0.0.1:1/nowhere";
+    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", `--db-url=${url}`, ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Could not connect to postgres://someone:***@127.0.0.1:1/nowhere");
+    expect(stderr).not.toContain("hunter2");
+    expect(stderr).not.toContain("at <anonymous>");
+  });
+
+  // Needs a real server: CI provides one through TSQL_TEST_DB_URL.
+  const dbUrl = process.env.TSQL_TEST_DB_URL;
+  test.skipIf(!dbUrl)("--db-url runs against a real PostgreSQL and leaves it untouched", async () => {
+    const { stdout, stderr, exitCode } = await run([
+      "parity",
+      "examples/input-1.ts",
+      "examples/input-2.ts",
+      "examples/input-3.ts",
+      "--runs",
+      "20",
+      `--db-url=${dbUrl}`,
+      ...PROJECT,
+    ]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("in a transaction that is rolled back");
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
+
+    // Everything ran in a transaction that was rolled back: no schema, no functions.
+    const { default: postgres } = await import("postgres");
+    const sql = postgres(dbUrl!, { max: 1 });
+    try {
+      const [row] = await sql`select to_regnamespace('app') is null as gone`;
+      expect(row!.gone).toBe(true);
+    } finally {
+      await sql.end();
+    }
+  });
+
+  test("a rule that does not compile is reported before any test runs", async () => {
+    const { stderr, exitCode } = await run(["parity", "examples/nope.ts", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
+  });
+});
+
 describe("the CLI runs on Node, not only Bun", () => {
   // `erasableSyntaxOnly` keeps the *syntax* Node-compatible at type-check
   // time, but nothing stops someone reaching for a Bun-only global, which
@@ -106,6 +180,13 @@ describe("the CLI runs on Node, not only Bun", () => {
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
+  });
+
+  test("tsql parity runs PGlite and the harness under node too", async () => {
+    const { stdout, stderr, exitCode } = await runOnNode(["parity", "examples/input-1.ts", "--runs", "5", ...PROJECT]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
   });
 
   test("rejections still read as diagnostics", async () => {

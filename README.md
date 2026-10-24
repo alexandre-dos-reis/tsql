@@ -29,7 +29,7 @@ $$;
 
 One rule, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
 
-**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL, and generates tests that run both implementations on hundreds of random inputs to prove they still agree.
+**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL. Then it *proves* the two agree: a parity harness built on [fast-check](https://fast-check.dev) runs every compiled rule on hundreds of random inputs, through your TypeScript and through the generated function in a real PostgreSQL, and `tsql parity` fails — locally or in CI — the moment they disagree.
 
 And when it meets something it cannot translate *faithfully*, it refuses to compile rather than guessing. A build error beats a function that quietly returns the wrong answer at 3am.
 
@@ -39,7 +39,7 @@ And when it meets something it cannot translate *faithfully*, it refuses to comp
 bun add -d @adr/tsql        # npm i -D @adr/tsql works too
 ```
 
-45 kB, no runtime dependencies, no build step. Runs on Node 22.18+ or [Bun](https://bun.com) — the sources are TypeScript, and both strip types natively. `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
+45 kB of sources, no build step. Three runtime dependencies, all for `tsql parity`: [fast-check](https://fast-check.dev), [PGlite](https://pglite.dev) and [postgres.js](https://github.com/porsager/postgres). Runs on Node 22.18+ or [Bun](https://bun.com) — the sources are TypeScript, and both strip types natively. `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
 
 ## Write a rule
 
@@ -88,7 +88,11 @@ END;
 $$;
 ```
 
-Point your migration tool at the emitted file and you are done. `tsql check` does the same without writing anything — put it in CI next to your type checker.
+Point your migration tool at the emitted file. `tsql check` does the same without writing anything — put it in CI next to your type checker.
+
+`compile` also writes a manifest (`generated/manifest.json`) describing every function it emitted, for tooling that wants to know what the migration holds.
+
+> **`check` and `compile` translate; `tsql parity` proves.** Compiling gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree with the TypeScript. `tsql parity rules/*.ts` does that — see [Prove it](#prove-it-parity-tests-with-fast-check).
 
 ## More examples
 
@@ -189,9 +193,13 @@ rules/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
 
 A few others: a `switch` without `default` (PostgreSQL does not enforce a union's values, so the `CASE` could match nothing), `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
 
-## Parity tests, for free
+## Prove it: parity tests with fast-check
 
-`tsql` emits a manifest describing every function it compiled. Point the harness at it and it runs each rule 200 times — same inputs through your TypeScript and through the generated PL/pgSQL — and tells you if they ever disagree:
+This is the step that turns "the compiler says it's equivalent" into "it was checked." For every compiled function, `tsql parity`:
+
+1. derives a [fast-check](https://fast-check.dev) generator for each parameter from its PostgreSQL type — permitted values for a string-literal union, int32-safe integers for `Integer`, nested objects for a composite;
+2. runs **200 random inputs** through your TypeScript function and through the generated SQL function;
+3. fails, with the shrunk counterexample and the seed to replay it, if the two ever give different answers — or if the TypeScript mutates its arguments, which PL/pgSQL could never reproduce.
 
 ```
 todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
@@ -199,7 +207,35 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
   reproduce with seed -315639818, path 0
 ```
 
-Adding a rule adds a test. You don't write it.
+Run it with one command — no test file, no database to set up:
+
+```bash
+tsql parity rules/*.ts
+```
+
+```
+✓ todoLimit() agrees with app.todo_limit()
+✓ remainingTodos() agrees with app.remaining_todos()
+✓ priceCents() agrees with app.price_cents()
+
+ok — 3 function(s) agree with their TypeScript on 200 random inputs each.
+```
+
+`tsql parity` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
+
+> **This is not a substitute for testing your rules.** `tsql parity` checks one thing: that the generated SQL gives the *same answer* as your TypeScript, on random inputs. It says nothing about whether that answer is *right*. If `todoLimit("free")` returns 30 where your business wanted 3, both implementations agree on 30 and `tsql parity` passes. Keep writing your own unit tests for the domain — they test the TypeScript, and `tsql parity` carries that guarantee over to the database.
+
+`--runs 1000` raises the inputs per function; `--seed=-315639818` replays a failure with the seed it printed.
+
+**Against your own PostgreSQL.** PGlite is the default, but it is not your server: a different version, no extensions, none of your settings. To check the rules on the PostgreSQL you actually deploy to, give it a URL:
+
+```bash
+tsql parity rules/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
+```
+
+Everything — the migration and every check — runs in one transaction that is rolled back at the end, so nothing is committed and other sessions never see the generated functions. `CREATE OR REPLACE FUNCTION` still locks any same-named function while the run lasts, so point it at a test database, not production. The password is never printed.
+
+The rules are imported as they are, so they have to load under the runtime running `tsql` — on Node, a relative import between rule files needs its `.ts` extension. Type-only imports, such as `@adr/tsql/pgtypes`, are erased and never matter.
 
 ## What's supported
 
@@ -231,17 +267,22 @@ mapping. You don't need it to use `tsql`, but you will want it before changing h
 ```
 tsql compile <files...> [options]   Type check, translate and write SQL
 tsql check   <files...> [options]   Type check and translate, writing nothing
+tsql parity  <files...> [options]   Type check, translate, and run the parity tests in PGlite, writing nothing
 
   --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
   --out <file>           Migration to write     (default: generated/0001_rules.sql)
   --manifest <file>      Manifest to write      (default: generated/manifest.json)
   --schema <name>        Schema to qualify with (default: app)
   --no-comments          Omit provenance comments from the generated SQL
+  --runs <n>             parity: random inputs per function (default: 200)
+  --seed <n>             parity: replay a failure; a negative seed needs `--seed=-123`
+  --db-url <url>         parity: run against this PostgreSQL instead of an in-process PGlite,
+                         inside a transaction that is rolled back (default: PGlite)
 ```
 
 Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
 
-A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. Both commands exit non-zero on a rejection.
+A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. All three commands exit non-zero on a rejection; `parity` also exits non-zero when any function diverges from its TypeScript.
 
 ## Semantics that are decided, not inferred
 
@@ -483,9 +524,11 @@ Rejections carry a file, line, column and the offending source line.
 
 ## Parity tests
 
+This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) above is the *what*. `tsql parity` (`src/runParity.ts`) opens the database and reports; the check itself is `src/parity.ts`, which this repo's own `tests/parity.test.ts` also drives. The harness is internal — it is not exported from the package.
+
 `src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a rule adds a parity test with no edit to the test file.
 
-The harness takes a `RowQuery` callback, so it does not care which PostgreSQL you point it at.
+The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it talks to — which is how `tsql parity` swaps PGlite for a real server under `--db-url`.
 
 That failure message in the overview is itself a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
 
@@ -530,6 +573,7 @@ Three things worth knowing about TypeScript 7:
 ```
 bun run ex:check         # type check + translate the examples, write nothing
 bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
+bun run ex:parity        # tsql parity on the examples, in PGlite (add --db-url=… for a server)
 bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
 bun run typecheck        # bun check over the compiler and over the examples project
 bun run format           # oxfmt, pinned as a dev dependency
@@ -549,7 +593,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
 3. `bun test` — including the PGlite parity tests
-4. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+4. `bun run ex:parity`, then again with `--db-url` against a PostgreSQL 18 service: `tsql parity` end to end on every example
+5. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
@@ -567,7 +612,8 @@ src/references.ts       classifies a name: parameter, local, compiled function, 
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
 src/lower.ts            AST -> IR; every restriction is enforced here
 src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
-src/parity.ts           parity harness, driven by the emitted manifest
+src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
+src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
 src/index.ts            the library entry point
 bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
@@ -590,7 +636,7 @@ bun run release     # changeset publish
 Three decisions worth stating:
 
 - **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op — the runtime ships stripped — and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever, to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
-- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. That leaves no runtime dependencies at all, which a test asserts.
+- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. The runtime dependencies are fast-check, PGlite and postgres.js: parity checking is part of the product, not a test helper, so `tsql parity` has to work straight after `npm i`. A test asserts that nothing else creeps in.
 - **The package ships TypeScript sources, not a build.** Node has stripped types natively since 22.18, Bun always has, and TypeScript resolves `.ts` as its own types — so `exports` points straight at `src/`, with no build step and no emitted-declarations drift. The constraint this imposes is that every source file must be *erasable*: no enums, no namespaces, no constructor parameter properties, since those generate code rather than only describing types. `erasableSyntaxOnly` in `tsconfig.json` enforces it, and a test runs the CLI under `node` so a Bun-only global cannot slip through type checking.
 
 ## Licence and trademarks
