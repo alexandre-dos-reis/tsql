@@ -27,7 +27,6 @@ bun run ex:parity               # tsql parity on the examples (PGlite; add --db-
 bun test                        # unit + rejection + packaging + parity tests (PGlite; PostgreSQL too
                                 #   when TSQL_TEST_DB_URL=postgres://… is set)
 bun test tests/parity.test.ts   # one file
-UPDATE_SQL=1 bun test tests/parity.test.ts   # rewrite tests/parity/*.sql after a deliberate SQL change
 bun test -t "nested object"     # one test or describe block by name
 bun run typecheck               # bun check over src+tests, and over the examples project
 bun run format                  # oxfmt (dev dependency; not checked in CI)
@@ -215,8 +214,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 - `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
   `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
   costs no compiler code.
-- `tests/parity/tsconfig.json` — **accepted cases**, one per file: `name.ts` and `name.sql`, the exact SQL
-  it must compile to. Isolated the same way (`types: []`). They share one SQL namespace, so function and
+- `tests/parity/tsconfig.json` — **accepted cases**, one per file, each header listing on `Expected SQL:`
+  lines the SQL it must compile to — only the lines whose shape matters. Isolated the same way
+  (`types: []`). They share one SQL namespace, so function and
   type names must stay unique across the folder.
 - `tests/rejected/tsconfig.json` — **rejected cases**, one file per case: valid TypeScript that falls
   outside the subset, so rejection tests exercise the translator rather than `tsc`. Each file opens with a
@@ -236,8 +236,8 @@ test file. `tests/README.md` explains the three.
 
 `tests/README.md` is the map. In short:
 
-- `tests/parity.test.ts` runs every case in `tests/parity/`: compiled alone, its SQL must equal `name.sql`
-  byte for byte; then the whole folder is compiled as one project and every function is checked through
+- `tests/parity.test.ts` runs every case in `tests/parity/`: compiled alone, its SQL must contain each
+  `Expected SQL:` line of its header, in order; then the whole folder is compiled as one project and every function is checked through
   `openDatabase` (the path `tsql parity` takes) on PGlite, and on PostgreSQL when `TSQL_TEST_DB_URL` is
   set (CI sets it, with a `postgres:18` service). `src/parity.ts` derives a fast-check arbitrary per
   parameter from its PostgreSQL type, 200 inputs per function; composite returns are compared field by

@@ -607,7 +607,7 @@ Formatting is not checked in CI; run `bun run format` before committing.
 examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
 examples/output.sql     what tsql emits for them, checked in beside the rules it came from
 examples/manifest.json  the manifest emitted with it
-tests/parity/           accepted cases: name.ts and name.sql, the exact SQL it must compile to;
+tests/parity/           accepted cases, one file per case, each listing the SQL it must compile to;
                         each is also proven against its TypeScript on PGlite and PostgreSQL
 tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
 tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them

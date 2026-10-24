@@ -1,6 +1,13 @@
 import type { Integer } from "../../src/pgtypes";
 
-/** A named object type as a parameter: a composite type, read with `(sub).plan`. */
+/**
+ * A named object type as a parameter: a composite type, read with `(sub).plan`, created before the
+ * function.
+ *
+ * Expected SQL: CREATE TYPE app.subscription AS (
+ * Expected SQL: sub app.subscription
+ * Expected SQL: plan := (sub).plan;
+ */
 type Subscription = {
   plan: "free" | "pro" | "max";
 };

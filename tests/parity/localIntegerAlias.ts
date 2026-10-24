@@ -1,6 +1,9 @@
 /**
- * `Integer` here is this file's own alias, not tsql's. It must map to the
- * `number` it actually is, never to PostgreSQL's `integer`.
+ * `Integer` here is this file's own alias, not tsql's: it must map to the `number` it is, never to
+ * `integer`.
+ *
+ * Expected SQL: weight double precision
+ * Expected SQL: RETURNS double precision
  */
 type Integer = number;
 

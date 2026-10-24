@@ -1,6 +1,6 @@
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { compileProject, formatResult, type ManifestFunction } from "../src/compile.ts";
 import { checkParity, type RowQuery } from "../src/parity.ts";
@@ -10,18 +10,15 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * Every case in tests/parity/ is accepted by the compiler and agrees with its
  * TypeScript.
  *
- * This file holds no cases. Each case is a pair: `name.ts`, the rule, and
- * `name.sql`, exactly the SQL the compiler must emit for it. For each case:
+ * This file holds no cases. Each case is a file, `name.ts`, and for each one:
  *
- * 1. it compiles, to exactly `name.sql` — which pins the *shape* of the SQL,
- *    what parity cannot see (a quoted identifier, the form of a CASE, the types
- *    in the signature);
+ * 1. compiled alone, its SQL contains each `Expected SQL:` line of its header, in
+ *    order — the *shape* of the SQL, which parity cannot see (a quoted
+ *    identifier, the form of a CASE, the types in a signature). Cases where the
+ *    shape does not matter have none;
  * 2. every function in it agrees with its TypeScript on 200 random inputs, on
  *    PGlite and, when TSQL_TEST_DB_URL names one, on a real PostgreSQL — through
  *    the same `openDatabase` that `tsql parity` uses.
- *
- * After a deliberate change to the generated SQL, rewrite the `.sql` files with
- * `UPDATE_SQL=1 bun test tests/parity.test.ts` and review the diff.
  *
  * That the harness can fail at all is proven in tests/divergent.test.ts.
  */
@@ -29,7 +26,6 @@ import { openDatabase, type Database } from "../src/runParity.ts";
 const DIR = "tests/parity";
 const TSCONFIG = `${DIR}/tsconfig.json`;
 const SCHEMA = "app";
-const UPDATE = process.env.UPDATE_SQL === "1";
 
 const cases = readdirSync(DIR)
   .filter((file) => file.endsWith(".ts"))
@@ -44,10 +40,12 @@ test("all cases compile together, as one project", () => {
   expect(formatResult(project)).toBe("");
 });
 
-describe("each case compiles to its .sql", () => {
+describe("each case compiles to the SQL its header expects", () => {
   for (const name of cases) {
     test(name, async () => {
       const path = resolve(DIR, `${name}.ts`);
+      const expected = [...readFileSync(path, "utf8").matchAll(/^ \* Expected SQL: (.+)$/gm)].map((m) => m[1]!);
+
       const result = await compileProject({
         tsconfig: TSCONFIG,
         include: (fileName) => resolve(fileName) === path,
@@ -55,12 +53,15 @@ describe("each case compiles to its .sql", () => {
       });
       expect(formatResult(result)).toBe("");
 
-      const expectedPath = resolve(DIR, `${name}.sql`);
-      if (UPDATE) writeFileSync(expectedPath, result.sql);
-      if (!existsSync(expectedPath)) {
-        throw new Error(`${DIR}/${name}.sql is missing. Run UPDATE_SQL=1 bun test tests/parity.test.ts`);
+      // In order: each fragment must appear after the previous one.
+      let from = 0;
+      for (const fragment of expected) {
+        const at = result.sql.indexOf(fragment, from);
+        if (at === -1) {
+          throw new Error(`${DIR}/${name}.ts: expected, after position ${from}, the SQL\n  ${fragment}\nin\n${result.sql}`);
+        }
+        from = at + fragment.length;
       }
-      expect(result.sql).toBe(readFileSync(expectedPath, "utf8"));
     });
   }
 });

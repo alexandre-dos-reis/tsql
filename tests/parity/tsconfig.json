@@ -1,5 +1,5 @@
 {
-  "comment": "Accepted cases, one per file: name.ts and name.sql, the exact SQL it must compile to. tests/parity.test.ts checks each against its .sql, then checks every function for parity with its TypeScript on PGlite and PostgreSQL. Isolated like a consuming project: no Bun/Node globals.",
+  "comment": "Accepted cases, one per file; each header lists, on `Expected SQL:` lines, the SQL it must compile to. tests/parity.test.ts checks those lines, then checks every function for parity with its TypeScript on PGlite and PostgreSQL. Isolated like a consuming project: no Bun/Node globals.",
   "compilerOptions": {
     "lib": [
       "ESNext"

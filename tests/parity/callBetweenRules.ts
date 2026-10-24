@@ -1,6 +1,12 @@
 import type { Integer } from "../../src/pgtypes";
 
-/** One compiled rule calling another, through a local whose name is a reserved word. */
+/**
+ * One compiled rule calling another — schema-qualified — through a local named after a reserved word,
+ * which is quoted.
+ *
+ * Expected SQL: "limit" integer;
+ * Expected SQL: "limit" := app.plan_cap(plan);
+ */
 export type Plan = "free" | "pro" | "enterprise";
 
 export function planCap(plan: Plan): Integer {

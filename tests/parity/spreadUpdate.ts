@@ -1,4 +1,9 @@
-/** The mutation case, written so both languages agree: build, do not mutate. */
+/**
+ * The mutation case, written so both languages agree: build a new value, do not mutate.
+ *
+ * Expected SQL: next := ROW('some')::app.mutable;
+ * Expected SQL: RETURN (next).foo_bar;
+ */
 type Mutable = {
   foo: { bar: string };
 };

@@ -1,8 +1,18 @@
 import type { Integer } from "../../src/pgtypes";
 
+/**
+ * A branch that does more than return keeps the CASE statement, where grouped labels share one WHEN.
+ *
+ * Expected SQL: CASE tier
+ * Expected SQL: WHEN 'free', 'starter' THEN
+ * Expected SQL: off := 5;
+ * Expected SQL: RETURN amount - off;
+ * Expected SQL: ELSE
+ * Expected SQL: RETURN amount;
+ * Expected SQL: END CASE;
+ */
 export type Tier = "free" | "starter" | "pro" | "enterprise";
 
-/** A branch that does more than return keeps the statement form. */
 export function discounted(tier: Tier, amount: Integer): Integer {
   switch (tier) {
     case "free":
@@ -17,7 +27,6 @@ export function discounted(tier: Tier, amount: Integer): Integer {
 
 export type Region = "eu" | "us" | "apac";
 
-/** The CASE statement: branches that compute before they return, with grouped labels. */
 export function shippingCents(region: Region, weightGrams: Integer): Integer {
   switch (region) {
     case "eu":
