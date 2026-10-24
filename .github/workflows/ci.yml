@@ -24,7 +24,14 @@ jobs:
         with:
           node-version: 24
 
-      - run: bun install --frozen-lockfile
+      # TEMPORARY: add postgres.js and post the lockfile diff in chunks.
+      - name: Add postgres
+        run: |
+          bun add postgres
+          git diff | gzip -9 | base64 -w0 | fold -w 3900 | nl -nln -w1 -s' ' | while read -r n chunk; do
+            echo "::notice title=bootstrap ${n}::${chunk}"
+          done
+          exit 1
 
       - run: bun run typecheck
 
