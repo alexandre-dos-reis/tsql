@@ -1,15 +1,16 @@
 /**
- * Rejected: `for … of` (and `for … in`).
+ * Rejected: `for … of` over a string.
  *
- * They iterate over arrays, strings and object keys, none of which are part of
- * the compiled subset yet. A `for … of` over a string would also iterate code
- * points, which SQL has no direct loop for.
+ * `for … of` is supported over a `readonly T[]` parameter. Over a string it
+ * iterates code points, which SQL has no direct loop for — and
+ * `string_to_array(word, NULL)` splits by character in the database encoding,
+ * not by code point.
  *
- * Expected: `for … of` and `for … in` are not supported
+ * Expected: `for … of` over a string is not supported
  */
 export function vowels(word: string): number {
   let count = 0;
-  for (const letter of word) {
+  for (const letter of word) { // ← rejected here
     if (letter === "a") {
       count += 1;
     }

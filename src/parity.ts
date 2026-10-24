@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import type { ManifestFunction } from "./compile.ts";
-import { isScalar, type CompositeField, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
+import { isArray, isScalar, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
 import { quoteIdentifier } from "./names.ts";
 
 /**
@@ -40,7 +40,14 @@ const FLOAT_TINY = 1e-300;
 /** NUL and lone surrogates are not representable in a PostgreSQL text value. */
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
+/**
+ * Arrays are kept short: long enough for empty, single and repeated elements,
+ * short enough that a rule looping over them stays fast.
+ */
+const ARRAY_MAX_LENGTH = 10;
+
 export function arbitraryFor(type: PgType): fc.Arbitrary<unknown> {
+  if (isArray(type)) return fc.array(arbitraryFor(type.element), { maxLength: ARRAY_MAX_LENGTH });
   const base = isScalar(type) ? scalarArbitrary(type) : compositeArbitrary(type);
   return type.nullable ? fc.option(base, { nil: null, freq: 4 }) : base;
 }
@@ -94,44 +101,51 @@ function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
   }
 }
 
-/**
- * Placeholders are cast to the parameter's declared type: without that,
- * PostgreSQL cannot infer the type of a NULL argument.
- */
-export function callSql(fn: ManifestFunction, schema: string | null): string {
-  const qualify = (name: string) =>
-    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(name)}` : quoteIdentifier(name);
-
-  let placeholder = 0;
-  const args = fn.params.map((param) => {
-    if (isScalar(param.type)) return `$${++placeholder}::${param.type.sql}`;
-    // A composite is built from one placeholder per field and cast to the
-    // named type, which is how a caller would construct one by hand.
-    const fields = param.type.fields.map((f: CompositeField) => `$${++placeholder}::${f.type.sql}`).join(", ");
-    return `ROW(${fields})::${qualify(param.type.sqlName)}`;
-  });
-
-  const call = `${qualify(fn.sqlName)}(${args.join(", ")})`;
-  // `(fn(...)).* ` expands a composite result into one column per field.
-  return isScalar(fn.returns) ? `select ${call} as value` : `select (${call}).*`;
+/** A call of the generated function on one input: the query and its parameters. */
+export interface PreparedCall {
+  readonly sql: string;
+  readonly params: readonly unknown[];
 }
 
 /**
- * Flatten the TypeScript-side arguments to match the placeholders in
- * {@link callSql}: an object argument becomes one value per field, in order.
+ * Build the call for one input, the way a caller would write it by hand.
+ *
+ * Every placeholder is cast to its declared type: without that, PostgreSQL
+ * cannot infer the type of a NULL argument. A composite is built from one
+ * placeholder per flattened field, read out of the nested TypeScript object,
+ * and cast to the named type. An array is built element by element —
+ * `ARRAY[$1::integer, $2::integer]::integer[]` — which is why the query depends
+ * on the input: its length decides the placeholders. Building it in SQL also
+ * leaves no array literal for a driver to escape.
  */
-export function flattenArgs(fn: ManifestFunction, args: readonly unknown[]): unknown[] {
-  const flat: unknown[] = [];
-  fn.params.forEach((param, index) => {
-    const value = args[index];
-    if (isScalar(param.type)) {
-      flat.push(value);
-      return;
-    }
-    // One placeholder per flattened leaf, read out of the nested object.
-    for (const field of param.type.fields) flat.push(value === null ? null : readPath(value, field.path));
+export function prepareCall(fn: ManifestFunction, schema: string | null, args: readonly unknown[]): PreparedCall {
+  const qualify = (name: string) =>
+    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(name)}` : quoteIdentifier(name);
+
+  const params: unknown[] = [];
+  const bind = (value: unknown, type: ScalarType): string => {
+    params.push(value);
+    return `$${params.length}::${type.sql}`;
+  };
+  const value = (type: ScalarType | CompositeType, input: unknown): string => {
+    if (isScalar(type)) return bind(input, type);
+    const fields = type.fields.map((f) => bind(input === null ? null : readPath(input, f.path), f.type));
+    return `ROW(${fields.join(", ")})::${qualify(type.sqlName)}`;
+  };
+
+  const argsSql = fn.params.map((param, index) => {
+    const input = args[index];
+    const type = param.type;
+    if (!isArray(type)) return value(type, input);
+    const element = isScalar(type.element) ? type.element.sql : qualify(type.element.sqlName);
+    const items = (input as readonly unknown[]).map((item) => value(type.element, item));
+    return `ARRAY[${items.join(", ")}]::${element}[]`;
   });
-  return flat;
+
+  const call = `${qualify(fn.sqlName)}(${argsSql.join(", ")})`;
+  // `(fn(...)).* ` expands a composite result into one column per field.
+  const sql = isScalar(fn.returns) ? `select ${call} as value` : `select (${call}).*`;
+  return { sql, params };
 }
 
 /**
@@ -140,6 +154,8 @@ export function flattenArgs(fn: ManifestFunction, args: readonly unknown[]): unk
  */
 export function resultEqual(row: Record<string, unknown>, tsValue: unknown, returns: PgType): boolean {
   if (isScalar(returns)) return valuesEqual(row.value, tsValue, returns);
+  // Unreachable: lowering refuses an array return.
+  if (isArray(returns)) return false;
   if (tsValue === null || tsValue === undefined) return false;
   return returns.fields.every((field) => valuesEqual(row[field.sqlName], readPath(tsValue, field.path), field.type));
 }
@@ -188,7 +204,6 @@ export async function checkParity(
   schema: string | null,
   options: ParityOptions = {},
 ): Promise<void> {
-  const sql = callSql(fn, schema);
   const arbitraries = fn.params.map((p) => arbitraryFor(p.type));
   const call = impl as (...args: unknown[]) => unknown;
 
@@ -200,7 +215,8 @@ export async function checkParity(
       const before = structuredClone(args);
       const tsValue = call(...args);
       if (!deepEqual(args, before)) return false;
-      return resultEqual(await query(sql, flattenArgs(fn, args)), tsValue, fn.returns);
+      const prepared = prepareCall(fn, schema, args);
+      return resultEqual(await query(prepared.sql, prepared.params), tsValue, fn.returns);
     }),
     { numRuns: options.runs ?? 200, ...(options.seed === undefined ? {} : { seed: options.seed }) },
   );
@@ -210,11 +226,12 @@ export async function checkParity(
   // `fc.check` reports the shrunk input; replay it so the message names the two
   // answers that disagree rather than just the input that provoked it.
   const args = run.counterexample?.[0] ?? [];
+  const { sql, params } = prepareCall(fn, schema, args);
   let detail: string;
   try {
     const before = structuredClone(args);
     const tsValue = call(...args);
-    const row = await query(sql, flattenArgs(fn, args));
+    const row = await query(sql, params);
     // A scalar return arrives as a one-column row; report the value, not the row.
     const sqlValue = isScalar(fn.returns) ? row.value : row;
     detail = !deepEqual(args, before)

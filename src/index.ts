@@ -11,6 +11,6 @@ export { compileProject, formatResult } from "./compile.ts";
 export type { CompileOptions, CompileResult, Manifest, ManifestFunction } from "./compile.ts";
 export { CompileError, TypeCheckError } from "./errors.ts";
 export type { EmitOptions } from "./emit.ts";
-export type { CompositeField, CompositeType, FunctionIR, PgScalar, PgType, ScalarType, SignatureIR } from "./ir.ts";
+export type { ArrayType, CompositeField, CompositeType, FunctionIR, PgScalar, PgType, ScalarType, SignatureIR } from "./ir.ts";
 export type { Float, Integer, Numeric } from "./pgtypes.ts";
 export { findTscPath, platformPackage } from "./tscPath.ts";

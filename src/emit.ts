@@ -1,5 +1,6 @@
 import {
   fieldLabel,
+  isArray,
   isScalar,
   type BinOp,
   type CompositeType,
@@ -62,6 +63,7 @@ function precedenceOf(expr: ExprIR): number {
     case "not":
       return PREC.not;
     case "nullTest":
+    case "arrayIncludes":
       return PREC.is;
     case "neg":
       return PREC.unary;
@@ -149,6 +151,12 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       // One argument per flattened field, in field order, cast to the named
       // composite: PostgreSQL composites are nominal, so a bare ROW() will not do.
       return `ROW(${expr.args.map((a) => emitExpr(a, q)).join(", ")})::${q.type(expr.type)}`;
+
+    case "arrayLength":
+      return `cardinality(${emitExpr(expr.operand, q)})`;
+
+    case "arrayIncludes":
+      return `array_position(${emitExpr(expr.array, q)}, ${emitExpr(expr.value, q)}) IS NOT NULL`;
   }
 }
 
@@ -240,6 +248,12 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         lines.push(`${indent}END LOOP;`);
         break;
 
+      case "foreach":
+        lines.push(`${indent}FOREACH ${quoteIdentifier(statement.variable)} IN ARRAY ${emitExpr(statement.array, q)} LOOP`);
+        lines.push(...emitBranch(statement.body, q, `${indent}  `));
+        lines.push(`${indent}END LOOP;`);
+        break;
+
       case "exit":
         lines.push(`${indent}EXIT;`);
         break;
@@ -252,8 +266,9 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
   return lines;
 }
 
-/** How a type is written in SQL: a scalar name, or a (possibly qualified) composite. */
+/** How a type is written in SQL: a scalar name, a (possibly qualified) composite, or an array of either. */
 function typeName(type: PgType, schema: string | undefined): string {
+  if (isArray(type)) return `${typeName(type.element, schema)}[]`;
   if (isScalar(type)) return type.sql;
   return schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(type.sqlName)}` : quoteIdentifier(type.sqlName);
 }
@@ -270,6 +285,9 @@ export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string 
     lines.push(`-- ${fn.module}: ${fn.tsName}()`);
     for (const param of fn.params) {
       if (isScalar(param.type) && param.type.allowed) lines.push(allowedNote(param.sqlName, param.type.allowed));
+      if (isArray(param.type) && isScalar(param.type.element) && param.type.element.allowed) {
+        lines.push(allowedNote(`${param.sqlName}[]`, param.type.element.allowed));
+      }
     }
     if (isScalar(fn.returns) && fn.returns.allowed) lines.push(allowedNote("returns", fn.returns.allowed));
   }
