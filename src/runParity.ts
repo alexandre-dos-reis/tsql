@@ -29,7 +29,7 @@ export interface RunParityOptions extends ParityOptions {
 }
 
 /** The three things the harness needs from a database. */
-interface Database {
+export interface Database {
   /** Run the migration: several statements, no parameters. */
   readonly exec: (sql: string) => Promise<void>;
   readonly query: RowQuery;
@@ -37,7 +37,7 @@ interface Database {
 }
 
 export async function runParity(result: CompileResult, options: RunParityOptions = {}): Promise<ParityOutcome[]> {
-  const db = options.dbUrl ? await openPostgres(options.dbUrl) : await openPglite();
+  const db = await openDatabase(options.dbUrl);
   try {
     try {
       await db.exec(result.sql);
@@ -55,6 +55,15 @@ export async function runParity(result: CompileResult, options: RunParityOptions
   } finally {
     await db.close();
   }
+}
+
+/**
+ * PGlite when `dbUrl` is absent, otherwise the PostgreSQL it names (inside a
+ * transaction that `close` rolls back). Also used by this repo's own parity
+ * tests, so `bun test` exercises exactly what `tsql parity` runs.
+ */
+export function openDatabase(dbUrl?: string): Promise<Database> {
+  return dbUrl ? openPostgres(dbUrl) : openPglite();
 }
 
 async function openPglite(): Promise<Database> {

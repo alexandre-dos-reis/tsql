@@ -4,27 +4,6 @@
   "types": [
     {
       "kind": "composite",
-      "tsName": "Nested",
-      "sqlName": "nested",
-      "fields": [
-        {
-          "path": [
-            "foo",
-            "bar"
-          ],
-          "sqlName": "foo_bar",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": false
-          }
-        }
-      ],
-      "nullable": false,
-      "module": "examples/input-2.ts"
-    },
-    {
-      "kind": "composite",
       "tsName": "Subscription",
       "sqlName": "subscription",
       "fields": [
@@ -38,22 +17,22 @@
             "sql": "text",
             "nullable": false,
             "allowed": [
+              "enterprise",
               "free",
-              "max",
               "pro"
             ]
           }
         }
       ],
       "nullable": false,
-      "module": "examples/input-2.ts"
+      "module": "examples/billing.ts"
     }
   ],
   "functions": [
     {
       "tsName": "todoLimit",
       "sqlName": "todo_limit",
-      "module": "examples/input-1.ts",
+      "module": "examples/billing.ts",
       "params": [
         {
           "tsName": "plan",
@@ -73,173 +52,13 @@
       "returns": {
         "kind": "scalar",
         "sql": "integer",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "remainingTodos",
-      "sqlName": "remaining_todos",
-      "module": "examples/input-1.ts",
-      "params": [
-        {
-          "tsName": "plan",
-          "sqlName": "plan",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": false,
-            "allowed": [
-              "enterprise",
-              "free",
-              "pro"
-            ]
-          }
-        },
-        {
-          "tsName": "count",
-          "sqlName": "count",
-          "type": {
-            "kind": "scalar",
-            "sql": "integer",
-            "nullable": false
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "integer",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "priceCents",
-      "sqlName": "price_cents",
-      "module": "examples/input-1.ts",
-      "params": [
-        {
-          "tsName": "listCents",
-          "sqlName": "list_cents",
-          "type": {
-            "kind": "scalar",
-            "sql": "integer",
-            "nullable": false
-          }
-        },
-        {
-          "tsName": "percentOff",
-          "sqlName": "percent_off",
-          "type": {
-            "kind": "scalar",
-            "sql": "double precision",
-            "nullable": true
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "double precision",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "isEligibleForTrial",
-      "sqlName": "is_eligible_for_trial",
-      "module": "examples/input-1.ts",
-      "params": [
-        {
-          "tsName": "plan",
-          "sqlName": "plan",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": false,
-            "allowed": [
-              "enterprise",
-              "free",
-              "pro"
-            ]
-          }
-        },
-        {
-          "tsName": "hadTrial",
-          "sqlName": "had_trial",
-          "type": {
-            "kind": "scalar",
-            "sql": "boolean",
-            "nullable": false
-          }
-        },
-        {
-          "tsName": "referral",
-          "sqlName": "referral",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": true
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "boolean",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "isNotEmpty",
-      "sqlName": "is_not_empty",
-      "module": "examples/input-1.ts",
-      "params": [
-        {
-          "tsName": "string",
-          "sqlName": "string",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": true
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "boolean",
         "nullable": false
       }
     },
     {
       "tsName": "canCreateTodo",
       "sqlName": "can_create_todo",
-      "module": "examples/input-2.ts",
-      "params": [
-        {
-          "tsName": "plan",
-          "sqlName": "plan",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": false
-          }
-        },
-        {
-          "tsName": "count",
-          "sqlName": "count",
-          "type": {
-            "kind": "scalar",
-            "sql": "integer",
-            "nullable": false
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "boolean",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "canCreateTodoWithType",
-      "sqlName": "can_create_todo_with_type",
-      "module": "examples/input-2.ts",
+      "module": "examples/billing.ts",
       "params": [
         {
           "tsName": "sub",
@@ -259,15 +78,15 @@
                   "sql": "text",
                   "nullable": false,
                   "allowed": [
+                    "enterprise",
                     "free",
-                    "max",
                     "pro"
                   ]
                 }
               }
             ],
             "nullable": false,
-            "module": "examples/input-2.ts"
+            "module": "examples/billing.ts"
           }
         },
         {
@@ -287,62 +106,9 @@
       }
     },
     {
-      "tsName": "someNestedAssignment",
-      "sqlName": "some_nested_assignment",
-      "module": "examples/input-2.ts",
-      "params": [
-        {
-          "tsName": "nested",
-          "sqlName": "nested",
-          "type": {
-            "kind": "composite",
-            "tsName": "Nested",
-            "sqlName": "nested",
-            "fields": [
-              {
-                "path": [
-                  "foo",
-                  "bar"
-                ],
-                "sqlName": "foo_bar",
-                "type": {
-                  "kind": "scalar",
-                  "sql": "text",
-                  "nullable": false
-                }
-              }
-            ],
-            "nullable": false,
-            "module": "examples/input-2.ts"
-          }
-        }
-      ],
-      "returns": {
-        "kind": "composite",
-        "tsName": "Nested",
-        "sqlName": "nested",
-        "fields": [
-          {
-            "path": [
-              "foo",
-              "bar"
-            ],
-            "sqlName": "foo_bar",
-            "type": {
-              "kind": "scalar",
-              "sql": "text",
-              "nullable": false
-            }
-          }
-        ],
-        "nullable": false,
-        "module": "examples/input-2.ts"
-      }
-    },
-    {
       "tsName": "seatLimit",
       "sqlName": "seat_limit",
-      "module": "examples/input-3.ts",
+      "module": "examples/billing.ts",
       "params": [
         {
           "tsName": "tier",
@@ -376,48 +142,43 @@
       }
     },
     {
-      "tsName": "shippingCents",
-      "sqlName": "shipping_cents",
-      "module": "examples/input-4.ts",
+      "tsName": "priceCents",
+      "sqlName": "price_cents",
+      "module": "examples/pricing.ts",
       "params": [
         {
-          "tsName": "region",
-          "sqlName": "region",
+          "tsName": "listCents",
+          "sqlName": "list_cents",
           "type": {
             "kind": "scalar",
-            "sql": "text",
-            "nullable": false,
-            "allowed": [
-              "apac",
-              "eu",
-              "us"
-            ]
+            "sql": "integer",
+            "nullable": false
           }
         },
         {
-          "tsName": "weightGrams",
-          "sqlName": "weight_grams",
+          "tsName": "percentOff",
+          "sqlName": "percent_off",
           "type": {
             "kind": "scalar",
-            "sql": "integer",
-            "nullable": false
+            "sql": "double precision",
+            "nullable": true
           }
         }
       ],
       "returns": {
         "kind": "scalar",
-        "sql": "integer",
+        "sql": "double precision",
         "nullable": false
       }
     },
     {
-      "tsName": "couponLabel",
-      "sqlName": "coupon_label",
-      "module": "examples/input-4.ts",
+      "tsName": "isNotEmpty",
+      "sqlName": "is_not_empty",
+      "module": "examples/pricing.ts",
       "params": [
         {
-          "tsName": "code",
-          "sqlName": "code",
+          "tsName": "couponCode",
+          "sqlName": "coupon_code",
           "type": {
             "kind": "scalar",
             "sql": "text",
@@ -427,49 +188,7 @@
       ],
       "returns": {
         "kind": "scalar",
-        "sql": "text",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "salutation",
-      "sqlName": "salutation",
-      "module": "examples/input-4.ts",
-      "params": [
-        {
-          "tsName": "name",
-          "sqlName": "name",
-          "type": {
-            "kind": "scalar",
-            "sql": "text",
-            "nullable": true
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "text",
-        "nullable": false
-      }
-    },
-    {
-      "tsName": "bonusPoints",
-      "sqlName": "bonus_points",
-      "module": "examples/input-4.ts",
-      "params": [
-        {
-          "tsName": "spentCents",
-          "sqlName": "spent_cents",
-          "type": {
-            "kind": "scalar",
-            "sql": "integer",
-            "nullable": false
-          }
-        }
-      ],
-      "returns": {
-        "kind": "scalar",
-        "sql": "integer",
+        "sql": "boolean",
         "nullable": false
       }
     }

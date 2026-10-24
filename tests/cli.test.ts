@@ -2,16 +2,18 @@ import { describe, expect, test } from "bun:test";
 
 /**
  * The CLI's own contract, which the library tests cannot see: which
- * invocations are refused, and what the exit code is. Only `check` is used —
- * `compile` writes, and a test suite has no business rewriting the example
- * output that is checked in.
+ * invocations are refused, what is printed, and the exit codes. The CLI is
+ * spawned as a user would run it, under Bun and under Node. `check` and
+ * `parity` are used, never `compile`: it writes, and a test suite has no
+ * business rewriting checked-in output.
  */
 
 /**
  * The CLI defaults to `rules/tsconfig.json`, which describes a consuming
- * project rather than this repo — the demo rules live in `examples/`.
+ * project rather than this repo. The tests use the accepted cases in
+ * `tests/parity/`, never the user-facing `examples/`.
  */
-const PROJECT = ["--project", "examples/tsconfig.json"];
+const PROJECT = ["--project", "tests/parity/tsconfig.json"];
 
 /** Run the CLI as a user would, and capture both streams and the exit code. */
 async function run(args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
@@ -40,7 +42,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   });
 
   test("an unknown command names it, and shows usage", async () => {
-    const { stderr, exitCode } = await run(["frobnicate", "examples/input-1.ts"]);
+    const { stderr, exitCode } = await run(["frobnicate", "tests/parity/ifElseChain.ts"]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("unknown command `frobnicate`");
     expect(stderr).toContain("Usage:");
@@ -49,10 +51,10 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   test("a file where the command goes suggests the command", async () => {
     // The likeliest slip. Reprinting usage leaves the reader to spot the
     // difference themselves, so the path that was given is named instead.
-    const { stderr, exitCode } = await run(["examples/input-1.ts", "--out", "some.sql"]);
+    const { stderr, exitCode } = await run(["tests/parity/ifElseChain.ts", "--out", "some.sql"]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("expected a command, got `examples/input-1.ts`");
-    expect(stderr).toContain("tsql compile examples/input-1.ts");
+    expect(stderr).toContain("expected a command, got `tests/parity/ifElseChain.ts`");
+    expect(stderr).toContain("tsql compile tests/parity/ifElseChain.ts");
   });
 
   test("--help shows usage and succeeds", async () => {
@@ -64,7 +66,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
 
 describe("the CLI compiles the files it is given", () => {
   test("named files succeed and report only their own rules", async () => {
-    const { stdout, exitCode } = await run(["check", "examples/input-1.ts", ...PROJECT]);
+    const { stdout, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", ...PROJECT]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
     expect(stdout).not.toContain("can_create_todo");
@@ -73,7 +75,7 @@ describe("the CLI compiles the files it is given", () => {
   test("a missing project names the path and points at --project", async () => {
     // The `--project` default describes a consuming project, so a first run
     // from anywhere else lands here.
-    const { stderr, exitCode } = await run(["check", "examples/input-1.ts"]);
+    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts"]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("No TypeScript project at");
     expect(stderr).toContain("rules/tsconfig.json");
@@ -82,10 +84,10 @@ describe("the CLI compiles the files it is given", () => {
   });
 
   test("a file the project does not hold fails with advice, not a stack trace", async () => {
-    const { stderr, exitCode } = await run(["check", "examples/nope.ts", ...PROJECT]);
+    const { stderr, exitCode } = await run(["check", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
-    expect(stderr).toContain("examples/input-1.ts");
+    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
+    expect(stderr).toContain("tests/parity/ifElseChain.ts");
     expect(stderr).not.toContain("at <anonymous>");
   });
 });
@@ -94,34 +96,34 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
   // Few runs: this checks the command's wiring, while tests/parity.test.ts
   // carries the full 200-input property checks and the negative control.
   test("every compiled function is checked and reported", async () => {
-    const { stdout, stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "10", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "10", ...PROJECT]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
-    expect(stdout).toContain("5 function(s) agree with their TypeScript on 10 random inputs each");
+    expect(stdout).toContain("1 function(s) agree with their TypeScript on 10 random inputs each");
   });
 
   test("it writes nothing", async () => {
     const out = "generated/should-not-exist.sql";
-    await run(["parity", "examples/input-1.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
     expect(await Bun.file(out).exists()).toBe(false);
   });
 
   test("a malformed --runs is named rather than turned into NaN", async () => {
-    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--runs", "lots", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "lots", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--runs expects an integer of at least 1, got `lots`");
   });
 
   test("a --db-url that is not a postgres URL is refused", async () => {
-    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", "--db-url=mysql://x", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--db-url=mysql://x", ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--db-url expects a postgres:// or postgresql:// URL");
   });
 
   test("an unreachable server is a message, with the password hidden", async () => {
     const url = "postgres://someone:hunter2@127.0.0.1:1/nowhere";
-    const { stderr, exitCode } = await run(["parity", "examples/input-1.ts", `--db-url=${url}`, ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", `--db-url=${url}`, ...PROJECT]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Could not connect to postgres://someone:***@127.0.0.1:1/nowhere");
     expect(stderr).not.toContain("hunter2");
@@ -133,9 +135,9 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
   test.skipIf(!dbUrl)("--db-url runs against a real PostgreSQL and leaves it untouched", async () => {
     const { stdout, stderr, exitCode } = await run([
       "parity",
-      "examples/input-1.ts",
-      "examples/input-2.ts",
-      "examples/input-3.ts",
+      "tests/parity/ifElseChain.ts",
+      "tests/parity/compositeParam.ts",
+      "tests/parity/switchReturn.ts",
       "--runs",
       "20",
       `--db-url=${dbUrl}`,
@@ -158,9 +160,9 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
   });
 
   test("a rule that does not compile is reported before any test runs", async () => {
-    const { stderr, exitCode } = await run(["parity", "examples/nope.ts", ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
+    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
   });
 });
 
@@ -176,23 +178,23 @@ describe("the CLI runs on Node, not only Bun", () => {
   }
 
   test("it compiles, and reports the same functions", async () => {
-    const { stdout, stderr, exitCode } = await runOnNode(["check", "examples/input-1.ts", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await runOnNode(["check", "tests/parity/ifElseChain.ts", ...PROJECT]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
   });
 
   test("tsql parity runs PGlite and the harness under node too", async () => {
-    const { stdout, stderr, exitCode } = await runOnNode(["parity", "examples/input-1.ts", "--runs", "5", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await runOnNode(["parity", "tests/parity/ifElseChain.ts", "--runs", "5", ...PROJECT]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
   });
 
   test("rejections still read as diagnostics", async () => {
-    const { stderr, exitCode } = await runOnNode(["check", "examples/nope.ts", ...PROJECT]);
+    const { stderr, exitCode } = await runOnNode(["check", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in examples/tsconfig.json");
+    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
     expect(stderr).not.toContain("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX");
   });
 });

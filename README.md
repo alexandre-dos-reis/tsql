@@ -116,19 +116,19 @@ BEGIN
 **Nullable comparisons are handled for you.** `x !== ""` on a nullable value is not `<>` — SQL's `=` is three-valued, so this would silently return NULL:
 
 ```ts
-export function isNotEmpty(string: string | null): boolean {
-  if (string === null) {
+export function isNotEmpty(couponCode: string | null): boolean {
+  if (couponCode === null) {
     return false;
   }
-  return string !== "";
+  return couponCode !== "";
 }
 ```
 
 ```sql
-IF string IS NULL THEN
+IF coupon_code IS NULL THEN
   RETURN false;
 END IF;
-RETURN string IS DISTINCT FROM '';
+RETURN coupon_code IS DISTINCT FROM '';
 ```
 
 **Objects become composite types**, and rules can call each other:
@@ -364,7 +364,7 @@ return nested.foo.bar;
 ```
 
 ```sql
--- examples/input-2.ts: Nested
+-- rules/nested.ts: Nested
 --   foo_bar: from foo.bar
 CREATE TYPE app.nested AS (
   foo_bar text
@@ -474,7 +474,7 @@ Built-in object types are excluded by the same provenance check that catches run
 
 ## Rejected at build time
 
-Each of these has a test in `tests/compile.test.ts`, with the fixture that provokes it in `tests/fixtures/`.
+Each of these is a case in `tests/rejected/`, one file per case. Each file opens with a comment explaining the refusal, often with the SQL that would have diverged, and the message the compiler must give; `tests/rejected.test.ts` runs them all.
 
 **Language constructs:**
 
@@ -516,7 +516,7 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 | `plan.length`, `plan.toUpperCase()` | object access and methods on values are not in the subset |
 | `async` / `await` | `` a PL/pgSQL function runs to completion with nothing to await `` |
 
-This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/fixtures/shadowedGlobal.ts`).
+This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
 
 Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: the rules project's tsconfig sets `"types": []`, so they are type errors before the translator runs.
 
@@ -530,7 +530,7 @@ This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) ab
 
 The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it talks to — which is how `tsql parity` swaps PGlite for a real server under `--db-url`.
 
-That failure message in the overview is itself a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
+`tests/parity.test.ts` runs the harness on every case in `tests/parity/`, through the same `openDatabase` the command uses: on PGlite always, and on a real PostgreSQL when `TSQL_TEST_DB_URL` names one (CI provides a PostgreSQL 18 service), inside the same rolled-back transaction as `--db-url`. That failure message in the overview is itself a test: `tests/divergent/` holds hand-written TypeScript/SQL pairs that disagree — a wrong result, a TypeScript function that mutates its argument — and `tests/divergent.test.ts` asserts the harness catches each one on both backends, so the suite cannot pass vacuously.
 
 Two further checks:
 
@@ -574,7 +574,8 @@ Three things worth knowing about TypeScript 7:
 bun run ex:check         # type check + translate the examples, write nothing
 bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
 bun run ex:parity        # tsql parity on the examples, in PGlite (add --db-url=… for a server)
-bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
+bun test                 # parity, SQL-shape and rejection tests on tests/ — PGlite, then PostgreSQL
+                         # too when TSQL_TEST_DB_URL is set
 bun run typecheck        # bun check over the compiler and over the examples project
 bun run format           # oxfmt, pinned as a dev dependency
 ```
@@ -592,18 +593,25 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
-3. `bun test` — including the PGlite parity tests
-4. `bun run ex:parity`, then again with `--db-url` against a PostgreSQL 18 service: `tsql parity` end to end on every example
+3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
+4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
 5. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+
+`examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few rules, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
 ### Layout
 
 ```
-examples/*.ts           demo business rules — the compiler's input, its own isolated tsconfig
-examples/output.sql     the emitted migration, checked in beside the rules it came from
-examples/manifest.json  what the parity harness reads
+examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
+examples/output.sql     what tsql emits for them, checked in beside the rules it came from
+examples/manifest.json  the manifest emitted with it
+tests/parity/           accepted cases: name.ts, the rule, and name.sql, the SQL it must compile to;
+                        each is also proven against its TypeScript on PGlite and PostgreSQL
+tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
+tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them
+tests/README.md         what each kind of case and each test file is for
 src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives

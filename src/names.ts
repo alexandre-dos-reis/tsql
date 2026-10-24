@@ -11,9 +11,17 @@ export function toSnakeCase(name: string): string {
 }
 
 /**
- * Reserved words that cannot be used unquoted as a PL/pgSQL identifier.
- * Deliberately short: it only needs the words that are actually unusable, and
- * anything missing surfaces immediately as a syntax error from PostgreSQL.
+ * Words that cannot be used unquoted as a PL/pgSQL identifier. Three lists:
+ *
+ * - PostgreSQL's fully reserved keywords;
+ * - its "type or function name" keywords (`outer`, `inner`, `left`, `join`…):
+ *   accepted as a parameter name but not as a column reference, so a parameter
+ *   called `outer` breaks `(outer).field` unless it is quoted;
+ * - PL/pgSQL's own reserved words (`begin`, `loop`, `if`…), which break a
+ *   variable declaration or assignment.
+ *
+ * Anything missing surfaces as a syntax error from PostgreSQL — which the
+ * parity tests run every accepted case into.
  */
 // A wrapped word list reads better than 77 one-word lines.
 // prettier-ignore
@@ -27,6 +35,12 @@ const RESERVED = new Set([
   "primary", "references", "returning", "select", "session_user", "some", "symmetric", "table",
   "then", "to", "trailing", "true", "union", "unique", "user", "using", "variadic", "when", "where",
   "window", "with",
+  // Type or function name keywords: legal as a parameter name, not as a column reference.
+  "authorization", "binary", "collation", "concurrently", "cross", "current_schema", "freeze",
+  "full", "ilike", "inner", "is", "isnull", "join", "left", "like", "natural", "notnull", "outer",
+  "overlaps", "right", "similar", "tablesample", "verbose",
+  // PL/pgSQL's own reserved words, beyond those already listed above.
+  "begin", "by", "declare", "execute", "foreach", "if", "loop", "strict", "while",
 ]);
 
 export function quoteIdentifier(name: string): string {

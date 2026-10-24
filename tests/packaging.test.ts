@@ -6,6 +6,14 @@ import { isFromPackage } from "../src/origin.ts";
 import { findTscPath, platformPackage } from "../src/tscPath.ts";
 import { PACKAGE_NAME } from "../src/typemap.ts";
 
+/**
+ * What only breaks once the package is published and installed somewhere else:
+ * that `Integer` is recognised by package provenance in an installed layout,
+ * that the native TypeScript executable can be found with its library files,
+ * that the runtime dependencies are exactly the ones `tsql parity` needs, that
+ * every exported entry point ships, and that the launcher stays Node-compatible.
+ */
+
 const manifest = (await Bun.file("package.json").json()) as {
   name: string;
   version: string;
@@ -63,7 +71,7 @@ describe("the native compiler is locatable", () => {
   });
 
   test("an executable is found, with its library files beside it", async () => {
-    const exe = findTscPath({ near: "examples/tsconfig.json" });
+    const exe = findTscPath({ near: "tests/parity/tsconfig.json" });
     expect(exe).toBeDefined();
     // Both halves matter: handed an executable whose lib.*.d.ts are missing,
     // the native compiler hangs rather than reporting anything.

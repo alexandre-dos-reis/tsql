@@ -3,32 +3,8 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
--- examples/input-2.ts: Nested
---   foo_bar: from foo.bar
-DO $$
-DECLARE
-  expected text[] := ARRAY['foo_bar text'];
-  actual text[];
-BEGIN
-  IF to_regtype('app.nested') IS NULL THEN
-    CREATE TYPE app.nested AS (
-      foo_bar text
-    );
-  ELSE
-    SELECT array_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) ORDER BY a.attnum)
-      INTO actual
-      FROM pg_attribute a
-     WHERE a.attrelid = (SELECT t.typrelid FROM pg_type t WHERE t.oid = to_regtype('app.nested'))
-       AND a.attnum > 0 AND NOT a.attisdropped;
-    IF actual IS DISTINCT FROM expected THEN
-      RAISE EXCEPTION 'app.nested exists as % but the rules expect %', actual, expected;
-    END IF;
-  END IF;
-END
-$$;
-
--- examples/input-2.ts: Subscription
---   plan: one of 'free', 'max', 'pro' (not enforced here)
+-- examples/billing.ts: Subscription
+--   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 DO $$
 DECLARE
   expected text[] := ARRAY['plan text'];
@@ -51,41 +27,8 @@ BEGIN
 END
 $$;
 
--- examples/input-4.ts: bonusPoints()
-CREATE OR REPLACE FUNCTION app.bonus_points(
-  spent_cents integer
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  CASE spent_cents % 3
-    WHEN 0 THEN
-      RETURN 30;
-    ELSE
-      NULL;
-  END CASE;
-  RETURN 10;
-END;
-$$;
-
--- examples/input-2.ts: canCreateTodo()
+-- examples/billing.ts: canCreateTodo()
 CREATE OR REPLACE FUNCTION app.can_create_todo(
-  plan text,
-  count integer
-)
-RETURNS boolean
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan <> 'free' OR count < 3;
-END;
-$$;
-
--- examples/input-2.ts: canCreateTodoWithType()
-CREATE OR REPLACE FUNCTION app.can_create_todo_with_type(
   sub app.subscription,
   count integer
 )
@@ -94,69 +37,30 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 DECLARE
-  plan text;
+  "limit" integer;
 BEGIN
-  plan := (sub).plan;
-  IF plan = 'free' THEN
-    RETURN count <= 3;
-  END IF;
-  IF plan = 'pro' THEN
-    RETURN count <= 6;
-  END IF;
-  RETURN count <= 9;
+  "limit" := app.todo_limit((sub).plan);
+  RETURN count < "limit";
 END;
 $$;
 
--- examples/input-4.ts: couponLabel()
-CREATE OR REPLACE FUNCTION app.coupon_label(
-  code text
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE
-    WHEN code IS NULL THEN 'no coupon'
-    WHEN code IS NOT DISTINCT FROM 'WELCOME' THEN 'welcome offer'
-    ELSE 'other coupon'
-  END;
-END;
-$$;
-
--- examples/input-1.ts: isEligibleForTrial()
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
-CREATE OR REPLACE FUNCTION app.is_eligible_for_trial(
-  plan text,
-  had_trial boolean,
-  referral text
-)
-RETURNS boolean
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan = 'free' AND NOT had_trial AND referral IS NOT NULL;
-END;
-$$;
-
--- examples/input-1.ts: isNotEmpty()
+-- examples/pricing.ts: isNotEmpty()
 CREATE OR REPLACE FUNCTION app.is_not_empty(
-  string text
+  coupon_code text
 )
 RETURNS boolean
 LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  IF string IS NULL THEN
+  IF coupon_code IS NULL THEN
     RETURN false;
   END IF;
-  RETURN string IS DISTINCT FROM '';
+  RETURN coupon_code IS DISTINCT FROM '';
 END;
 $$;
 
--- examples/input-1.ts: priceCents()
+-- examples/pricing.ts: priceCents()
 CREATE OR REPLACE FUNCTION app.price_cents(
   list_cents integer,
   percent_off double precision
@@ -173,44 +77,7 @@ BEGIN
 END;
 $$;
 
--- examples/input-1.ts: remainingTodos()
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
-CREATE OR REPLACE FUNCTION app.remaining_todos(
-  plan text,
-  count integer
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  "limit" integer;
-BEGIN
-  "limit" := app.todo_limit(plan);
-  IF count >= "limit" THEN
-    RETURN 0;
-  END IF;
-  RETURN "limit" - count;
-END;
-$$;
-
--- examples/input-4.ts: salutation()
-CREATE OR REPLACE FUNCTION app.salutation(
-  name text
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE name
-    WHEN '' THEN 'anonymous'
-    ELSE 'hello'
-  END;
-END;
-$$;
-
--- examples/input-3.ts: seatLimit()
+-- examples/billing.ts: seatLimit()
 --   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
 CREATE OR REPLACE FUNCTION app.seat_limit(
   tier text,
@@ -230,51 +97,7 @@ BEGIN
 END;
 $$;
 
--- examples/input-4.ts: shippingCents()
---   region: one of 'apac', 'eu', 'us' (not enforced here)
-CREATE OR REPLACE FUNCTION app.shipping_cents(
-  region text,
-  weight_grams integer
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  base integer;
-BEGIN
-  CASE region
-    WHEN 'eu', 'us' THEN
-      base := 500;
-      RETURN base + weight_grams * 2;
-    WHEN 'apac' THEN
-      IF weight_grams > 1000 THEN
-        RETURN 4000;
-      END IF;
-      RETURN 2500;
-    ELSE
-      RETURN 9999;
-  END CASE;
-END;
-$$;
-
--- examples/input-2.ts: someNestedAssignment()
-CREATE OR REPLACE FUNCTION app.some_nested_assignment(
-  nested app.nested
-)
-RETURNS app.nested
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  _nested app.nested;
-BEGIN
-  _nested := ROW('some')::app.nested;
-  RETURN _nested;
-END;
-$$;
-
--- examples/input-1.ts: todoLimit()
+-- examples/billing.ts: todoLimit()
 --   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.todo_limit(
   plan text
