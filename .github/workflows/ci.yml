@@ -24,7 +24,17 @@ jobs:
         with:
           node-version: 24
 
-      - run: bun install --frozen-lockfile
+      # TEMPORARY: add oxfmt and format, then post the resulting diff.
+      - name: Add oxfmt and format
+        run: |
+          bun add -d --exact oxfmt
+          bun run format
+          diff=$(git diff)
+          diff=${diff//'%'/'%25'}
+          diff=${diff//$'\r'/'%0D'}
+          diff=${diff//$'\n'/'%0A'}
+          echo "::error title=oxfmt bootstrap diff::${diff}"
+          exit 1
 
       - run: bun run typecheck
 
