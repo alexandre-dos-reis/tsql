@@ -52,6 +52,7 @@ $$;`,
       "is_not_empty",
       "price_cents",
       "remaining_todos",
+      "seat_limit",
       "some_nested_assignment",
       "todo_limit",
     ]);
