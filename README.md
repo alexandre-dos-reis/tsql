@@ -491,6 +491,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |
 | optional parameters | absence must be explicit: write `T \| null` |
 | `T \| undefined` | SQL models absence one way only — use `null` |
+| a `number` where `Integer` is expected | PostgreSQL rounds a `double precision` stored into an `integer` silently; numbers may only widen |
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |

@@ -1108,8 +1108,18 @@ function numericOperands(left: ExprIR, right: ExprIR, node: Node, op: string): [
 /* Type rules                                                                 */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Can a value of `from` be stored where `to` is expected? Numbers may only
+ * widen (`integer` → `numeric` → `double precision`). Narrowing is refused:
+ * TypeScript keeps the double it computed, while PostgreSQL would silently
+ * round it on assignment — `return x` with `x = 2.5` into `RETURNS integer`
+ * gives 2.5 in one language and 2 in the other.
+ */
 export function assignable(from: PgType, to: PgType): boolean {
   if (from.nullable && !to.nullable) return false;
+  if (isNumeric(from) && isNumeric(to) && isScalar(from) && isScalar(to)) {
+    return widenNumeric(from.sql, to.sql) === to.sql;
+  }
   return sameFamily(from, to);
 }
 
@@ -1117,6 +1127,12 @@ function requireAssignable(from: PgType, to: PgType, at: Node, what: string): vo
   if (assignable(from, to)) return;
   if (from.nullable && !to.nullable) {
     throw CompileError.at(at, `The ${what} may be null; declare the type as \`T | null\` to allow it.`);
+  }
+  if (isNumeric(from) && isNumeric(to)) {
+    throw CompileError.at(
+      at,
+      `The ${what} is \`${describe(from)}\` but \`${describe(to)}\` was expected. PostgreSQL would round it silently where TypeScript keeps the fraction; declare the wider type, or make the value whole explicitly.`,
+    );
   }
   throw CompileError.at(at, `The ${what} is \`${describe(from)}\` but \`${describe(to)}\` was expected.`);
 }
