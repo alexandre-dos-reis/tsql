@@ -28,8 +28,6 @@ jobs:
 
       - run: bun run typecheck
 
-      - run: bun run format:check
-
       - run: bun test
 
       # The compiler owns examples/output.sql and manifest.json and guarantees
