@@ -6,6 +6,8 @@ export function score(grade: string, bonus: boolean): number {
       }
     case "b":
       return 2;
+    default:
+      return 0;
   }
   return 0;
 }

@@ -163,7 +163,8 @@ describe("rejections — language constructs", () => {
     ["generic.ts", "Generic functions are not supported"],
     ["switchFallthrough.ts", "falls through into the next one"],
     ["switchBreak.ts", "`break` is only supported as the last statement of a `switch` clause"],
-    ["switchObject.ts", "`===` on an object has no faithful translation"],
+    ["switchObject.ts", "a `switch` on an object has no faithful translation"],
+    ["switchNoDefault.ts", "A `switch` needs a `default`"],
   ]);
 
   test("a rejection points at the offending line", async () => {
@@ -176,31 +177,47 @@ describe("rejections — language constructs", () => {
 });
 
 describe("switch", () => {
-  test("lowers to an IF/ELSIF chain with grouped labels and default as ELSE", async () => {
+  test("becomes a simple CASE, with grouped labels and default as ELSE", async () => {
     const result = await compileFixture("switchStatement.ts");
     expect(result.errors.map((e) => e.format())).toEqual([]);
-    expect(result.sql).toContain(`  IF tier = 'free' OR tier = 'starter' THEN
-    RETURN 1;
-  ELSIF tier = 'pro' THEN
-    RETURN 10;
-  ELSE
-    RETURN 100;
-  END IF;`);
+    expect(result.sql).toContain(`  CASE tier
+    WHEN 'free', 'starter' THEN
+      RETURN 1;
+    WHEN 'pro' THEN
+      RETURN 10;
+    ELSE
+      RETURN 100;
+  END CASE;`);
   });
 
-  test("matches a nullable discriminant the way === does", async () => {
+  test("keeps the simple form for a nullable discriminant", async () => {
+    // NULL = 'bob' is not true, so a NULL name reaches the ELSE, as null === "bob" is false.
     const result = await compileFixture("switchStatement.ts");
-    expect(result.sql).toContain("IF code IS NULL THEN");
-    expect(result.sql).toContain("ELSIF code IS NOT DISTINCT FROM 'a' THEN");
+    expect(result.sql).toContain(`  CASE name
+    WHEN 'bob' THEN`);
   });
 
-  test("evaluates a computed discriminant once, and drops an empty default", async () => {
+  test("uses the searched form for case null", async () => {
     const result = await compileFixture("switchStatement.ts");
-    expect(result.sql).toContain("switch_value integer;");
-    expect(result.sql).toContain("switch_value := n % 3;");
-    expect(result.sql).toContain(`  IF switch_value = 0 THEN
-    RETURN 'fizz';
-  END IF;`);
+    expect(result.sql).toContain(`  CASE
+    WHEN code IS NULL THEN
+      RETURN 'none';
+    WHEN code IS NOT DISTINCT FROM 'a' THEN
+      RETURN 'alpha';
+    ELSE
+      RETURN 'other';
+  END CASE;`);
+  });
+
+  test("evaluates a computed discriminant once and fills an empty branch with NULL;", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).not.toContain("switch_value");
+    expect(result.sql).toContain(`  CASE n % 3
+    WHEN 0 THEN
+      RETURN 'fizz';
+    ELSE
+      NULL;
+  END CASE;`);
   });
 });
 

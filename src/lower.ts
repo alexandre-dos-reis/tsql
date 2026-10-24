@@ -246,42 +246,63 @@ async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
 }
 
 /**
- * `switch` lowers to the same IR as an `if`/`else if` chain, so the emitter
- * needs nothing new. What lowering has to prove is that the chain means the
- * same thing:
+ * `switch` lowers to a PL/pgSQL `CASE` statement. What lowering has to prove is
+ * that the `CASE` means the same thing as the TypeScript:
  *
- * - Matching is `===`, so each label goes through the same equality rules as
- *   an explicit comparison (`IS NOT DISTINCT FROM` when nullable, `case null`
- *   is a null test, objects are refused).
- * - The discriminant is evaluated once, as in JavaScript, by holding it in a
- *   local unless it is already a plain reference or literal.
- * - Fallthrough has no `ELSIF` equivalent, so a clause that has statements must
- *   end in `break`, always return, or be the last clause. Empty clauses group
- *   their labels with the next clause, which is the one fallthrough form that
- *   maps onto `OR`.
- * - `default` runs only when no label matches, wherever it is written, so it
- *   becomes the `ELSE`. Labels grouped with it keep their place in the chain,
- *   because an earlier match must still win over a later duplicate label.
+ * - **A `default` is required.** A `CASE` with no matching `WHEN` and no `ELSE`
+ *   raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness over a union does
+ *   not carry over: PostgreSQL holds the value as `text`, unconstrained. With a
+ *   `default` there is always an `ELSE`, so the generated function cannot raise.
+ * - **Matching is `===`.** The simple form, `CASE x WHEN 'a', 'b'`, compares
+ *   with `=`. A NULL discriminant matches no `WHEN` and reaches the `ELSE`, which
+ *   is what `null === 'a'` does too, so a nullable discriminant is fine. What the
+ *   simple form cannot express is a label that is itself NULL — `case null`, or a
+ *   nullable label expression — so those switches use the searched form,
+ *   `CASE WHEN x IS NULL`, with the same equality rules as an explicit `===`.
+ * - **The discriminant is evaluated once**, as in JavaScript. The simple form
+ *   does that natively; the searched form holds it in a local first unless it is
+ *   a plain reference or literal.
+ * - **Fallthrough has no `CASE` equivalent**, so a clause that has statements
+ *   must end in `break`, always return, or be the last clause. Empty clauses
+ *   group their labels with the next clause, which is the one fallthrough form
+ *   that maps onto `WHEN a, b`.
+ * - **`default` is the `ELSE`** wherever it is written, since it only runs when no
+ *   label matched. Labels grouped with it keep their place in the chain, because
+ *   an earlier match must still win over a later duplicate label.
  */
 async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
-  const out: StmtIR[] = [];
-  let subject = await lowerExpr(node.expression, s);
-  if (subject.kind !== "ref" && subject.kind !== "lit") {
-    const sqlName = uniqueName("switch_value", s.used);
-    s.locals.push({ tsName: sqlName, sqlName, type: subject.type });
-    out.push({ kind: "assign", sqlName, expr: subject });
-    subject = { kind: "ref", sqlName, type: subject.type };
+  const clauses = node.caseBlock.clauses;
+  if (!clauses.some((clause) => clause.kind === SyntaxKind.DefaultClause)) {
+    throw CompileError.at(
+      node,
+      "A `switch` needs a `default`. TypeScript may consider it exhaustive, but PostgreSQL does not constrain the value, and a `CASE` that matches nothing raises — add a `default` that handles any other value.",
+    );
   }
 
-  const clauses = node.caseBlock.clauses;
-  const branches: { cond: ExprIR; body: StmtIR[] }[] = [];
-  let orElse: StmtIR[] | undefined;
-  let labels: ExprIR[] = [];
+  const subject = await lowerExpr(node.expression, s);
+  if (isComposite(subject.type)) {
+    throw CompileError.at(
+      node.expression,
+      "Objects compare by identity in TypeScript and by value in SQL, so a `switch` on an object has no faithful translation. Switch on a field instead.",
+    );
+  }
+
+  // Lower every label before deciding the form: the decision depends on all of them.
+  const groups: { labels: { node: Expression; value: ExprIR | null }[]; body: StmtIR[] }[] = [];
+  let orElse: StmtIR[] = [];
+  let labels: { node: Expression; value: ExprIR | null }[] = [];
   let hasDefault = false;
 
   for (const [i, clause] of clauses.entries()) {
     if (clause.kind === SyntaxKind.CaseClause) {
-      labels.push(await lowerCaseLabel(subject, (clause as CaseClause).expression, s));
+      const label = (clause as CaseClause).expression;
+      if (isNullLiteral(label)) {
+        labels.push({ node: label, value: null });
+      } else {
+        const value = await lowerExpr(label, s);
+        checkStrictEquality(subject, value, label);
+        labels.push({ node: label, value });
+      }
     } else {
       hasDefault = true;
     }
@@ -290,32 +311,47 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
     if (clause.statements.length === 0 && !isLast) continue;
 
     const body = await lowerClauseBody(clause, isLast, s);
-    if (labels.length > 0) {
-      const cond = labels.reduce(
-        (left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") }),
-      );
-      branches.push({ cond, body });
-    }
+    if (labels.length > 0) groups.push({ labels, body });
     if (hasDefault) orElse = body;
     labels = [];
     hasDefault = false;
   }
 
-  if (branches.length === 0) {
-    out.push(...(orElse ?? []));
-  } else {
-    // An empty `default: break;` adds nothing an absent ELSE does not.
-    const hasElse = orElse !== undefined && orElse.length > 0;
-    out.push(hasElse ? { kind: "if", branches, orElse } : { kind: "if", branches });
-  }
-  return out;
-}
+  if (groups.length === 0) return orElse;
 
-async function lowerCaseLabel(subject: ExprIR, label: Expression, s: State): Promise<ExprIR> {
-  if (isNullLiteral(label)) {
-    return { kind: "nullTest", operand: subject, negated: false, type: scalarType("boolean") };
+  const simple = groups.every((g) => g.labels.every((l) => l.value !== null && !l.value.type.nullable));
+  if (simple) {
+    return [
+      {
+        kind: "simpleCase",
+        subject,
+        whens: groups.map((g) => ({ values: g.labels.map((l) => l.value!), body: g.body })),
+        orElse,
+      },
+    ];
   }
-  return strictEquality(subject, await lowerExpr(label, s), false, label);
+
+  const out: StmtIR[] = [];
+  let ref = subject;
+  if (subject.kind !== "ref" && subject.kind !== "lit") {
+    const sqlName = uniqueName("switch_value", s.used);
+    s.locals.push({ tsName: sqlName, sqlName, type: subject.type });
+    out.push({ kind: "assign", sqlName, expr: subject });
+    ref = { kind: "ref", sqlName, type: subject.type };
+  }
+  const whens = groups.map((g) => ({
+    cond: g.labels
+      .map(
+        (l): ExprIR =>
+          l.value === null
+            ? { kind: "nullTest", operand: ref, negated: false, type: scalarType("boolean") }
+            : strictEquality(ref, l.value, false, l.node),
+      )
+      .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") })),
+    body: g.body,
+  }));
+  out.push({ kind: "searchedCase", whens, orElse });
+  return out;
 }
 
 async function lowerClauseBody(
@@ -834,8 +870,8 @@ function columnFor(target: CompositeType, path: readonly string[]): string | und
   return target.fields.find((f) => samePath(f.path, path))?.sqlName;
 }
 
-/** `===` / `!==` between two lowered operands; also how a `switch` label matches. */
-function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node): ExprIR {
+/** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */
+function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void {
   if (isComposite(left.type) || isComposite(right.type)) {
     throw CompileError.at(
       at,
@@ -843,6 +879,11 @@ function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node)
     );
   }
   requireComparable(left.type, right.type, at);
+}
+
+/** `===` / `!==` between two lowered operands; also how a searched `switch` label matches. */
+function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node): ExprIR {
+  checkStrictEquality(left, right, at);
   // TypeScript's equality is total; SQL's `=` is three-valued. When either
   // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
   const nullable = left.type.nullable || right.type.nullable;
@@ -1070,6 +1111,14 @@ function alwaysReturns(body: readonly StmtIR[]): boolean {
       statement.kind === "if" &&
       statement.orElse !== undefined &&
       statement.branches.every((b) => alwaysReturns(b.body)) &&
+      alwaysReturns(statement.orElse)
+    ) {
+      return true;
+    }
+    // A `CASE` always has its `ELSE` (lowering requires the `default`).
+    if (
+      (statement.kind === "simpleCase" || statement.kind === "searchedCase") &&
+      statement.whens.every((w) => alwaysReturns(w.body)) &&
       alwaysReturns(statement.orElse)
     ) {
       return true;

@@ -5,6 +5,8 @@ export function score(grade: string, bonus: boolean): number {
         break;
       }
       return 5;
+    default:
+      return 1;
   }
   return 0;
 }

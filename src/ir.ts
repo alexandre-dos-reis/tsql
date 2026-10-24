@@ -155,6 +155,19 @@ export type StmtIR =
       readonly kind: "if";
       readonly branches: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
       readonly orElse?: readonly StmtIR[];
+    }
+  /** `CASE subject WHEN v1, v2 THEN … ELSE … END CASE`: matches with `=`. */
+  | {
+      readonly kind: "simpleCase";
+      readonly subject: ExprIR;
+      readonly whens: readonly { readonly values: readonly ExprIR[]; readonly body: readonly StmtIR[] }[];
+      readonly orElse: readonly StmtIR[];
+    }
+  /** `CASE WHEN cond THEN … ELSE … END CASE`. */
+  | {
+      readonly kind: "searchedCase";
+      readonly whens: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
+      readonly orElse: readonly StmtIR[];
     };
 
 export type BinOp =

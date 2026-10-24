@@ -163,6 +163,11 @@ function operatorText(op: string): string {
   return op === "and" || op === "or" || op.startsWith("is ") ? op.toUpperCase() : op;
 }
 
+/** A `CASE` branch with nothing to do still needs a statement: `NULL;` is PL/pgSQL's no-op. */
+function emitBranch(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {
+  return body.length > 0 ? emitStatements(body, q, indent) : [`${indent}NULL;`];
+}
+
 function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {
   const lines: string[] = [];
   for (const statement of body) {
@@ -187,6 +192,24 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         lines.push(`${indent}END IF;`);
         break;
       }
+
+      case "simpleCase":
+        lines.push(`${indent}CASE ${emitExpr(statement.subject, q)}`);
+        for (const when of statement.whens) {
+          lines.push(`${indent}  WHEN ${when.values.map((v) => emitExpr(v, q)).join(", ")} THEN`);
+          lines.push(...emitBranch(when.body, q, `${indent}    `));
+        }
+        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        break;
+
+      case "searchedCase":
+        lines.push(`${indent}CASE`);
+        for (const when of statement.whens) {
+          lines.push(`${indent}  WHEN ${emitExpr(when.cond, q)} THEN`);
+          lines.push(...emitBranch(when.body, q, `${indent}    `));
+        }
+        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        break;
     }
   }
   return lines;
