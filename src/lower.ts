@@ -534,7 +534,8 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
     expression.kind === SyntaxKind.PostfixUnaryExpression ||
     expression.kind === SyntaxKind.PrefixUnaryExpression
   ) {
-    const unary = expression as { readonly operator: SyntaxKind; readonly operand: Expression };
+    // Prefix and postfix unary expressions share these two fields.
+    const unary = expression as unknown as { readonly operator: SyntaxKind; readonly operand: Expression };
     if (unary.operator !== SyntaxKind.PlusPlusToken && unary.operator !== SyntaxKind.MinusMinusToken) return undefined;
     if (unary.operand.kind !== SyntaxKind.Identifier) return undefined;
     target = unary.operand;
