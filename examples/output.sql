@@ -169,14 +169,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  CASE tier
-    WHEN 'free', 'starter' THEN
-      RETURN 1;
-    WHEN 'pro' THEN
-      RETURN 10 + extra_seats;
-    ELSE
-      RETURN 100 + extra_seats * 2;
-  END CASE;
+  RETURN CASE tier WHEN 'free' THEN 1 WHEN 'starter' THEN 1 WHEN 'pro' THEN 10 + extra_seats ELSE 100 + extra_seats * 2 END;
 END;
 $$;
 
