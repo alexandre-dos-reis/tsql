@@ -216,6 +216,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return [...keys].every((key) => deepEqual(left[key], right[key]));
 }
 
+/** What one side did with an input: returned a value, or raised a message. */
+type Outcome = { readonly value: unknown } | { readonly raised: string };
+
 export interface ParityOptions {
   readonly runs?: number;
   readonly seed?: number;
@@ -235,16 +238,39 @@ export async function checkParity(
   const arbitraries = fn.params.map((p) => arbitraryFor(p.type));
   const call = impl as (...args: unknown[]) => unknown;
 
+  // Each side either returns a value or raises. A `throw new Error(m)` compiles
+  // to `RAISE EXCEPTION '%', m`, so raising agrees when both sides raise the
+  // same message; anything else one side throws is a divergence.
+  const typescript = (args: unknown[]): Outcome => {
+    try {
+      return { value: call(...args) };
+    } catch (error) {
+      if (error instanceof Error) return { raised: error.message };
+      throw error;
+    }
+  };
+  const database = async (args: unknown[]): Promise<Outcome> => {
+    const prepared = prepareCall(fn, schema, args);
+    try {
+      return { value: await query(prepared.sql, prepared.params) };
+    } catch (error) {
+      return { raised: error instanceof Error ? error.message : String(error) };
+    }
+  };
+  const agree = (ts: Outcome, sql: Outcome): boolean =>
+    "raised" in ts || "raised" in sql
+      ? "raised" in ts && "raised" in sql && ts.raised === sql.raised
+      : resultEqual(sql.value as Record<string, unknown>, ts.value, fn.returns);
+
   const run = await fc.check(
     fc.asyncProperty(fc.tuple(...arbitraries), async (args) => {
       // Snapshot first: PL/pgSQL passes composites by value, so a TypeScript
       // function that mutates what it was given has an effect its SQL twin can
       // never reproduce. Comparing return values alone would not notice.
       const before = structuredClone(args);
-      const tsValue = call(...args);
+      const ts = typescript(args);
       if (!deepEqual(args, before)) return false;
-      const prepared = prepareCall(fn, schema, args);
-      return resultEqual(await query(prepared.sql, prepared.params), tsValue, fn.returns);
+      return agree(ts, await database(args));
     }),
     { numRuns: options.runs ?? 200, ...(options.seed === undefined ? {} : { seed: options.seed }) },
   );
@@ -254,21 +280,22 @@ export async function checkParity(
   // `fc.check` reports the shrunk input; replay it so the message names the two
   // answers that disagree rather than just the input that provoked it.
   const args = run.counterexample?.[0] ?? [];
-  const { sql, params } = prepareCall(fn, schema, args);
+  const { sql } = prepareCall(fn, schema, args);
+  const before = structuredClone(args);
+  const ts = typescript(args);
   let detail: string;
-  try {
-    const before = structuredClone(args);
-    const tsValue = call(...args);
-    const row = await query(sql, params);
-    // A scalar return arrives as a one-column row; report the value, not the row.
-    const sqlValue = isScalar(fn.returns) || isArray(fn.returns) ? row.value : row;
-    detail = !deepEqual(args, before)
-      ? `the TypeScript function mutated its arguments (${JSON.stringify(before)} -> ${JSON.stringify(args)}). PL/pgSQL passes composites by value, so the SQL function cannot do the same; build a new value instead`
-      : `TypeScript gave ${JSON.stringify(tsValue)}, PostgreSQL gave ${JSON.stringify(sqlValue)}`;
-  } catch (error) {
-    // One side raising where the other does not is itself a divergence —
-    // PostgreSQL's integer overflow being the obvious example.
-    detail = `one side raised: ${String(error)}`;
+  if (!deepEqual(args, before)) {
+    detail = `the TypeScript function mutated its arguments (${JSON.stringify(before)} -> ${JSON.stringify(args)}). PL/pgSQL passes composites by value, so the SQL function cannot do the same; build a new value instead`;
+  } else {
+    const db = await database(args);
+    // A scalar or array return arrives as a one-column row; report the value, not the row.
+    const show = (outcome: Outcome, side: string): string => {
+      if ("raised" in outcome) return `${side} raised ${JSON.stringify(outcome.raised)}`;
+      const row = outcome.value as Record<string, unknown>;
+      const value = side === "PostgreSQL" ? (isScalar(fn.returns) || isArray(fn.returns) ? row.value : row) : outcome.value;
+      return `${side} gave ${JSON.stringify(value)}`;
+    };
+    detail = `${show(ts, "TypeScript")}, ${show(db, "PostgreSQL")}`;
   }
 
   throw new Error(

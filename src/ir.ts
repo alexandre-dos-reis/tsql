@@ -223,6 +223,12 @@ export type StmtIR =
    * The variable is a local of the element type.
    */
   | { readonly kind: "foreach"; readonly variable: string; readonly array: ExprIR; readonly body: readonly StmtIR[] }
+  /**
+   * `RAISE EXCEPTION '%', message;` — a `throw new Error(message)`. The message
+   * is a parameter of the format, never the format itself, so a `%` in it is
+   * written as is.
+   */
+  | { readonly kind: "raise"; readonly message: ExprIR }
   /** `EXIT;` — an unlabelled `break` out of the innermost loop. */
   | { readonly kind: "exit" }
   /** `CONTINUE;` — the next turn of the innermost loop. */

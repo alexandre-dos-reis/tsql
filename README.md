@@ -252,7 +252,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 | `readonly T[]` parameter or object field | `T[]` — of scalars, nullable scalars, or a named object type |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — `throw new Error(message)` (as `RAISE EXCEPTION`), comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -290,6 +290,7 @@ A file the project does not hold is an error listing what it does hold, rather t
 - **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
 - **`x === null`** becomes `IS NULL` rather than a comparison.
 - **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, but PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
+- **`throw new Error(message)`** is `RAISE EXCEPTION '%', message`: the function stops and the caller gets the message, SQLSTATE P0001 — a path that throws needs no `return` after it. The message is a parameter of the format, never the format itself, so a `%` in it is written as is. Only the standard library's `Error` is accepted, checked by provenance: its subclasses would all be the same P0001 in SQL, so a caller telling a `RangeError` from a `TypeError` could not; a thrown string or object has no message to raise; `{ cause }` has nowhere to go.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
@@ -660,6 +661,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | a nullable array, arrays of arrays, tuples, a shape recursive through an array, holes, an untyped `[]` | see [Arrays](#arrays) |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
+| `throw "text"`, `throw new RangeError(…)`, `new Error(m, { cause })` | `RAISE` says a message, with one SQLSTATE for all |
 | generics, `Date` | outside the subset whose semantics can be preserved |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
 | `note?: string` on an object | a composite field is always present — write `T \| null` |
@@ -701,6 +703,7 @@ The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it
 
 Two further checks:
 
+- **A raise agrees with a raise.** When the TypeScript throws an `Error`, the SQL must raise the same message; a raise on one side only, or a different message, is a divergence — which is also how PostgreSQL's integer overflow shows up.
 - **Composite returns** are compared field by field, selecting `(result).field` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings. An array field is selected as `to_jsonb(…)` for the same reason: an array of composites in text form is quoting nested inside quoting.
 - **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
 
