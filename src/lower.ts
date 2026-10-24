@@ -4,6 +4,7 @@ import {
   formatSyntaxKind,
   type ArrowFunction,
   type BinaryExpression,
+  type BindingElement,
   type Block,
   type BreakStatement,
   type CallExpression,
@@ -18,6 +19,7 @@ import {
   type Node,
   type ObjectLiteralExpression,
   type NumericLiteral,
+  type ObjectBindingPattern,
   type ParameterDeclaration,
   type ParenthesizedExpression,
   type PropertyAccessExpression,
@@ -442,8 +444,15 @@ async function lowerVariableStatement(node: VariableStatement, s: State): Promis
 
   const out: StmtIR[] = [];
   for (const declaration of node.declarationList.declarations) {
+    if (declaration.name.kind === SyntaxKind.ObjectBindingPattern) {
+      out.push(...(await lowerDestructuring(declaration.name as ObjectBindingPattern, declaration, s)));
+      continue;
+    }
     if (declaration.name.kind !== SyntaxKind.Identifier) {
-      throw CompileError.at(declaration.name, "Destructuring is not supported.");
+      throw CompileError.at(
+        declaration.name,
+        "Array destructuring is not supported: arrays are not part of the compiled subset.",
+      );
     }
     const tsName = (declaration.name as Identifier).text;
     if (!declaration.initializer) {
@@ -464,6 +473,101 @@ async function lowerVariableStatement(node: VariableStatement, s: State): Promis
     s.locals.push({ tsName, sqlName, type: declared });
     out.push({ kind: "assign", sqlName, expr: coerce(init, declared) });
   }
+  return out;
+}
+
+/**
+ * `const { plan, count } = sub;` is `const plan = sub.plan; const count = sub.count;`
+ * — field reads the compiler already does, one local per name. Nested patterns
+ * read nested paths (`const { foo: { bar } } = outer` reads `outer.foo.bar`,
+ * a flattened column), and `{ plan: p }` renames.
+ *
+ * The source is read once, as in JavaScript: a call or an object literal is held
+ * in a local first. Defaults and `...rest` are refused — a default would need a
+ * check for `undefined`, which has no SQL equivalent, and a rest object has no
+ * named composite type to become.
+ */
+async function lowerDestructuring(
+  pattern: ObjectBindingPattern,
+  declaration: VariableStatement["declarationList"]["declarations"][number],
+  s: State,
+): Promise<StmtIR[]> {
+  if (!declaration.initializer) throw CompileError.at(declaration, "A destructuring must be initialised.");
+  if (declaration.type) {
+    throw CompileError.at(
+      declaration.type,
+      "A type annotation on a destructuring is not supported; annotate the object being destructured instead.",
+    );
+  }
+
+  const resolved = await resolveAccess(declaration.initializer, s);
+  if (!resolved || !isComposite(resolved.base.type)) {
+    throw CompileError.at(
+      declaration.initializer,
+      `Only an object of a named type can be destructured; \`${declaration.initializer.getText()}\` is not one.`,
+    );
+  }
+
+  const out: StmtIR[] = [];
+  let base = resolved.base;
+  if (base.kind !== "ref") {
+    const sqlName = uniqueName("destructured", s.used);
+    s.locals.push({ tsName: sqlName, sqlName, type: base.type });
+    out.push({ kind: "assign", sqlName, expr: base });
+    base = { kind: "ref", sqlName, type: base.type };
+  }
+
+  const bind = async (elements: readonly BindingElement[], prefix: readonly string[]): Promise<void> => {
+    for (const element of elements) {
+      if (element.dotDotDotToken) {
+        throw CompileError.at(element, "`...rest` in a destructuring is not supported: the rest has no named type.");
+      }
+      if (element.initializer) {
+        throw CompileError.at(
+          element.initializer,
+          "Default values in a destructuring are not supported: they apply on `undefined`, which has no SQL equivalent.",
+        );
+      }
+      const name = element.name;
+      if (!name) throw CompileError.at(element, "Only plain property names can be destructured.");
+      const key = element.propertyName ?? name;
+      if (key.kind !== SyntaxKind.Identifier) {
+        throw CompileError.at(key, "Only plain property names can be destructured.");
+      }
+      const path = [...prefix, (key as Identifier).text];
+
+      if (name.kind === SyntaxKind.ObjectBindingPattern) {
+        await bind((name as ObjectBindingPattern).elements, path);
+        continue;
+      }
+      if (name.kind !== SyntaxKind.Identifier) {
+        throw CompileError.at(name, "Array destructuring is not supported: arrays are not part of the compiled subset.");
+      }
+
+      const composite = base.type as CompositeType;
+      const field = composite.fields.find((f) => samePath(f.path, path));
+      if (!field) {
+        const isGroup = composite.fields.some((f) => startsWith(f.path, path));
+        throw CompileError.at(
+          element,
+          isGroup
+            ? `\`${fieldLabel(path)}\` is a nested shape, not a value. Destructure it further: \`{ ${path.at(-1)}: { … } }\`.`
+            : `\`${composite.tsName}\` has no field \`${fieldLabel(path)}\`.`,
+        );
+      }
+
+      const tsName = (name as Identifier).text;
+      if (s.scope.has(tsName)) {
+        throw CompileError.at(name, `\`${tsName}\` shadows an existing binding.`);
+      }
+      const sqlName = uniqueName(toSnakeCase(tsName), s.used);
+      s.scope.set(tsName, { sqlName, type: field.type });
+      s.locals.push({ tsName, sqlName, type: field.type });
+      out.push({ kind: "assign", sqlName, expr: { kind: "field", operand: base, sqlName: field.sqlName, type: field.type } });
+    }
+  };
+
+  await bind(pattern.elements, resolved.path);
   return out;
 }
 

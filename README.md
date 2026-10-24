@@ -251,7 +251,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -493,6 +493,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `T \| undefined` | SQL models absence one way only — use `null` |
 | a `number` where `Integer` is expected | PostgreSQL rounds a `double precision` stored into an `integer` silently; numbers may only widen |
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
+| destructuring defaults, `...rest`, arrays | a default applies on `undefined`, which SQL lacks; a rest object has no named type; arrays are outside the subset |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
 | generics, `Date` | outside the subset whose semantics can be preserved |
