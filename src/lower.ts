@@ -341,11 +341,10 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   }
   const whens = groups.map((g) => ({
     cond: g.labels
-      .map(
-        (l): ExprIR =>
-          l.value === null
-            ? { kind: "nullTest", operand: ref, negated: false, type: scalarType("boolean") }
-            : strictEquality(ref, l.value, false, l.node),
+      .map((l): ExprIR =>
+        l.value === null
+          ? { kind: "nullTest", operand: ref, negated: false, type: scalarType("boolean") }
+          : strictEquality(ref, l.value, false, l.node),
       )
       .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") })),
     body: g.body,
