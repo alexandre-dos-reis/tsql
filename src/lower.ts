@@ -2,6 +2,7 @@ import {
   NodeFlags,
   SyntaxKind,
   formatSyntaxKind,
+  type ArrowFunction,
   type BinaryExpression,
   type Block,
   type BreakStatement,
@@ -75,13 +76,25 @@ interface State extends TypeCtx {
 /* -------------------------------------------------------------------------- */
 
 /**
+ * A rule the compiler translates: an exported `function` declaration, or an
+ * exported `const` bound to an arrow function. Both carry the same parts — a
+ * name, typed parameters, a return type, a body — so the rest of lowering does
+ * not care which was written. An arrow's body may be a bare expression, which
+ * means `return` that expression.
+ */
+export interface RuleFunction {
+  readonly name: Identifier;
+  readonly fn: FunctionDeclaration | ArrowFunction;
+}
+
+/**
  * Pass 1: translate the declaration only. Signatures for every function in the
  * project are collected before any body is lowered, so calls between compiled
  * functions can be checked regardless of declaration order.
  */
-export async function lowerSignature(fn: FunctionDeclaration, ctx: TypeCtx): Promise<SignatureIR> {
-  if (!fn.name) throw CompileError.at(fn, "Anonymous functions cannot be compiled.");
-  const tsName = fn.name.text;
+export async function lowerSignature(rule: RuleFunction, ctx: TypeCtx): Promise<SignatureIR> {
+  const { fn } = rule;
+  const tsName = rule.name.text;
 
   if (fn.typeParameters && fn.typeParameters.length > 0) {
     throw CompileError.at(fn.typeParameters[0]!, "Generic functions are not supported.");
@@ -130,7 +143,7 @@ async function lowerParameter(p: ParameterDeclaration, ctx: TypeCtx): Promise<Pa
 
 /** Pass 2: translate the body against the already-known signatures. */
 export async function lowerFunction(
-  fn: FunctionDeclaration,
+  rule: RuleFunction,
   signature: SignatureIR,
   module: string,
   signatures: ReadonlyMap<string, SignatureIR>,
@@ -145,7 +158,12 @@ export async function lowerFunction(
     returns: signature.returns,
   };
 
-  const body = await lowerStatements(fn.body!.statements, state);
+  const { fn } = rule;
+  // `(…) => expr` is `(…) => { return expr; }`.
+  const body =
+    fn.body!.kind === SyntaxKind.Block
+      ? await lowerStatements((fn.body as Block).statements, state)
+      : [await lowerReturn(fn.body as Expression, state)];
 
   if (!alwaysReturns(body)) {
     throw CompileError.at(
@@ -165,6 +183,12 @@ export async function lowerFunction(
   };
 }
 
+async function lowerReturn(expr: Expression, s: State): Promise<StmtIR> {
+  const value = await lowerExpr(expr, s);
+  requireAssignable(value.type, s.returns, expr, "return value");
+  return { kind: "return", expr: coerce(value, s.returns) };
+}
+
 async function lowerStatements(statements: readonly Statement[], s: State): Promise<StmtIR[]> {
   const out: StmtIR[] = [];
   for (const statement of statements) {
@@ -181,9 +205,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.ReturnStatement: {
       const expr = (node as ReturnStatement).expression;
       if (!expr) throw CompileError.at(node, "`return` must return a value.");
-      const value = await lowerExpr(expr, s);
-      requireAssignable(value.type, s.returns, expr, "return value");
-      return [{ kind: "return", expr: coerce(value, s.returns) }];
+      return [await lowerReturn(expr, s)];
     }
 
     case SyntaxKind.IfStatement:

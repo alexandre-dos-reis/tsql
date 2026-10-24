@@ -251,7 +251,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -491,7 +491,8 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |
 | optional parameters | absence must be explicit: write `T \| null` |
 | `T \| undefined` | SQL models absence one way only — use `null` |
-| inferred return types | the signature is part of the contract, so it must be written down |
+| inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
+| `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
 | generics, `Date` | outside the subset whose semantics can be preserved |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
