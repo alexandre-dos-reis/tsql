@@ -218,7 +218,8 @@ raises on drift. The compiler creates types; it never rewrites them.
   isolated the same way (`types: []`). They share one SQL namespace, so function and type names must
   stay unique across the folder.
 - `tests/rejected/tsconfig.json` — **rejected cases**, one file per case: valid TypeScript that falls
-  outside the subset, so rejection tests exercise the translator rather than `tsc`.
+  outside the subset, so rejection tests exercise the translator rather than `tsc`. Each file opens with a
+  comment saying why it is refused — with the SQL that would diverge, where that shows it best.
 
 **No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
 them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,

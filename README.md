@@ -474,7 +474,7 @@ Built-in object types are excluded by the same provenance check that catches run
 
 ## Rejected at build time
 
-Each of these has a test in `tests/rejected.test.ts`, with the case that provokes it in `tests/rejected/`, one file per case.
+Each of these has a test in `tests/rejected.test.ts`, with the case that provokes it in `tests/rejected/`, one file per case. Each file opens with a comment explaining the refusal, often with the SQL that would have diverged.
 
 **Language constructs:**
 

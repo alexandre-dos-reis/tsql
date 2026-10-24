@@ -55,7 +55,7 @@ describe("rejections — language constructs", () => {
     const result = await compileCase("truthiness.ts");
     const error = result.errors[0]!;
     expect(error.fileName).toEndWith("tests/rejected/truthiness.ts");
-    expect(error.line).toBe(2);
+    expect(error.line).toBe(9);
     expect(error.format()).toContain("if (name) {");
   });
 });
@@ -128,7 +128,7 @@ describe("rejections — runtime references", () => {
   test("a runtime global is reported where it is written", async () => {
     const result = await compileCase("mathProperty.ts");
     const error = result.errors[0]!;
-    expect(error.line).toBe(2);
+    expect(error.line).toBe(9);
     expect(error.format()).toContain("return n > Math.PI;");
   });
 });
