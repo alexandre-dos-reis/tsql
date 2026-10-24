@@ -205,8 +205,10 @@ Composites are the subtle part, and the README's "Object types" section carries 
   self-consistent was considered and rejected — it would make the parity harness go green while
   caller-visible behaviour still differed.
 
-Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters only, never nullable, elements a
-scalar or a non-nullable composite. `readonly` is required because arrays are passed by value — the
+Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters, locals or composite fields (one
+column of array type, not flattened), never nullable, never returned, elements a scalar or a
+non-nullable composite. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
+and a shape recursive through an array is refused (`TypeCtx.mapping`). `readonly` is required because arrays are passed by value — the
 same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
 `cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
 `= ANY`, NULL when an element is). Recognised through `checker.isArrayType`, not by name. The parity
@@ -250,7 +252,7 @@ test file. `tests/README.md` explains the three.
   `openDatabase` (the path `tsql parity` takes) on PGlite, and on PostgreSQL when `TSQL_TEST_DB_URL` is
   set (CI sets it, with a `postgres:18` service). `src/parity.ts` derives a fast-check arbitrary per
   parameter from its PostgreSQL type, 200 inputs per function; composite returns are compared field by
-  field via `(fn(...)).*`; arguments are snapshotted before the TypeScript call and compared after, so a
+  field via `(result).field`, array fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
   mutating function cannot pass. It also applies the migration twice and checks a drifted type is refused.
 - `tests/rejected.test.ts` compiles each case in `tests/rejected/` alone and checks the build fails with
   every `Expected:` fragment, at the marked line if there is one.

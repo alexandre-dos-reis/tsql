@@ -327,8 +327,21 @@ export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string 
 export function emitCompositeType(composite: CompositeType, options: EmitOptions = {}): string {
   const { schema, comments } = { ...DEFAULTS, ...options };
   const qualified = typeName(composite, schema);
-  const fields = composite.fields.map((f) => `${quoteIdentifier(f.sqlName)} ${f.type.sql}`);
-  const expected = fields.map((f) => quoteLiteral(f)).join(", ");
+  const fields = composite.fields.map((f) => `${quoteIdentifier(f.sqlName)} ${typeName(f.type, schema)}`);
+  // The guard compares against `format_type`, which writes a type from another
+  // schema qualified or not depending on the search path. A column holding an
+  // array of composites is therefore expected through `format_type` too, so
+  // both sides are written the same way.
+  //
+  // The names are unquoted, as `pg_attribute.attname` holds them: a field named
+  // `limit` is `"limit"` in `CREATE TYPE` but `limit` in the catalogue.
+  const expected = composite.fields
+    .map((f) =>
+      isArray(f.type) && !isScalar(f.type.element)
+        ? `${quoteLiteral(`${f.sqlName} `)} || format_type(to_regtype(${quoteLiteral(typeName(f.type, schema))}), NULL)`
+        : quoteLiteral(`${f.sqlName} ${typeName(f.type, schema)}`),
+    )
+    .join(", ");
 
   const lines: string[] = [];
   if (comments) {
@@ -337,7 +350,10 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
       // A flattened column no longer looks like the shape it came from, so the
       // path is recorded for whoever reads the schema.
       if (field.path.length > 1) lines.push(`--   ${field.sqlName}: from ${fieldLabel(field.path)}`);
-      if (field.type.allowed) lines.push(allowedNote(field.sqlName, field.type.allowed));
+      if (isScalar(field.type) && field.type.allowed) lines.push(allowedNote(field.sqlName, field.type.allowed));
+      if (isArray(field.type) && isScalar(field.type.element) && field.type.element.allowed) {
+        lines.push(allowedNote(`${field.sqlName}[]`, field.type.element.allowed));
+      }
     }
   }
   lines.push(
@@ -367,6 +383,29 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
 }
 
 /**
+ * Composites in name order, except that a type comes after the types its array
+ * fields hold: `CREATE TYPE app.purchase AS (lines app.purchase_line[])` needs
+ * `app.purchase_line` to exist. Lowering refuses cycles, so this terminates.
+ */
+function dependencyOrder(composites: readonly CompositeType[]): CompositeType[] {
+  const ordered: CompositeType[] = [];
+  const placed = new Set<string>();
+  const byName = new Map(composites.map((c) => [c.sqlName, c]));
+  const place = (composite: CompositeType): void => {
+    if (placed.has(composite.sqlName)) return;
+    placed.add(composite.sqlName);
+    for (const field of composite.fields) {
+      if (isArray(field.type) && !isScalar(field.type.element)) {
+        place(byName.get(field.type.element.sqlName) ?? field.type.element);
+      }
+    }
+    ordered.push(composite);
+  };
+  for (const composite of composites) place(composite);
+  return ordered;
+}
+
+/**
  * Emit a migration: deterministic order, so re-running the compiler on
  * unchanged sources produces a byte-identical file.
  */
@@ -377,7 +416,7 @@ export function emitMigration(
 ): string {
   const { schema, comments } = { ...DEFAULTS, ...options };
   const sortedFunctions = [...functions].sort((a, b) => a.sqlName.localeCompare(b.sqlName));
-  const sortedComposites = [...composites].sort((a, b) => a.sqlName.localeCompare(b.sqlName));
+  const sortedComposites = dependencyOrder([...composites].sort((a, b) => a.sqlName.localeCompare(b.sqlName)));
 
   const parts: string[] = [];
   if (comments) {

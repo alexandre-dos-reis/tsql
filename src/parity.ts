@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import type { ManifestFunction } from "./compile.ts";
-import { isArray, isScalar, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
+import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
 import { quoteIdentifier } from "./names.ts";
 
 /**
@@ -15,9 +15,9 @@ import { quoteIdentifier } from "./names.ts";
  * Executes `sql` with `params` and returns the single row it selects.
  *
  * A row rather than a scalar, because a function returning a composite is
- * queried as `(fn(...)).*` — which hands back one typed column per field and
- * avoids having to parse PostgreSQL's composite text format, where `""`, NULL
- * and the literal string `"null"` all look confusingly similar.
+ * queried one column per field — `(result).plan` — which hands back typed
+ * values and avoids having to parse PostgreSQL's composite text format, where
+ * `""`, NULL and the literal string `"null"` all look confusingly similar.
  */
 export type RowQuery = (sql: string, params: readonly unknown[]) => Promise<Record<string, unknown>>;
 
@@ -112,40 +112,49 @@ export interface PreparedCall {
  *
  * Every placeholder is cast to its declared type: without that, PostgreSQL
  * cannot infer the type of a NULL argument. A composite is built from one
- * placeholder per flattened field, read out of the nested TypeScript object,
- * and cast to the named type. An array is built element by element —
+ * value per flattened field, read out of the nested TypeScript object, and cast
+ * to the named type. An array is built element by element —
  * `ARRAY[$1::integer, $2::integer]::integer[]` — which is why the query depends
  * on the input: its length decides the placeholders. Building it in SQL also
- * leaves no array literal for a driver to escape.
+ * leaves no array literal for a driver to escape. The three nest: a composite
+ * with an array field holds an `ARRAY[ROW(…), …]`.
+ *
+ * A composite result is selected one column per field. An array column is
+ * returned as `to_jsonb(…)`, which both drivers parse, rather than in
+ * PostgreSQL's array text format, where an array of composites is nested
+ * quoting that would need a parser of its own.
  */
 export function prepareCall(fn: ManifestFunction, schema: string | null, args: readonly unknown[]): PreparedCall {
   const qualify = (name: string) =>
     schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(name)}` : quoteIdentifier(name);
+  const arrayType = (type: ArrayType) =>
+    `${isScalar(type.element) ? type.element.sql : qualify(type.element.sqlName)}[]`;
 
   const params: unknown[] = [];
-  const bind = (value: unknown, type: ScalarType): string => {
-    params.push(value);
-    return `$${params.length}::${type.sql}`;
-  };
-  const value = (type: ScalarType | CompositeType, input: unknown): string => {
-    if (isScalar(type)) return bind(input, type);
-    const fields = type.fields.map((f) => bind(input === null ? null : readPath(input, f.path), f.type));
+  const value = (type: PgType, input: unknown): string => {
+    if (isScalar(type)) {
+      params.push(input);
+      return `$${params.length}::${type.sql}`;
+    }
+    if (isArray(type)) {
+      if (input === null || input === undefined) return `NULL::${arrayType(type)}`;
+      const items = (input as readonly unknown[]).map((item) => value(type.element, item));
+      return `ARRAY[${items.join(", ")}]::${arrayType(type)}`;
+    }
+    const fields = type.fields.map((f) => value(f.type, input === null ? null : readPath(input, f.path)));
     return `ROW(${fields.join(", ")})::${qualify(type.sqlName)}`;
   };
 
-  const argsSql = fn.params.map((param, index) => {
-    const input = args[index];
-    const type = param.type;
-    if (!isArray(type)) return value(type, input);
-    const element = isScalar(type.element) ? type.element.sql : qualify(type.element.sqlName);
-    const items = (input as readonly unknown[]).map((item) => value(type.element, item));
-    return `ARRAY[${items.join(", ")}]::${element}[]`;
-  });
-
+  const argsSql = fn.params.map((param, index) => value(param.type, args[index]));
   const call = `${qualify(fn.sqlName)}(${argsSql.join(", ")})`;
-  // `(fn(...)).* ` expands a composite result into one column per field.
-  const sql = isScalar(fn.returns) ? `select ${call} as value` : `select (${call}).*`;
-  return { sql, params };
+  if (isScalar(fn.returns)) return { sql: `select ${call} as value`, params };
+
+  const returns = fn.returns as CompositeType;
+  const columns = returns.fields.map((f) => {
+    const column = `(result).${quoteIdentifier(f.sqlName)}`;
+    return isArray(f.type) ? `to_jsonb(${column}) as ${quoteIdentifier(f.sqlName)}` : column;
+  });
+  return { sql: `select ${columns.join(", ")} from (select ${call} as result) as call`, params };
 }
 
 /**
@@ -156,8 +165,27 @@ export function resultEqual(row: Record<string, unknown>, tsValue: unknown, retu
   if (isScalar(returns)) return valuesEqual(row.value, tsValue, returns);
   // Unreachable: lowering refuses an array return.
   if (isArray(returns)) return false;
+  return fieldsEqual(row, tsValue, returns);
+}
+
+/** Each field of a composite: a row from the database, or an object from `to_jsonb`. */
+function fieldsEqual(record: Record<string, unknown>, tsValue: unknown, type: CompositeType): boolean {
   if (tsValue === null || tsValue === undefined) return false;
-  return returns.fields.every((field) => valuesEqual(row[field.sqlName], readPath(tsValue, field.path), field.type));
+  return type.fields.every((field) => {
+    const sqlValue = record[field.sqlName] ?? null;
+    const expected = readPath(tsValue, field.path);
+    return isArray(field.type) ? jsonArrayEqual(sqlValue, expected, field.type) : valuesEqual(sqlValue, expected, field.type);
+  });
+}
+
+/** An array column as `to_jsonb` returns it, element by element. */
+function jsonArrayEqual(json: unknown, tsValue: unknown, type: ArrayType): boolean {
+  if (!Array.isArray(json) || !Array.isArray(tsValue) || json.length !== tsValue.length) return false;
+  return json.every((item, i) =>
+    isScalar(type.element)
+      ? valuesEqual(item, tsValue[i], type.element)
+      : item !== null && typeof item === "object" && fieldsEqual(item as Record<string, unknown>, tsValue[i], type.element),
+  );
 }
 
 export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarType): boolean {

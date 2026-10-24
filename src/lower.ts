@@ -675,12 +675,6 @@ async function lowerDeclarationList(list: VariableDeclarationList, node: Node, s
     const declared = declaration.type
       ? await mapTypeNode(declaration.type, s)
       : await inferLocalType(init, declaration.initializer, s);
-    if (isArray(declared)) {
-      throw CompileError.at(
-        declaration,
-        `\`${tsName}\` would be an array local. Arrays are supported as parameters only for now: use the parameter directly.`,
-      );
-    }
     requireAssignable(init.type, declared, declaration.initializer, `initialiser for \`${tsName}\``);
 
     const sqlName = uniqueName(toSnakeCase(tsName), s.used);
@@ -1030,11 +1024,20 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
 
 /**
  * The array an access or a method call is made on, or undefined when the
- * operand is not an array. Arrays only come from parameters, so only a name,
- * parentheses or a conditional can produce one; anything else is left to the
+ * operand is not an array. An array is a parameter or a local, a field of an
+ * object, or a conditional between those; anything else is left to the
  * caller's own error.
  */
 async function arrayOperand(node: Expression, s: State): Promise<(ExprIR & { readonly type: ArrayType }) | undefined> {
+  // A field is resolved without lowering it, so a path that is not an array
+  // (a nested group, say) reports its own error later, in its own words.
+  if (node.kind === SyntaxKind.PropertyAccessExpression) {
+    const resolved = await resolveAccess(node, s);
+    if (!resolved || !isComposite(resolved.base.type)) return undefined;
+    const field = resolved.base.type.fields.find((f) => samePath(f.path, resolved.path));
+    if (!field || !isArray(field.type)) return undefined;
+    return { kind: "field", operand: resolved.base, sqlName: field.sqlName, type: field.type };
+  }
   if (
     node.kind !== SyntaxKind.Identifier &&
     node.kind !== SyntaxKind.ParenthesizedExpression &&

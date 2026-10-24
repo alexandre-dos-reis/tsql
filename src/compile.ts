@@ -86,7 +86,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       };
     }
 
-    const ctx = { project, checker: project.checker, composites };
+    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>() };
     const files = await rulesFiles(project, projectRoot, options);
 
     // Pass 1: every signature, so call checking does not depend on file order.
@@ -167,11 +167,15 @@ function usedComposites(
   discovered: ReadonlyMap<string, CompositeType>,
 ): CompositeType[] {
   const names = new Set<string>();
+  // A composite's array fields bring their element types with them.
+  const collect = (type: PgType): void => {
+    if (type.kind === "array") return collect(type.element);
+    if (type.kind !== "composite" || names.has(type.sqlName)) return;
+    names.add(type.sqlName);
+    for (const field of type.fields) collect(field.type);
+  };
   for (const fn of functions) {
-    for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) {
-      const named = type.kind === "array" ? type.element : type;
-      if (named.kind === "composite") names.add(named.sqlName);
-    }
+    for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) collect(type);
   }
   return [...names].sort().flatMap((name) => {
     const composite = discovered.get(name);

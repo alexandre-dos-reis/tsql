@@ -250,11 +250,11 @@ The rules are imported as they are, so they have to load under the runtime runni
 | type alias | resolved at build time |
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
-| `readonly T[]` parameter | `T[]` — of scalars, nullable scalars, or a named object type |
+| `readonly T[]` parameter or object field | `T[]` — of scalars, nullable scalars, or a named object type |
 
 Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
-Not yet: enums, generics, building or returning arrays, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
+Not yet: enums, generics, building or returning arrays (an object holding one can be returned), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
 ---
 
@@ -477,8 +477,8 @@ Built-in object types are excluded by the same provenance check that catches run
 
 ## Arrays
 
-A `readonly T[]` parameter — also written `ReadonlyArray<T>`, or through an alias — is a PostgreSQL
-array of the element type, and the element keeps the alias its author wrote: `readonly Integer[]` is
+A `readonly T[]` parameter or object field — also written `ReadonlyArray<T>`, or through an alias — is
+a PostgreSQL array of the element type, and the element keeps the alias its author wrote: `readonly Integer[]` is
 `integer[]`, `readonly TodoItem[]` is `app.todo_item[]`. Three things read one:
 
 | TypeScript | PostgreSQL | Why this form |
@@ -489,7 +489,7 @@ array of the element type, and the element keeps the alias its author wrote: `re
 
 The loop variable is a local of the element type, so an object's fields read as they would on a
 parameter (`todo.done` is `(todo).done`), destructuring included. An array can be passed on to another
-compiled rule.
+compiled rule, and held in a `const` or `let`.
 
 ```ts
 export interface TodoItem {
@@ -506,12 +506,59 @@ export function openTodoCount(todos: readonly TodoItem[]): Integer {
 }
 ```
 
-From SQL, the array is usually aggregated from a table and cast to the composite, row by row:
+From SQL, the array is usually gathered from a table and cast to the composite, row by row:
 
 ```sql
-SELECT app.open_todo_count(array_agg(ROW(t.title, t.done)::app.todo_item))
-FROM todos t
-WHERE t.user_id = 42;
+SELECT app.open_todo_count(ARRAY(
+  SELECT ROW(t.title, t.done)::app.todo_item FROM todos t WHERE t.user_id = 42
+));
+```
+
+`ARRAY(SELECT …)` rather than `array_agg`: over no rows, `array_agg` is NULL, not an empty array, and
+`FOREACH` raises on NULL. `COALESCE(array_agg(…), '{}')` works too.
+
+### Arrays in object types
+
+An array field is not flattened: it is one column of array type, beside the flattened ones.
+
+```ts
+export interface BasketLine {
+  readonly sku: string;
+  readonly quantity: Integer;
+}
+
+export interface Basket {
+  readonly customer: { readonly tier: "standard" | "gold" };
+  readonly lines: readonly BasketLine[];
+}
+```
+
+```sql
+CREATE TYPE app.basket_line AS (sku text, quantity integer);
+CREATE TYPE app.basket AS (customer_tier text, lines app.basket_line[]);
+```
+
+`basket.lines` reads as an array wherever one is expected — `for (const line of basket.lines)` is
+`FOREACH line IN ARRAY (basket).lines` — and a spread carries it into a new value:
+`{ ...basket, customer: { tier: "gold" } }` is `ROW('gold', (basket).lines)::app.basket`.
+
+Two consequences for the migration:
+
+- **Types are created in dependency order**, not only by name: `app.basket` needs `app.basket_line`
+  to exist first. A shape that contains itself through an array (`Category { children: readonly
+  Category[] }`) is refused: PostgreSQL cannot declare a composite holding an array of itself.
+- **The type guard compares that column through `format_type`.** The catalogue writes a type from
+  another schema qualified or not depending on the search path, so the expected side is computed the
+  same way: `'lines ' || format_type(to_regtype('app.basket_line[]'), NULL)`.
+
+From SQL, a basket is built with a nested `ARRAY(SELECT …)`:
+
+```sql
+SELECT app.basket_total(ROW(
+  c.tier,
+  ARRAY(SELECT ROW(l.sku, l.quantity)::app.basket_line FROM basket_lines l WHERE l.basket_id = b.id)
+)::app.basket)
+FROM baskets b JOIN customers c ON c.id = b.customer_id;
 ```
 
 An array is passed by value, which suits tens or hundreds of elements; over millions of rows, a SQL
@@ -529,13 +576,14 @@ What lowering refuses, and why:
   `2` and find it.
 - **Other methods** (`some`, `map`, `filter`, `reduce`): they take a callback, and PL/pgSQL has no
   closures. Write the loop.
-- **A nullable array**: `FOREACH` raises on NULL and `cardinality(NULL)` is NULL; an empty array already
-  means "nothing". Elements may be nullable — `readonly (string | null)[]` — except objects, whose NULL
+- **A nullable array**, parameter or field: `FOREACH` raises on NULL and `cardinality(NULL)` is NULL; an
+  empty array already means "nothing". Elements may be nullable — `readonly (string | null)[]` — except objects, whose NULL
   is indistinguishable from a row of NULL fields.
 - **Arrays of arrays, and tuples**: a PostgreSQL array is one rectangular multi-dimensional value, with
   one element type and no fixed length.
-- **Array fields in an object type, array locals, and array returns**: not yet. Nothing in the subset
-  builds an array, so a returned one could only be the parameter.
+- **A shape that contains itself through an array**: no fixed depth, and PostgreSQL cannot declare it.
+- **Returning an array**: not yet. Nothing in the subset builds an array, so a returned one could only be
+  a parameter. An object holding an array can be returned.
 
 The SQL side cannot stop a caller passing what TypeScript would not — a NULL element in an
 `integer[]`, or a two-dimensional array, which `FOREACH` walks element by element and `cardinality`
@@ -566,7 +614,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
 | destructuring defaults, `...rest`, array destructuring | a default applies on `undefined`, which SQL lacks; a rest object has no named type; reading by position is outside the subset |
 | a mutable `T[]`, `xs[i]`, array methods but `includes`, `===` on arrays | see [Arrays](#arrays) |
-| a nullable array, arrays of arrays, tuples, array fields, locals and returns | see [Arrays](#arrays) |
+| a nullable array, arrays of arrays, tuples, a shape recursive through an array, array returns | see [Arrays](#arrays) |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
 | generics, `Date` | outside the subset whose semantics can be preserved |
@@ -610,7 +658,7 @@ The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it
 
 Two further checks:
 
-- **Composite returns** are compared field by field, querying `(fn(...)).*` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings.
+- **Composite returns** are compared field by field, selecting `(result).field` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings. An array field is selected as `to_jsonb(…)` for the same reason: an array of composites in text form is quoting nested inside quoting.
 - **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
 
 ## Keeping `Integer` honest once installed
