@@ -4,6 +4,6 @@
  */
 type Integer = number;
 
-export function shippingCents(weight: Integer): Integer {
+export function doubledWeight(weight: Integer): Integer {
   return weight * 2;
 }

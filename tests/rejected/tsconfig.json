@@ -1,5 +1,5 @@
 {
-  "comment": "Fixtures are valid TypeScript that falls outside the compiled subset, so the rejection tests exercise the compiler rather than tsc.",
+  "comment": "Rejected rules, one file per case. Each is valid TypeScript that falls outside the compiled subset, so tests/rejected.test.ts exercises the translator's refusal rather than tsc's.",
   "compilerOptions": {
     "lib": [
       "ESNext"
@@ -14,8 +14,5 @@
   },
   "include": [
     "."
-  ],
-  "exclude": [
-    "rules"
   ]
 }

@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # A real PostgreSQL, so `tsql test --db-url` is exercised against a server
+    # A real PostgreSQL, so `tsql parity --db-url` and `bun test` is exercised against a server
     # and not only against PGlite.
     services:
       postgres:

@@ -6,9 +6,9 @@ import { checkParity, type RowQuery } from "../src/parity.ts";
 import { openDatabase, type Database } from "../src/runParity.ts";
 
 /**
- * The parity harness, run on the positive fixtures in tests/fixtures/rules —
- * never on examples/, which is the user-facing showcase and is checked by
- * `bun run ex:parity` in CI instead.
+ * The parity harness, run on every accepted case in tests/parity/ (one file per
+ * case) — never on examples/, which is the user-facing showcase and is checked
+ * by `bun run ex:parity` in CI instead.
  *
  * Every check runs on each backend `tsql parity` supports: PGlite always, and
  * a real PostgreSQL when TSQL_TEST_DB_URL names one (CI provides it). The
@@ -17,23 +17,13 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  */
 
 const SCHEMA = "app";
-const RULES = "tests/fixtures/rules/tsconfig.json";
-
-const rules = await compileProject({ tsconfig: RULES, emit: { schema: SCHEMA } });
-
-// Composite returns and the argument-mutation check use a fixture of their own.
-const spread = await compileProject({
-  tsconfig: "tests/fixtures/tsconfig.json",
-  include: (fileName) => fileName.endsWith("tests/fixtures/spreadReturn.ts"),
-  emit: { schema: SCHEMA },
-});
+const rules = await compileProject({ tsconfig: "tests/parity/tsconfig.json", emit: { schema: SCHEMA } });
 
 // Parity needs SQL to compare against, so a project that does not compile is
 // reported as one failing test carrying the compiler's own message — rather
 // than a module-scope throw, which would bury it under cascading failures.
-test("the parity fixtures compile", () => {
+test("the parity cases compile", () => {
   expect(formatResult(rules)).toBe("");
-  expect(formatResult(spread)).toBe("");
 });
 
 test("every compiled function is covered", () => {
@@ -54,7 +44,7 @@ async function implementation(fn: ManifestFunction): Promise<(...args: never[]) 
 }
 
 for (const backend of BACKENDS) {
-  const runnable = rules.ok && spread.ok && (backend.name === "PGlite" || backend.url !== undefined);
+  const runnable = rules.ok && (backend.name === "PGlite" || backend.url !== undefined);
 
   describe.skipIf(!runnable)(`parity on ${backend.name}`, () => {
     let db: Database;
@@ -63,7 +53,6 @@ for (const backend of BACKENDS) {
     beforeAll(async () => {
       db = await openDatabase(backend.url);
       await db.exec(rules.sql);
-      await db.exec(spread.sql);
     });
 
     afterAll(async () => {
@@ -71,9 +60,9 @@ for (const backend of BACKENDS) {
     });
 
     // One generated test per compiled function. The list comes from the
-    // manifest, so adding a rule to tests/fixtures/rules adds a parity test
-    // with no edit here.
-    for (const fn of [...rules.manifest.functions, ...spread.manifest.functions]) {
+    // manifest, so adding a case to tests/parity/ adds a parity test with no
+    // edit here.
+    for (const fn of rules.manifest.functions) {
       test(`${fn.tsName}() === ${SCHEMA}.${fn.sqlName}()`, async () => {
         await checkParity(fn, await implementation(fn), query, SCHEMA);
       });
@@ -92,7 +81,7 @@ END; $$;`);
       const subject = {
         tsName: "todoLimit",
         sqlName: "wrong_limit",
-        module: "tests/fixtures/rules/plans.ts",
+        module: "tests/parity/ifElseChain.ts",
         params: [
           {
             tsName: "plan",
@@ -102,7 +91,7 @@ END; $$;`);
         ],
         returns: { kind: "scalar" as const, sql: "integer" as const, nullable: false },
       };
-      const { todoLimit } = await import(resolve("tests/fixtures/rules/plans.ts"));
+      const { todoLimit } = await import(resolve("tests/parity/ifElseChain.ts"));
 
       const failure = await checkParity(subject, todoLimit, query, SCHEMA).then(
         () => undefined,
@@ -114,7 +103,7 @@ END; $$;`);
     // The reason copy-at-the-top was the wrong fix for field mutation: return
     // values agree, so only an explicit check on the arguments can see it.
     test("parity detects a TypeScript function that mutates its argument", async () => {
-      const subject = spread.manifest.functions.find((f) => f.tsName === "grantSeat")!;
+      const subject = rules.manifest.functions.find((f) => f.tsName === "grantSeat")!;
       const mutating = (seat: { plan: string; count: number }) => {
         seat.count = seat.count + 1;
         return seat;
