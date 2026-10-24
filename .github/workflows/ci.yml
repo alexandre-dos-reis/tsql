@@ -29,11 +29,10 @@ jobs:
         run: |
           bun add -d --exact oxfmt
           bun run format
-          diff=$(git diff)
-          diff=${diff//'%'/'%25'}
-          diff=${diff//$'\r'/'%0D'}
-          diff=${diff//$'\n'/'%0A'}
-          echo "::error title=oxfmt bootstrap diff::${diff}"
+          # Annotations are capped at 4 KB each: gzip + base64, in numbered chunks.
+          git diff | gzip -9 | base64 -w0 | fold -w 3900 | nl -nln -w1 -s' ' | while read -r n chunk; do
+            echo "::notice title=oxfmt bootstrap ${n}::${chunk}"
+          done
           exit 1
 
       - run: bun run typecheck
