@@ -254,7 +254,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 
 Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
-Not yet: enums, generics, building or returning arrays (an object holding one can be returned), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
+Not yet: enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
 ---
 
@@ -517,6 +517,48 @@ SELECT app.open_todo_count(ARRAY(
 `ARRAY(SELECT …)` rather than `array_agg`: over no rows, `array_agg` is NULL, not an empty array, and
 `FOREACH` raises on NULL. `COALESCE(array_agg(…), '{}')` works too.
 
+### Building and returning arrays
+
+An array literal is built from its parts: runs of elements become `ARRAY[…]::t[]`, spreads stay
+arrays, and the parts are concatenated with `||`. Concatenation copies, in both languages, so
+`[...pending, chore]` is a new array and `pending` is unchanged — which is how `filter` and `map` are
+written: a loop over a `let`.
+
+```ts
+export function pendingChores(chores: readonly Chore[]): readonly Chore[] {
+  let pending: readonly Chore[] = [];
+  for (const chore of chores) {
+    if (!chore.done) {
+      pending = [...pending, chore];
+    }
+  }
+  return pending;
+}
+```
+
+```sql
+pending := ARRAY[]::app.chore[];
+FOREACH chore IN ARRAY chores LOOP
+  IF NOT (chore).done THEN
+    pending := pending || ARRAY[chore]::app.chore[];
+  END IF;
+END LOOP;
+RETURN pending;
+```
+
+- **The element type comes from the position** — an annotation, the return type, a parameter, an
+  object field — so `[]` is typed and, in `readonly Integer[]`, a `1` stays an `integer`. With no
+  position, it comes from the elements: `const pair = [low, high]` is an `integer[]`.
+- **Every run is cast** (`ARRAY[x]::integer[]`), because `ARRAY[]` alone has no type, and `ARRAY[1]`
+  would not say `double precision[]` when that is what was declared.
+- **Numeric elements widen, never narrow.** A `readonly Integer[]` passed or spread where a `readonly
+  number[]` is expected is cast, `amounts::double precision[]`; the other way is refused, as for numbers.
+- **A returned array** is `RETURNS t[]`, and reads like any other: `pendingChores(chores).length` is
+  `cardinality(app.pending_chores(chores))`.
+
+`null` takes the type its position expects too, so `return null` in a function returning `string |
+null` is `RETURN NULL`, and `[null]` in a `readonly (string | null)[]` is `ARRAY[NULL]::text[]`.
+
 ### Arrays in object types
 
 An array field is not flattened: it is one column of array type, beside the flattened ones.
@@ -582,8 +624,9 @@ What lowering refuses, and why:
 - **Arrays of arrays, and tuples**: a PostgreSQL array is one rectangular multi-dimensional value, with
   one element type and no fixed length.
 - **A shape that contains itself through an array**: no fixed depth, and PostgreSQL cannot declare it.
-- **Returning an array**: not yet. Nothing in the subset builds an array, so a returned one could only be
-  a parameter. An object holding an array can be returned.
+- **An array literal with a hole** (`[1, , 2]`): the hole is `undefined`, which SQL lacks.
+- **`[]` with no type to take**: `ARRAY[]` has no type in PostgreSQL, so an empty literal needs an
+  annotation, a return type, a parameter or an object field to stand in.
 
 The SQL side cannot stop a caller passing what TypeScript would not — a NULL element in an
 `integer[]`, or a two-dimensional array, which `FOREACH` walks element by element and `cardinality`
@@ -614,7 +657,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
 | destructuring defaults, `...rest`, array destructuring | a default applies on `undefined`, which SQL lacks; a rest object has no named type; reading by position is outside the subset |
 | a mutable `T[]`, `xs[i]`, array methods but `includes`, `===` on arrays | see [Arrays](#arrays) |
-| a nullable array, arrays of arrays, tuples, a shape recursive through an array, array returns | see [Arrays](#arrays) |
+| a nullable array, arrays of arrays, tuples, a shape recursive through an array, holes, an untyped `[]` | see [Arrays](#arrays) |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
 | generics, `Date` | outside the subset whose semantics can be preserved |

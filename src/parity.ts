@@ -119,8 +119,8 @@ export interface PreparedCall {
  * leaves no array literal for a driver to escape. The three nest: a composite
  * with an array field holds an `ARRAY[ROW(…), …]`.
  *
- * A composite result is selected one column per field. An array column is
- * returned as `to_jsonb(…)`, which both drivers parse, rather than in
+ * A composite result is selected one column per field. An array — returned,
+ * or a column of a composite — is selected as `to_jsonb(…)`, which both drivers parse, rather than in
  * PostgreSQL's array text format, where an array of composites is nested
  * quoting that would need a parser of its own.
  */
@@ -148,6 +148,7 @@ export function prepareCall(fn: ManifestFunction, schema: string | null, args: r
   const argsSql = fn.params.map((param, index) => value(param.type, args[index]));
   const call = `${qualify(fn.sqlName)}(${argsSql.join(", ")})`;
   if (isScalar(fn.returns)) return { sql: `select ${call} as value`, params };
+  if (isArray(fn.returns)) return { sql: `select to_jsonb(${call}) as value`, params };
 
   const returns = fn.returns as CompositeType;
   const columns = returns.fields.map((f) => {
@@ -163,8 +164,7 @@ export function prepareCall(fn: ManifestFunction, schema: string | null, args: r
  */
 export function resultEqual(row: Record<string, unknown>, tsValue: unknown, returns: PgType): boolean {
   if (isScalar(returns)) return valuesEqual(row.value, tsValue, returns);
-  // Unreachable: lowering refuses an array return.
-  if (isArray(returns)) return false;
+  if (isArray(returns)) return jsonArrayEqual(row.value, tsValue, returns);
   return fieldsEqual(row, tsValue, returns);
 }
 
@@ -261,7 +261,7 @@ export async function checkParity(
     const tsValue = call(...args);
     const row = await query(sql, params);
     // A scalar return arrives as a one-column row; report the value, not the row.
-    const sqlValue = isScalar(fn.returns) ? row.value : row;
+    const sqlValue = isScalar(fn.returns) || isArray(fn.returns) ? row.value : row;
     detail = !deepEqual(args, before)
       ? `the TypeScript function mutated its arguments (${JSON.stringify(before)} -> ${JSON.stringify(args)}). PL/pgSQL passes composites by value, so the SQL function cannot do the same; build a new value instead`
       : `TypeScript gave ${JSON.stringify(tsValue)}, PostgreSQL gave ${JSON.stringify(sqlValue)}`;

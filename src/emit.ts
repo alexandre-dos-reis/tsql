@@ -2,6 +2,7 @@ import {
   fieldLabel,
   isArray,
   isScalar,
+  type ArrayType,
   type BinOp,
   type CompositeType,
   type ExprIR,
@@ -67,6 +68,8 @@ function precedenceOf(expr: ExprIR): number {
       return PREC.is;
     case "neg":
       return PREC.unary;
+    case "arrayLiteral":
+      return expr.parts.length > 1 ? PREC.concat : PREC.atom;
     default:
       return PREC.atom;
   }
@@ -157,7 +160,30 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
     case "arrayIncludes":
       return `array_position(${emitExpr(expr.array, q)}, ${emitExpr(expr.value, q)}) IS NOT NULL`;
+
+    case "arrayLiteral": {
+      // Every run is cast: `ARRAY[]` has no type of its own, and `ARRAY[1]`
+      // would not say `double precision[]` when that is what was declared.
+      const arrayType = arrayTypeName(expr.type, q);
+      if (expr.parts.length === 0) return `ARRAY[]::${arrayType}`;
+      return expr.parts
+        .map((part, i) =>
+          part.kind === "items"
+            ? `ARRAY[${part.items.map((item) => emitExpr(item, q)).join(", ")}]::${arrayType}`
+            : // Left-associative, like any binary operator: a later operand of
+              // `||` binds one level tighter.
+              emitExpr(part.array, q, i === 0 ? precedence : precedence + 1),
+        )
+        .join(" || ");
+    }
+
+    case "arrayCast":
+      return `${emitExpr(expr.operand, q, PREC.atom)}::${arrayTypeName(expr.type, q)}`;
   }
+}
+
+function arrayTypeName(type: ArrayType, q: Qualifier): string {
+  return `${isScalar(type.element) ? type.element.sql : q.type(type.element)}[]`;
 }
 
 function numberLiteral(value: number): string {

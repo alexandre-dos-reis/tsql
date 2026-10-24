@@ -296,8 +296,20 @@ export type ExprIR =
    * is found like any other value, as `includes` finds `null`.
    */
   | { readonly kind: "arrayIncludes"; readonly array: ExprIR; readonly value: ExprIR; readonly type: ScalarType }
+  /**
+   * `[a, b, ...xs, c]`: runs of elements become `ARRAY[a, b]::t[]`, spreads stay
+   * arrays, and the parts are concatenated with `||`. No parts is `ARRAY[]::t[]`.
+   */
+  | { readonly kind: "arrayLiteral"; readonly parts: readonly ArrayPart[]; readonly type: ArrayType }
+  /** `xs::double precision[]` — an array whose numeric elements widen, element by element. */
+  | { readonly kind: "arrayCast"; readonly operand: ExprIR; readonly type: ArrayType }
   // `ROW(a, b)::app.thing` — one argument per flattened field, in field order.
   | { readonly kind: "row"; readonly args: readonly ExprIR[]; readonly type: CompositeType };
+
+/** One run of an array literal: elements written out, or an array spread into it. */
+export type ArrayPart =
+  | { readonly kind: "items"; readonly items: readonly ExprIR[] }
+  | { readonly kind: "spread"; readonly array: ExprIR };
 
 /** Signature-only view of a function, used to check calls before bodies are lowered. */
 export interface SignatureIR {
