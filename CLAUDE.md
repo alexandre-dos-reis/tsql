@@ -30,8 +30,10 @@ bun run typecheck               # bun check over src+tests, and over the example
 bun run format                  # oxfmt (dev dependency; not checked in CI)
 ```
 
-`src/cli.ts` takes `--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, and **requires
-file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
+`src/cli.ts` has three commands — `compile` (writes), `check` (writes nothing) and `test` (writes
+nothing, then runs the parity harness in PGlite via `src/runParity.ts`, which is imported lazily so
+`check`/`compile` never load PGlite). It takes `--project`, `--out`, `--manifest`, `--schema`,
+`--no-comments`, `--runs`, `--seed`, and **requires file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a
 subset writes a migration holding only that subset, which is why the repo's own scripts pass
@@ -135,7 +137,8 @@ bun run release     # changeset publish
   that agrees with the consumer's own code; a copy resolved under this package would be a different
   one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
   `unstable/` subpaths may move between 7.x minors. Its only runtime
-  dependency is `fast-check`, for the parity harness, which `tests/packaging.test.ts` asserts.
+  dependencies are `fast-check` and `@electric-sql/pglite`, for the parity harness and `tsql test`,
+  which `tests/packaging.test.ts` asserts.
 - **`exports` points at `src/*.ts`.** Node has stripped types natively since 22.18, Bun always has,
   and TypeScript resolves `.ts` as its own types — so there is no build step and no
   emitted-declaration drift. **The price is that every file in `src/` must be erasable**: no enums,
@@ -215,11 +218,11 @@ raises on drift. The compiler creates types; it never rewrites them.
   test sees only its own errors. **Every rejection has a test here plus a fixture in `tests/fixtures/`.**
   Adding a rejection means adding both.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
-  visible to the library tests. It only ever runs `check` — `compile` writes, and a test suite has no
-  business rewriting the emitted example output.
+  visible to the library tests. It runs `check` and `test`, never `compile` — `compile` writes, and a test
+  suite has no business rewriting the emitted example output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
-  has no runtime dependency but `fast-check`, and that the launcher stays Node-compatible.
+  has no runtime dependencies but `fast-check` and `@electric-sql/pglite`, and that the launcher stays Node-compatible.
 - `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
   generates one test per manifest function — so **adding a rule under `examples/` adds a parity test with
   no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
@@ -231,10 +234,10 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 ## Constraints to preserve
 
-- **One runtime dependency, `fast-check`; `typescript` is a peer.** The compiler is Bun plus the
-  TypeScript API; the emitter is string building. The parity harness (`@adr/tsql/parity`) is a product
-  feature built on fast-check, so fast-check ships as a dependency. PGlite stays a devDependency — the
-  harness takes a `RowQuery` callback, so a consumer brings their own database.
+- **Two runtime dependencies, `fast-check` and `@electric-sql/pglite`; `typescript` is a peer.** The
+  compiler is Bun plus the TypeScript API; the emitter is string building. Parity testing is a product
+  feature: `@adr/tsql/parity` is built on fast-check, and `tsql test` runs it against PGlite. The
+  harness itself still takes a `RowQuery` callback, so a consumer can bring their own database.
 - **Compile pure business rules only** — no database operations. A rule is portable; obtaining the
   trusted plan and counting rows belongs in PostgreSQL.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional

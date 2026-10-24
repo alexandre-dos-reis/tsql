@@ -10,6 +10,8 @@ const USAGE = `tsql — compile pure TypeScript business rules to PL/pgSQL
 Usage:
   tsql compile <files...> [options]   Type check, translate and write SQL
   tsql check   <files...> [options]   Type check and translate, writing nothing
+  tsql test    <files...> [options]   Type check, translate, and prove the SQL agrees with the
+                                      TypeScript: fast-check parity tests in PGlite, writing nothing
 
 Rules are named explicitly, because the migration is written from exactly the
 files given. Compile a whole project with a glob:
@@ -24,6 +26,8 @@ Options:
   --manifest <file>      Manifest to write      (default: generated/manifest.json)
   --schema <name>        Schema to qualify with (default: app)
   --no-comments          Omit provenance comments from the generated SQL
+  --runs <n>             test: random inputs per function (default: 200)
+  --seed <n>             test: replay a failure; a negative seed needs \`--seed=-123\`
 `;
 
 const { values, positionals } = parseArgs({
@@ -35,11 +39,13 @@ const { values, positionals } = parseArgs({
     manifest: { type: "string", default: "generated/manifest.json" },
     schema: { type: "string", default: "app" },
     "no-comments": { type: "boolean", default: false },
+    runs: { type: "string" },
+    seed: { type: "string" },
     help: { type: "boolean", default: false },
   },
 });
 
-const COMMANDS: readonly string[] = ["compile", "check"];
+const COMMANDS: readonly string[] = ["compile", "check", "test"];
 
 const command = positionals[0] ?? "";
 const files = positionals.slice(1);
@@ -64,7 +70,7 @@ if (!COMMANDS.includes(command)) {
   console.error(
     looksLikeAFile
       ? `tsql: expected a command, got \`${command}\`.\n\n  Did you mean:  tsql compile ${positionals.join(" ")}\n`
-      : `tsql: unknown command \`${command}\`. Expected ${COMMANDS.join(" or ")}.\n\n${USAGE}`,
+      : `tsql: unknown command \`${command}\`. Expected compile, check or test.\n\n${USAGE}`,
   );
   process.exit(1);
 }
@@ -73,6 +79,20 @@ if (files.length === 0) {
   console.error(`tsql: \`${command}\` needs at least one file.\n\n${USAGE}`);
   process.exit(1);
 }
+
+/** `--runs` and `--seed` are integers; anything else is a typo worth naming, not a NaN. */
+function integerOption(name: string, raw: string | undefined, min?: number): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || (min !== undefined && value < min)) {
+    console.error(`tsql: --${name} expects ${min === undefined ? "an integer" : `an integer of at least ${min}`}, got \`${raw}\`.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const runs = integerOption("runs", values.runs, 1);
+const seed = integerOption("seed", values.seed);
 
 // A toolchain that cannot be assembled — no native compiler, an unreadable
 // tsconfig — is a message to the user, not a stack trace through bundled code.
@@ -103,6 +123,34 @@ if (!result.ok) {
 }
 
 const names = result.functions.map((fn) => fn.sqlName).sort();
+
+if (command === "test") {
+  // Loaded only here: PGlite brings a PostgreSQL in WebAssembly, which
+  // `check` and `compile` have no use for.
+  const { runParity } = await import("./runParity.ts");
+  const schema = result.manifest.schema;
+  const outcomes = await runParity(result, {
+    ...(runs === undefined ? {} : { runs }),
+    ...(seed === undefined ? {} : { seed }),
+    onOutcome: ({ fn, error }) => {
+      const sqlName = schema ? `${schema}.${fn.sqlName}` : fn.sqlName;
+      if (error) {
+        console.error(`✗ ${fn.tsName}() vs ${sqlName}()\n${error.replace(/^/gm, "    ")}`);
+      } else {
+        console.log(`✓ ${fn.tsName}() agrees with ${sqlName}()`);
+      }
+    },
+  });
+  const failed = outcomes.filter((o) => o.error !== undefined).length;
+  const perFunction = runs ?? 200;
+  if (failed > 0) {
+    console.error(`\n${failed} of ${outcomes.length} function(s) diverge from their TypeScript.`);
+    process.exit(1);
+  }
+  console.log(`\nok — ${outcomes.length} function(s) agree with their TypeScript on ${perFunction} random inputs each.`);
+  process.exit(0);
+}
+
 if (command === "check") {
   console.log(`ok — ${names.length} function(s) compile: ${names.join(", ")}`);
   process.exit(0);
