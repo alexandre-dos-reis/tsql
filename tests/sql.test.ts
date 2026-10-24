@@ -246,7 +246,10 @@ describe("nested object types", () => {
     expect(result.composites.map((c) => c.sqlName)).toEqual(["outer"]);
     expect(result.composites[0]!.fields.map((f) => f.sqlName)).toEqual(["label", "inner_count"]);
     expect(result.sql).toContain("inner_count double precision");
-    expect(result.sql).toContain("(outer).inner_count > 10");
+    // `outer` is a keyword PostgreSQL accepts as a parameter name but not as a
+    // column reference, so it is quoted everywhere.
+    expect(result.sql).toContain('("outer").inner_count > 10');
+    expect(result.sql).toContain('"outer" app."outer"');
   });
 
   test("a nested shape rebuilt with spreads becomes one ROW", async () => {
