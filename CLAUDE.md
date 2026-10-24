@@ -253,7 +253,8 @@ test file. `tests/README.md` explains the three.
   `openDatabase` (the path `tsql parity` takes) on PGlite, and on PostgreSQL when `TSQL_TEST_DB_URL` is
   set (CI sets it, with a `postgres:18` service). `src/parity.ts` derives a fast-check arbitrary per
   parameter from its PostgreSQL type, 200 inputs per function; composite returns are compared field by
-  field via `(result).field`, array fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
+  field via `(result).field`, array fields through `to_jsonb`; a raise agrees only with a raise of the same
+  message (`throw new Error(m)` is `RAISE EXCEPTION '%', m`); arguments are snapshotted before the TypeScript call and compared after, so a
   mutating function cannot pass. It also applies the migration twice and checks a drifted type is refused.
 - `tests/rejected.test.ts` compiles each case in `tests/rejected/` alone and checks the build fails with
   every `Expected:` fragment, at the marked line if there is one.

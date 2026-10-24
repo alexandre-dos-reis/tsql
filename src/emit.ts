@@ -280,6 +280,10 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         lines.push(`${indent}END LOOP;`);
         break;
 
+      case "raise":
+        lines.push(`${indent}RAISE EXCEPTION '%', ${emitExpr(statement.message, q)};`);
+        break;
+
       case "exit":
         lines.push(`${indent}EXIT;`);
         break;

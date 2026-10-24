@@ -33,6 +33,7 @@ import {
   type Statement,
   type StringLiteral,
   type SwitchStatement,
+  type ThrowStatement,
   type VariableDeclarationList,
   type VariableStatement,
   type WhileStatement,
@@ -264,6 +265,9 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.WhileStatement:
       return [await lowerWhile(node as WhileStatement, s)];
 
+    case SyntaxKind.ThrowStatement:
+      return [await lowerThrow(node as ThrowStatement, s)];
+
     case SyntaxKind.ForStatement:
       return lowerFor(node as ForStatement, s);
 
@@ -295,6 +299,53 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
         `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` and \`let\` declarations, assignments, \`if\`/\`else\`, \`switch\`, \`while\`, \`for\`, \`for … of\` and \`return\`.`,
       );
   }
+}
+
+/**
+ * `throw new Error(message)` is `RAISE EXCEPTION '%', message`.
+ *
+ * Both stop the function with the message, and both reach the caller: the
+ * TypeScript caller catches an `Error` whose `.message` is the text, the SQL
+ * caller gets SQLSTATE P0001 with the same text. Only the standard library's
+ * own `Error` is accepted — checked by provenance, so a project class named
+ * `Error` is not mistaken for it. Its subclasses are refused: `RangeError` and
+ * the rest would all be the same P0001 in SQL, and a caller telling them apart
+ * in TypeScript could not in SQL. Anything else thrown — a string, an object —
+ * has no message to raise.
+ */
+async function lowerThrow(node: ThrowStatement, s: State): Promise<StmtIR> {
+  const thrown = node.expression;
+  const constructed = thrown.kind === SyntaxKind.NewExpression ? (thrown as NewExpression) : undefined;
+  const callee = constructed?.expression.kind === SyntaxKind.Identifier ? (constructed.expression as Identifier) : undefined;
+  const reference = callee && !s.scope.has(callee.text) ? await classifyReference(callee.text, callee, s) : undefined;
+
+  if (!constructed || !callee || reference?.kind !== "runtime-global" || callee.text !== "Error") {
+    throw CompileError.at(
+      thrown,
+      callee && reference?.kind === "runtime-global"
+        ? `\`${callee.text}\` is not supported: every exception raised from PL/pgSQL has the same SQLSTATE, so a caller could not tell it from a plain \`Error\`. Throw \`new Error(message)\`.`
+        : "Only `throw new Error(message)` is supported: it is what PL/pgSQL's `RAISE EXCEPTION` can say — a message.",
+    );
+  }
+
+  const args = constructed.arguments ?? [];
+  if (args.length > 1) {
+    throw CompileError.at(args[1]!, "`Error` options (`{ cause }`) are not supported: `RAISE` carries a message only.");
+  }
+  if (args.length === 0) return { kind: "raise", message: { kind: "lit", value: "", type: scalarType("text") } };
+
+  const argument = args[0] as Expression;
+  const message = await lowerExpr(argument, s, scalarType("text"));
+  if (!isExactly(message.type, "text")) {
+    throw CompileError.at(argument, `An error message must be text, not \`${describe(message.type)}\`.`);
+  }
+  if (message.type.nullable) {
+    throw CompileError.at(
+      argument,
+      'An error message may not be null: `new Error(null)` has the message "null" in TypeScript, where `RAISE` writes `<NULL>`.',
+    );
+  }
+  return { kind: "raise", message };
 }
 
 async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
@@ -1782,9 +1833,10 @@ function coerce(expr: ExprIR, to: PgType): ExprIR {
   return { kind: "cast", operand: expr, to: to.sql, type: scalarType(to.sql, expr.type.nullable) };
 }
 
+/** Does every path through `body` end the function — by returning, or by raising? */
 function alwaysReturns(body: readonly StmtIR[]): boolean {
   for (const statement of body) {
-    if (statement.kind === "return") return true;
+    if (statement.kind === "return" || statement.kind === "raise") return true;
     if (
       statement.kind === "if" &&
       statement.orElse !== undefined &&
