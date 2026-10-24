@@ -73,11 +73,13 @@ describe("the native compiler is locatable", () => {
 });
 
 describe("the published layout is coherent", () => {
-  test("nothing is a runtime dependency", () => {
-    // The package ships sources only. TypeScript is the consumer's to supply:
-    // the checker has to be the one that agrees with their own code, and a
-    // second copy resolved under this package would be a different one.
-    expect(manifest.dependencies ?? {}).toEqual({});
+  test("fast-check is the only runtime dependency", () => {
+    // The parity harness (`@adr/tsql/parity`) is part of the product and is
+    // built on fast-check, so it ships with the package. TypeScript is the
+    // consumer's to supply: the checker has to be the one that agrees with
+    // their own code, and a second copy resolved under this package would be
+    // a different one.
+    expect(Object.keys(manifest.dependencies ?? {})).toEqual(["fast-check"]);
     expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(["typescript"]);
   });
 

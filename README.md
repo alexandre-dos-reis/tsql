@@ -39,7 +39,7 @@ And when it meets something it cannot translate *faithfully*, it refuses to comp
 bun add -d @adr/tsql        # npm i -D @adr/tsql works too
 ```
 
-45 kB, no runtime dependencies, no build step. Runs on Node 22.18+ or [Bun](https://bun.com) — the sources are TypeScript, and both strip types natively. `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
+45 kB of sources, no build step, one runtime dependency — [fast-check](https://fast-check.dev), for the parity harness. Runs on Node 22.18+ or [Bun](https://bun.com) — the sources are TypeScript, and both strip types natively. `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
 
 ## Write a rule
 
@@ -183,8 +183,10 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
 Wire it once and **every rule you add gets a parity test automatically** — the loop runs over the manifest, so there is nothing to write per rule:
 
 ```bash
-bun add -d fast-check @electric-sql/pglite   # the harness needs fast-check; any PostgreSQL works
+bun add -d @electric-sql/pglite   # or point the harness at any PostgreSQL you already have
 ```
+
+fast-check comes with `@adr/tsql`; the only thing you bring is a database.
 
 ```ts
 // tests/parity.test.ts
@@ -588,7 +590,7 @@ bun run release     # changeset publish
 Three decisions worth stating:
 
 - **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op — the runtime ships stripped — and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever, to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
-- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. That leaves no runtime dependencies at all, which a test asserts.
+- **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. The one runtime dependency is fast-check: the parity harness is part of the product, not a test helper, so `@adr/tsql/parity` has to work straight after `npm i`. A test asserts that nothing else creeps in.
 - **The package ships TypeScript sources, not a build.** Node has stripped types natively since 22.18, Bun always has, and TypeScript resolves `.ts` as its own types — so `exports` points straight at `src/`, with no build step and no emitted-declarations drift. The constraint this imposes is that every source file must be *erasable*: no enums, no namespaces, no constructor parameter properties, since those generate code rather than only describing types. `erasableSyntaxOnly` in `tsconfig.json` enforces it, and a test runs the CLI under `node` so a Bun-only global cannot slip through type checking.
 
 ## Licence and trademarks
