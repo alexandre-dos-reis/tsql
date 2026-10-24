@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Bun as devenv.nix: `bun check` (used by `typecheck`) arrived in 1.4.3.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for >=22.18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run typecheck
+
+      - run: bun test
+
+      # The compiler owns examples/output.sql and manifest.json and guarantees
+      # byte-identical re-runs, so a stale committed copy is a build failure.
