@@ -74,8 +74,8 @@ describe("the native compiler is locatable", () => {
 
 describe("the published layout is coherent", () => {
   test("the parity harness's engines are the only runtime dependencies", () => {
-    // Parity testing is part of the product: `@adr/tsql/parity` is built on
-    // fast-check, and `tsql test` runs it against PGlite, or against a real
+    // Parity testing is part of the product: `tsql parity` runs the fast-check
+    // harness against PGlite, or against a real
     // server through postgres.js, so all three ship with the package. TypeScript is the
     // consumer's to supply: the checker has to be the one that agrees with
     // their own code, and a second copy resolved under this package would be

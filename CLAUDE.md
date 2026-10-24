@@ -239,9 +239,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 - **Three runtime dependencies, `fast-check`, `@electric-sql/pglite` and `postgres`; `typescript` is a
   peer.** The compiler is Bun plus the TypeScript API; the emitter is string building. Parity testing is
-  a product feature: `@adr/tsql/parity` is built on fast-check, and `tsql parity` runs it against PGlite
-  or, with `--db-url`, a real server through postgres.js. The harness itself still takes a `RowQuery`
-  callback, so a consumer can bring their own database.
+  a product feature: `tsql parity` runs the fast-check harness (`src/parity.ts`) against PGlite or, with
+  `--db-url`, a real server through postgres.js. The harness is internal, not exported: its `RowQuery`
+  callback is what lets `src/runParity.ts` swap one database for the other.
 - **Compile pure business rules only** — no database operations. A rule is portable; obtaining the
   trusted plan and counting rows belongs in PostgreSQL.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional

@@ -36,7 +36,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./pgtypes": "./src/pgtypes.ts",
-    "./parity": "./src/parity.ts",
     "./package.json": "./package.json"
   },
   "publishConfig": {
