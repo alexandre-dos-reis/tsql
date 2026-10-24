@@ -1,12 +1,16 @@
+import { PGlite } from "@electric-sql/pglite";
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { compileProject } from "../src/compile.ts";
+import { openDatabase } from "../src/runParity.ts";
 
 /**
  * The SQL that accepted rules compile to. The cases live in tests/parity/, one
  * file per case, where tests/parity.test.ts also proves each one agrees with its
  * TypeScript; here we check the *shape* of what is emitted, which parity alone
- * cannot see (a quoted identifier, a guarded CREATE TYPE, the form of a CASE).
+ * cannot see (a quoted identifier, a guarded CREATE TYPE, the form of a CASE),
+ * and how the migration behaves as a whole: re-runnable, and loud when a type
+ * in the database has drifted from the rules.
  */
 
 const PROJECT = "tests/parity/tsconfig.json";
@@ -298,5 +302,51 @@ describe("object literals and spread", () => {
     // `barOf({ ...crate.foo })` rebuilds it, which does.
     const result = await compileCase("groupSpread.ts");
     expect(result.sql).toContain("RETURN app.bar_of(ROW((crate).foo_bar)::app.content);");
+  });
+});
+
+describe("the migration", () => {
+  const BACKENDS: readonly { readonly name: string; readonly url: string | undefined }[] = [
+    { name: "PGlite", url: undefined },
+    { name: "PostgreSQL", url: process.env.TSQL_TEST_DB_URL },
+  ];
+
+  for (const backend of BACKENDS) {
+    test.skipIf(backend.name === "PostgreSQL" && backend.url === undefined)(
+      `is re-runnable (${backend.name})`,
+      async () => {
+        // CREATE OR REPLACE for functions, a guarded CREATE for types.
+        const result = await compileProject({ tsconfig: PROJECT, emit: { schema: "app" } });
+        const db = await openDatabase(backend.url);
+        try {
+          await db.exec(result.sql);
+          await db.exec(result.sql);
+          const row = await db.query(
+            "select app.can_create_todo_with_type(ROW('free')::app.subscription, 3) as ok",
+            [],
+          );
+          expect(row.ok).toBe(true);
+        } finally {
+          await db.close();
+        }
+      },
+    );
+  }
+
+  test("fails when a composite type has drifted from the rules", async () => {
+    // Needs an empty database with a conflicting type already in it.
+    const result = await compileCase("compositeParam.ts");
+    const fresh = await PGlite.create();
+    try {
+      await fresh.exec("CREATE SCHEMA app; CREATE TYPE app.subscription AS (plan text, stale integer);");
+      const failure = await fresh.exec(result.sql).then(
+        () => undefined,
+        (error: Error) => error,
+      );
+      expect(failure?.message).toContain("app.subscription exists as");
+      expect(failure?.message).toContain("but the rules expect");
+    } finally {
+      await fresh.close();
+    }
   });
 });

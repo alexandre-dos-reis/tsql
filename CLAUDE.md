@@ -224,8 +224,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 **No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
 them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,
 `ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL). Coverage belongs in
-`tests/parity/` (a new file there gets a parity test on both backends automatically) or
-`tests/rejected/` (a new file there needs one line in `tests/rejected.test.ts`).
+`tests/parity/` (a new file there gets a parity test on both backends automatically),
+`tests/rejected/` (a new file there needs one line in `tests/rejected.test.ts`), or `tests/divergent/`
+(a hand-written TypeScript/SQL pair the harness must catch). `tests/README.md` explains the three.
 
 ## Tests
 
@@ -249,8 +250,11 @@ them must never break a compiler test. CI checks them through the user's own com
   PostgreSQL type, 200 inputs per function; composite returns are compared field by field via
   `(fn(...)).*`; arguments are snapshotted before the TypeScript call and compared after, so a mutating
   function cannot pass.
-- The suite contains a negative control that installs a deliberately wrong SQL function and asserts the
-  harness catches it. Keep it working: a parity harness that cannot fail proves nothing.
+- `tests/divergent.test.ts` is the negative control: each pair in `tests/divergent/` (`name.ts` with the
+  TypeScript, its signature and the expected message; `name.sql` hand-written) must be reported as a
+  divergence, on both backends. Keep it working: a parity harness that cannot fail proves nothing.
+- `tests/sql.test.ts` also runs the migration as a whole: re-runnable on both backends, and loud when a
+  composite type in the database has drifted from the rules.
 
 ## Constraints to preserve
 

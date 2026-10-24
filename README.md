@@ -530,7 +530,7 @@ This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) ab
 
 The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it talks to — which is how `tsql parity` swaps PGlite for a real server under `--db-url`.
 
-`tests/parity.test.ts` runs the harness on every case in `tests/parity/`, through the same `openDatabase` the command uses: on PGlite always, and on a real PostgreSQL when `TSQL_TEST_DB_URL` names one (CI provides a PostgreSQL 18 service), inside the same rolled-back transaction as `--db-url`. That failure message in the overview is itself a test: it installs a deliberately wrong SQL function on each backend and asserts the harness catches it, so the suite cannot pass vacuously.
+`tests/parity.test.ts` runs the harness on every case in `tests/parity/`, through the same `openDatabase` the command uses: on PGlite always, and on a real PostgreSQL when `TSQL_TEST_DB_URL` names one (CI provides a PostgreSQL 18 service), inside the same rolled-back transaction as `--db-url`. That failure message in the overview is itself a test: `tests/divergent/` holds hand-written TypeScript/SQL pairs that disagree — a wrong result, a TypeScript function that mutates its argument — and `tests/divergent.test.ts` asserts the harness catches each one on both backends, so the suite cannot pass vacuously.
 
 Two further checks:
 
@@ -611,6 +611,8 @@ tests/parity/           accepted cases, one file per case: each is proven agains
                         on PGlite and PostgreSQL (parity.test.ts); sql.test.ts checks the SQL shape
 tests/rejected/         rejected cases, one file per case, with the expected message in
                         rejected.test.ts
+tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them
+tests/README.md         what each kind of case and each test file is for
 src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives

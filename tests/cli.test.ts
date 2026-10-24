@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 /**
  * The CLI's own contract, which the library tests cannot see: which
- * invocations are refused, and what the exit code is. Only `check` is used —
- * `compile` writes, and a test suite has no business rewriting the example
- * output that is checked in.
+ * invocations are refused, what is printed, and the exit codes. The CLI is
+ * spawned as a user would run it, under Bun and under Node. `check` and
+ * `parity` are used, never `compile`: it writes, and a test suite has no
+ * business rewriting checked-in output.
  */
 
 /**
