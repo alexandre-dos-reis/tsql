@@ -210,6 +210,24 @@ export type ExprIR =
       readonly whenFalse: ExprIR;
       readonly type: PgType;
     }
+  /**
+   * `CASE subject WHEN v THEN r … ELSE e END`, the expression form. Unlike the
+   * PL/pgSQL statement, SQL's expression takes one value per `WHEN`.
+   */
+  | {
+      readonly kind: "simpleCaseExpr";
+      readonly subject: ExprIR;
+      readonly whens: readonly { readonly value: ExprIR; readonly result: ExprIR }[];
+      readonly orElse: ExprIR;
+      readonly type: PgType;
+    }
+  /** `CASE WHEN cond THEN r … ELSE e END`. */
+  | {
+      readonly kind: "searchedCaseExpr";
+      readonly whens: readonly { readonly cond: ExprIR; readonly result: ExprIR }[];
+      readonly orElse: ExprIR;
+      readonly type: PgType;
+    }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
   // `ROW(a, b)::app.thing` — one argument per flattened field, in field order.

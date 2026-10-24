@@ -124,6 +124,16 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "case":
       return `CASE WHEN ${emitExpr(expr.cond, q)} THEN ${emitExpr(expr.whenTrue, q)} ELSE ${emitExpr(expr.whenFalse, q)} END`;
 
+    case "simpleCaseExpr":
+      return `CASE ${emitExpr(expr.subject, q)} ${expr.whens
+        .map((w) => `WHEN ${emitExpr(w.value, q)} THEN ${emitExpr(w.result, q)}`)
+        .join(" ")} ELSE ${emitExpr(expr.orElse, q)} END`;
+
+    case "searchedCaseExpr":
+      return `CASE ${expr.whens
+        .map((w) => `WHEN ${emitExpr(w.cond, q)} THEN ${emitExpr(w.result, q)}`)
+        .join(" ")} ELSE ${emitExpr(expr.orElse, q)} END`;
+
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 

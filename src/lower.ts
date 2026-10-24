@@ -269,6 +269,10 @@ async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
  * - **`default` is the `ELSE`** wherever it is written, since it only runs when no
  *   label matched. Labels grouped with it keep their place in the chain, because
  *   an earlier match must still win over a later duplicate label.
+ * - **When every branch only returns a value**, the whole `switch` becomes
+ *   `RETURN CASE … END`: the expression form, with the same matching rules. SQL's
+ *   expression takes one value per `WHEN`, so grouped labels each get their own
+ *   `WHEN` with the same result — a pure expression, of which only one runs.
  */
 async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   const clauses = node.caseBlock.clauses;
@@ -320,6 +324,13 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   if (groups.length === 0) return orElse;
 
   const simple = groups.every((g) => g.labels.every((l) => l.value !== null && !l.value.type.nullable));
+  const elseValue = returnedValue(orElse);
+  const allReturn = elseValue !== undefined && groups.every((g) => returnedValue(g.body) !== undefined);
+
+  if (simple && allReturn) {
+    const whens = groups.flatMap((g) => g.labels.map((l) => ({ value: l.value!, result: returnedValue(g.body)! })));
+    return [{ kind: "return", expr: { kind: "simpleCaseExpr", subject, whens, orElse: elseValue, type: s.returns } }];
+  }
   if (simple) {
     return [
       {
@@ -349,8 +360,22 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
       .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") })),
     body: g.body,
   }));
+  if (allReturn) {
+    const exprWhens = whens.map((w) => ({ cond: w.cond, result: returnedValue(w.body)! }));
+    out.push({
+      kind: "return",
+      expr: { kind: "searchedCaseExpr", whens: exprWhens, orElse: elseValue, type: s.returns },
+    });
+    return out;
+  }
   out.push({ kind: "searchedCase", whens, orElse });
   return out;
+}
+
+/** The value of a branch that does nothing but `return value`, already coerced to the return type. */
+function returnedValue(body: readonly StmtIR[]): ExprIR | undefined {
+  const [only] = body;
+  return body.length === 1 && only!.kind === "return" ? only!.expr : undefined;
 }
 
 async function lowerClauseBody(

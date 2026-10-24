@@ -165,15 +165,10 @@ export function seatLimit(tier: Tier, extraSeats: Integer): Integer {
 ```
 
 ```sql
-CASE tier
-  WHEN 'free', 'starter' THEN
-    RETURN 1;
-  WHEN 'pro' THEN
-    RETURN 10 + extra_seats;
-  ELSE
-    RETURN 100 + extra_seats * 2;
-END CASE;
+RETURN CASE tier WHEN 'free' THEN 1 WHEN 'starter' THEN 1 WHEN 'pro' THEN 10 + extra_seats ELSE 100 + extra_seats * 2 END;
 ```
+
+When every branch only returns a value, as here, the `switch` becomes a single `RETURN CASE … END`. A branch that does more — a `const`, a nested `if` — keeps the PL/pgSQL `CASE … END CASE` statement, where grouped labels share one `WHEN 'free', 'starter'`.
 
 ## It refuses rather than guesses
 
@@ -247,7 +242,7 @@ A file the project does not hold is an error listing what it does hold, rather t
 
 - **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
 - **`x === null`** becomes `IS NULL` rather than a comparison.
-- **`switch`** becomes a PL/pgSQL `CASE` statement, and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, but PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
+- **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, but PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.

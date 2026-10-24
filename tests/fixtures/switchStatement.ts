@@ -47,3 +47,28 @@ export function bucket(n: Integer): string {
   }
   return "plain";
 }
+
+/** A branch that does more than return keeps the statement form. */
+export function discounted(tier: Tier, amount: Integer): Integer {
+  switch (tier) {
+    case "free":
+    case "starter": {
+      const off: Integer = 5;
+      return amount - off;
+    }
+    default:
+      return amount;
+  }
+}
+
+/** The searched statement form, for the same reason. */
+export function describeCode(code: string | null): string {
+  switch (code) {
+    case null: {
+      const word = "none";
+      return word;
+    }
+    default:
+      return "some";
+  }
+}

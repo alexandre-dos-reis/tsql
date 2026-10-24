@@ -178,35 +178,43 @@ describe("rejections — language constructs", () => {
 });
 
 describe("switch", () => {
-  test("becomes a simple CASE, with grouped labels and default as ELSE", async () => {
+  test("a switch that only returns becomes RETURN CASE … END, one WHEN per label", async () => {
+    // SQL's CASE expression takes one value per WHEN, so grouped labels repeat the result.
     const result = await compileFixture("switchStatement.ts");
     expect(result.errors.map((e) => e.format())).toEqual([]);
-    expect(result.sql).toContain(`  CASE tier
-    WHEN 'free', 'starter' THEN
-      RETURN 1;
-    WHEN 'pro' THEN
-      RETURN 10;
-    ELSE
-      RETURN 100;
-  END CASE;`);
+    expect(result.sql).toContain(
+      "RETURN CASE tier WHEN 'free' THEN 1 WHEN 'starter' THEN 1 WHEN 'pro' THEN 10 ELSE 100 END;",
+    );
   });
 
   test("keeps the simple form for a nullable discriminant", async () => {
     // NULL = 'bob' is not true, so a NULL name reaches the ELSE, as null === "bob" is false.
     const result = await compileFixture("switchStatement.ts");
-    expect(result.sql).toContain(`  CASE name
-    WHEN 'bob' THEN`);
+    expect(result.sql).toContain("RETURN CASE name WHEN 'bob' THEN 'hi bob' ELSE 'hi' END;");
   });
 
   test("uses the searched form for case null", async () => {
     const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain(
+      "RETURN CASE WHEN code IS NULL THEN 'none' WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha' ELSE 'other' END;",
+    );
+  });
+
+  test("a branch doing more than return keeps the CASE statement, with grouped labels", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain(`  CASE tier
+    WHEN 'free', 'starter' THEN
+      off := 5;
+      RETURN amount - off;
+    ELSE
+      RETURN amount;
+  END CASE;`);
     expect(result.sql).toContain(`  CASE
     WHEN code IS NULL THEN
-      RETURN 'none';
-    WHEN code IS NOT DISTINCT FROM 'a' THEN
-      RETURN 'alpha';
+      word := 'none';
+      RETURN word;
     ELSE
-      RETURN 'other';
+      RETURN 'some';
   END CASE;`);
   });
 
