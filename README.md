@@ -250,10 +250,11 @@ The rules are imported as they are, so they have to load under the runtime runni
 | type alias | resolved at build time |
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
+| `readonly T[]` parameter | `T[]` — of scalars, nullable scalars, or a named object type |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
-Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
+Not yet: enums, generics, building or returning arrays, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
 ---
 
@@ -474,6 +475,72 @@ Four more decisions worth stating:
 
 Built-in object types are excluded by the same provenance check that catches runtime globals: `Date` and `Error` are interfaces with properties, but they are declared in the standard library, so they are rejected as built-ins rather than turned into composite types.
 
+## Arrays
+
+A `readonly T[]` parameter — also written `ReadonlyArray<T>`, or through an alias — is a PostgreSQL
+array of the element type, and the element keeps the alias its author wrote: `readonly Integer[]` is
+`integer[]`, `readonly TodoItem[]` is `app.todo_item[]`. Three things read one:
+
+| TypeScript | PostgreSQL | Why this form |
+| --- | --- | --- |
+| `for (const todo of todos)` | `FOREACH todo IN ARRAY todos LOOP` | evaluates the array once and visits it in order, as `for … of` does; `break` and `continue` are `EXIT` and `CONTINUE` |
+| `todos.length` | `cardinality(todos)` | `array_length(todos, 1)` is NULL for an empty array, not 0 |
+| `plans.includes(plan)` | `array_position(plans, plan) IS NOT NULL` | `= ANY(plans)` is NULL, not false, when the array holds a NULL; `array_position` compares with `IS NOT DISTINCT FROM`, so `includes(null)` works too |
+
+The loop variable is a local of the element type, so an object's fields read as they would on a
+parameter (`todo.done` is `(todo).done`), destructuring included. An array can be passed on to another
+compiled rule.
+
+```ts
+export interface TodoItem {
+  readonly title: string;
+  readonly done: boolean;
+}
+
+export function openTodoCount(todos: readonly TodoItem[]): Integer {
+  let remaining = 0;
+  for (const todo of todos) {
+    if (!todo.done) remaining++;
+  }
+  return remaining;
+}
+```
+
+From SQL, the array is usually aggregated from a table and cast to the composite, row by row:
+
+```sql
+SELECT app.open_todo_count(array_agg(ROW(t.title, t.done)::app.todo_item))
+FROM todos t
+WHERE t.user_id = 42;
+```
+
+An array is passed by value, which suits tens or hundreds of elements; over millions of rows, a SQL
+aggregate is the right tool.
+
+What lowering refuses, and why:
+
+- **A mutable `T[]`.** PL/pgSQL passes an array by value, so a `push` would change the caller's array
+  in TypeScript and a copy in SQL — the same reason field mutation is refused. Requiring `readonly`
+  makes TypeScript reject the mutation itself.
+- **`xs[i]`.** Out of range, TypeScript gives `undefined` and PostgreSQL NULL; a PostgreSQL array need
+  not start at 1; and a fractional index is rounded rather than missing.
+- **`includes` on objects**, and `===` on arrays: identity in TypeScript, value in SQL.
+- **`includes` that would narrow**: looking for a `number` in `readonly Integer[]` would cast `2.5` to
+  `2` and find it.
+- **Other methods** (`some`, `map`, `filter`, `reduce`): they take a callback, and PL/pgSQL has no
+  closures. Write the loop.
+- **A nullable array**: `FOREACH` raises on NULL and `cardinality(NULL)` is NULL; an empty array already
+  means "nothing". Elements may be nullable — `readonly (string | null)[]` — except objects, whose NULL
+  is indistinguishable from a row of NULL fields.
+- **Arrays of arrays, and tuples**: a PostgreSQL array is one rectangular multi-dimensional value, with
+  one element type and no fixed length.
+- **Array fields in an object type, array locals, and array returns**: not yet. Nothing in the subset
+  builds an array, so a returned one could only be the parameter.
+
+The SQL side cannot stop a caller passing what TypeScript would not — a NULL element in an
+`integer[]`, or a two-dimensional array, which `FOREACH` walks element by element and `cardinality`
+counts in full. That is the same contract as a NULL passed for a non-nullable parameter.
+
 ## Rejected at build time
 
 Each of these is a case in `tests/rejected/`, one file per case. Each file opens with a comment explaining the refusal, often with the SQL that would have diverged, and the message the compiler must give; `tests/rejected.test.ts` runs them all.
@@ -484,7 +551,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | --- | --- |
 | `if (name)` | truthiness has no faithful SQL translation — compare explicitly |
 | `var` | hoisted and function-scoped: use `const`, or `let` for a value that changes |
-| `do … while`, `for … of`, `for … in`, labelled `break`/`continue` | write a `while`; arrays and object keys are not part of the subset yet |
+| `do … while`, `for … in`, `for … of` over a string, labelled `break`/`continue` | write a `while`; a composite has no keys to iterate; SQL has no loop over code points |
 | `switch` without `default` | a `CASE` that matches nothing raises, and PostgreSQL does not enforce a union's values |
 | `switch` fallthrough | a non-empty clause running into the next has no `CASE` equivalent — end it with `break` or `return` |
 | `break` anywhere but the end of a `switch` clause | it would need control flow a `CASE` branch does not model |
@@ -497,7 +564,9 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `T \| undefined` | SQL models absence one way only — use `null` |
 | a `number` where `Integer` is expected | PostgreSQL rounds a `double precision` stored into an `integer` silently; numbers may only widen |
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
-| destructuring defaults, `...rest`, arrays | a default applies on `undefined`, which SQL lacks; a rest object has no named type; arrays are outside the subset |
+| destructuring defaults, `...rest`, array destructuring | a default applies on `undefined`, which SQL lacks; a rest object has no named type; reading by position is outside the subset |
+| a mutable `T[]`, `xs[i]`, array methods but `includes`, `===` on arrays | see [Arrays](#arrays) |
+| a nullable array, arrays of arrays, tuples, array fields, locals and returns | see [Arrays](#arrays) |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
 | generics, `Date` | outside the subset whose semantics can be preserved |

@@ -169,7 +169,8 @@ function usedComposites(
   const names = new Set<string>();
   for (const fn of functions) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) {
-      if (type.kind === "composite") names.add(type.sqlName);
+      const named = type.kind === "array" ? type.element : type;
+      if (named.kind === "composite") names.add(named.sqlName);
     }
   }
   return [...names].sort().flatMap((name) => {

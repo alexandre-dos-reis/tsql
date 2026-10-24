@@ -54,7 +54,22 @@ export function fieldLabel(path: readonly string[]): string {
   return path.join(".");
 }
 
-export type PgType = ScalarType | CompositeType;
+/**
+ * A `readonly T[]` parameter, mapped to a PostgreSQL array of the element type.
+ *
+ * Only read-only arrays exist: PL/pgSQL passes an array by value, so a `push`
+ * in TypeScript would change the caller's array while the SQL changed a copy.
+ * Requiring `readonly` lets TypeScript refuse the mutation itself. An array is
+ * never nullable, and its elements are a scalar (possibly nullable) or a
+ * non-nullable composite.
+ */
+export interface ArrayType {
+  readonly kind: "array";
+  readonly element: ScalarType | CompositeType;
+  readonly nullable: false;
+}
+
+export type PgType = ScalarType | CompositeType | ArrayType;
 
 export function scalarType(sql: PgScalar, nullable = false, allowed?: readonly string[]): ScalarType {
   return allowed ? { kind: "scalar", sql, nullable, allowed } : { kind: "scalar", sql, nullable };
@@ -78,6 +93,14 @@ export function isComposite(type: PgType): type is CompositeType {
   return type.kind === "composite";
 }
 
+export function isArray(type: PgType): type is ArrayType {
+  return type.kind === "array";
+}
+
+export function arrayType(element: ScalarType | CompositeType): ArrayType {
+  return { kind: "array", element, nullable: false };
+}
+
 /** Is this exactly the given scalar type? Never true for a composite. */
 export function isExactly(type: PgType, sql: PgScalar): boolean {
   return isScalar(type) && type.sql === sql;
@@ -91,11 +114,17 @@ export function isNumeric(type: PgType): boolean {
 
 /** How the type is named in an error message: the SQL type, or the TypeScript name. */
 export function describe(type: PgType): string {
+  if (isArray(type)) {
+    const element = describe(type.element);
+    return type.element.nullable ? `(${element} | null)[]` : `${element}[]`;
+  }
   return isScalar(type) ? type.sql : type.tsName;
 }
 
 export function withNullable(type: PgType, nullable: boolean): PgType {
   if (type.nullable === nullable) return type;
+  // An array is never nullable: the type mapping refuses `readonly T[] | null`.
+  if (isArray(type)) return type;
   return isScalar(type)
     ? scalarType(type.sql, nullable, type.allowed)
     : compositeType(type.tsName, type.sqlName, type.fields, nullable, type.module);
@@ -107,10 +136,21 @@ export function withNullable(type: PgType, nullable: boolean): PgType {
  * composites must be the same named type, since they are nominal in SQL.
  */
 export function sameFamily(a: PgType, b: PgType): boolean {
+  // Arrays interchange only when their elements are exactly the same type:
+  // PostgreSQL would cast `integer[]` to `double precision[]`, but nothing in
+  // the subset needs it, and an exact match leaves nothing to reason about.
+  if (isArray(a) || isArray(b)) {
+    return isArray(a) && isArray(b) && sameElement(a.element, b.element);
+  }
   if (isComposite(a) || isComposite(b)) {
     return isComposite(a) && isComposite(b) && a.sqlName === b.sqlName;
   }
   return a.sql === b.sql || (isNumeric(a) && isNumeric(b));
+}
+
+function sameElement(a: ScalarType | CompositeType, b: ScalarType | CompositeType): boolean {
+  if (isComposite(a) || isComposite(b)) return isComposite(a) && isComposite(b) && a.sqlName === b.sqlName;
+  return a.sql === b.sql;
 }
 
 /** TypeScript computes all arithmetic in doubles; these ranks only widen. */
@@ -171,6 +211,11 @@ export type StmtIR =
     }
   /** `WHILE cond LOOP … END LOOP;` — every TypeScript loop lowers to this. */
   | { readonly kind: "while"; readonly cond: ExprIR; readonly body: readonly StmtIR[] }
+  /**
+   * `FOREACH variable IN ARRAY array LOOP … END LOOP;` — a `for (const x of xs)`.
+   * The variable is a local of the element type.
+   */
+  | { readonly kind: "foreach"; readonly variable: string; readonly array: ExprIR; readonly body: readonly StmtIR[] }
   /** `EXIT;` — an unlabelled `break` out of the innermost loop. */
   | { readonly kind: "exit" }
   /** `CONTINUE;` — the next turn of the innermost loop. */
@@ -236,6 +281,14 @@ export type ExprIR =
     }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
+  /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
+  | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
+  /**
+   * `array_position(array, value) IS NOT NULL` — `xs.includes(value)` on scalar
+   * elements. `array_position` compares with `IS NOT DISTINCT FROM`, so a NULL
+   * is found like any other value, as `includes` finds `null`.
+   */
+  | { readonly kind: "arrayIncludes"; readonly array: ExprIR; readonly value: ExprIR; readonly type: ScalarType }
   // `ROW(a, b)::app.thing` — one argument per flattened field, in field order.
   | { readonly kind: "row"; readonly args: readonly ExprIR[]; readonly type: CompositeType };
 

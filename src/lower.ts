@@ -12,6 +12,7 @@ import {
   type ConditionalExpression,
   type Expression,
   type ExpressionStatement,
+  type ForOfStatement,
   type ForStatement,
   type FunctionDeclaration,
   type Identifier,
@@ -39,6 +40,7 @@ import { CompileError } from "./errors.ts";
 import {
   describe,
   fieldLabel,
+  isArray,
   isComposite,
   isExactly,
   isNumeric,
@@ -47,6 +49,7 @@ import {
   scalarType,
   widenNumeric,
   withNullable,
+  type ArrayType,
   type BinOp,
   type ExprIR,
   type FunctionIR,
@@ -133,6 +136,9 @@ export async function lowerSignature(rule: RuleFunction, ctx: TypeCtx): Promise<
   }
 
   const returns = await mapTypeNode(fn.type, ctx);
+  if (isArray(returns)) {
+    throw CompileError.at(fn.type, "Returning an array is not supported yet: arrays are supported as parameters.");
+  }
   return { tsName, sqlName: toSnakeCase(tsName), params, returns };
 }
 
@@ -265,10 +271,12 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
       throw CompileError.at(node, "`do … while` is not supported; write it as a `while` loop.");
 
     case SyntaxKind.ForOfStatement:
+      return [await lowerForOf(node as ForOfStatement, s)];
+
     case SyntaxKind.ForInStatement:
       throw CompileError.at(
         node,
-        "`for … of` and `for … in` are not supported: arrays and object keys are not part of the compiled subset.",
+        "`for … in` is not supported: an object's keys are fixed by its type, and a composite has no key to iterate.",
       );
 
     case SyntaxKind.ExpressionStatement: {
@@ -284,7 +292,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     default:
       throw CompileError.at(
         node,
-        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` and \`let\` declarations, assignments, \`if\`/\`else\`, \`switch\`, \`while\`, \`for\` and \`return\`.`,
+        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` and \`let\` declarations, assignments, \`if\`/\`else\`, \`switch\`, \`while\`, \`for\`, \`for … of\` and \`return\`.`,
       );
   }
 }
@@ -355,7 +363,7 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   }
 
   const subject = await lowerExpr(node.expression, s);
-  if (isComposite(subject.type)) {
+  if (isComposite(subject.type) || isArray(subject.type)) {
     throw CompileError.at(
       node.expression,
       "Objects compare by identity in TypeScript and by value in SQL, so a `switch` on an object has no faithful translation. Switch on a field instead.",
@@ -566,6 +574,61 @@ async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> {
   });
 }
 
+/**
+ * `for (const x of xs) { … }` is `FOREACH x IN ARRAY xs LOOP … END LOOP;`.
+ *
+ * Both evaluate the array once and visit its elements in order, and the array
+ * is read-only (a `readonly T[]` parameter), so the body cannot change what is
+ * being iterated. `break` and `continue` are `EXIT` and `CONTINUE`, as in any
+ * loop. The variable is a local of the element type, scoped to the loop.
+ */
+async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR> {
+  if (node.awaitModifier) {
+    throw CompileError.at(node, "`for await` is not supported: a PL/pgSQL function runs to completion with nothing to await.");
+  }
+  const init = node.initializer;
+  if (init.kind !== SyntaxKind.VariableDeclarationList) {
+    throw CompileError.at(init, "Declare the loop variable in the loop: `for (const x of xs)`.");
+  }
+  const list = init as VariableDeclarationList;
+  const kind = list.flags & NodeFlags.Const ? "const" : list.flags & NodeFlags.Let ? "let" : undefined;
+  if (!kind) {
+    throw CompileError.at(init, "`var` is not supported: it is function-scoped and hoisted. Use `const`.");
+  }
+  const declaration = list.declarations[0]!;
+  if (declaration.name.kind !== SyntaxKind.Identifier) {
+    throw CompileError.at(
+      declaration.name,
+      "Destructuring the loop variable is not supported; destructure inside the body: `for (const todo of todos) { const { done } = todo; … }`.",
+    );
+  }
+  const tsName = (declaration.name as Identifier).text;
+
+  const array = await lowerExpr(node.expression, s);
+  if (!isArray(array.type)) {
+    throw CompileError.at(
+      node.expression,
+      isExactly(array.type, "text")
+        ? "`for … of` over a string is not supported: it iterates code points, which SQL has no loop for."
+        : `\`for … of\` iterates an array, and \`${node.expression.getText()}\` is \`${describe(array.type)}\`.`,
+    );
+  }
+  const element = array.type.element;
+
+  return scoped(s, async () => {
+    if (s.scope.has(tsName)) {
+      throw CompileError.at(declaration.name, `\`${tsName}\` shadows an existing binding.`);
+    }
+    const sqlName = uniqueName(toSnakeCase(tsName), s.used);
+    s.scope.set(tsName, { sqlName, type: element, kind });
+    s.locals.push({ tsName, sqlName, type: element });
+    const body = await within(s, { kind: "loop", increment: [] }, () =>
+      lowerStatements(asStatements(node.statement), s),
+    );
+    return { kind: "foreach", variable: sqlName, array, body };
+  });
+}
+
 function asStatements(node: Statement): readonly Statement[] {
   return node.kind === SyntaxKind.Block ? (node as Block).statements : [node];
 }
@@ -593,7 +656,7 @@ async function lowerDeclarationList(list: VariableDeclarationList, node: Node, s
     if (declaration.name.kind !== SyntaxKind.Identifier) {
       throw CompileError.at(
         declaration.name,
-        "Array destructuring is not supported: arrays are not part of the compiled subset.",
+        "Array destructuring is not supported: reading by position is not part of the compiled subset. Iterate with `for (const x of xs)`.",
       );
     }
     const tsName = (declaration.name as Identifier).text;
@@ -612,6 +675,12 @@ async function lowerDeclarationList(list: VariableDeclarationList, node: Node, s
     const declared = declaration.type
       ? await mapTypeNode(declaration.type, s)
       : await inferLocalType(init, declaration.initializer, s);
+    if (isArray(declared)) {
+      throw CompileError.at(
+        declaration,
+        `\`${tsName}\` would be an array local. Arrays are supported as parameters only for now: use the parameter directly.`,
+      );
+    }
     requireAssignable(init.type, declared, declaration.initializer, `initialiser for \`${tsName}\``);
 
     const sqlName = uniqueName(toSnakeCase(tsName), s.used);
@@ -773,7 +842,7 @@ async function lowerDestructuring(
         continue;
       }
       if (name.kind !== SyntaxKind.Identifier) {
-        throw CompileError.at(name, "Array destructuring is not supported: arrays are not part of the compiled subset.");
+        throw CompileError.at(name, "Array destructuring is not supported: reading by position is not part of the compiled subset.");
       }
 
       const composite = base.type as CompositeType;
@@ -921,6 +990,11 @@ async function lowerConditional(node: ConditionalExpression, s: State): Promise<
 }
 
 async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
+  if (node.expression.kind === SyntaxKind.PropertyAccessExpression) {
+    const access = node.expression as PropertyAccessExpression;
+    const array = await arrayOperand(access.expression, s);
+    if (array) return lowerArrayMethod(node, access, array, s);
+  }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
     // callee actually is rather than reporting an unsupported call shape.
@@ -952,6 +1026,73 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
     args.push(coerce(lowered, param.type));
   }
   return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
+}
+
+/**
+ * The array an access or a method call is made on, or undefined when the
+ * operand is not an array. Arrays only come from parameters, so only a name,
+ * parentheses or a conditional can produce one; anything else is left to the
+ * caller's own error.
+ */
+async function arrayOperand(node: Expression, s: State): Promise<(ExprIR & { readonly type: ArrayType }) | undefined> {
+  if (
+    node.kind !== SyntaxKind.Identifier &&
+    node.kind !== SyntaxKind.ParenthesizedExpression &&
+    node.kind !== SyntaxKind.ConditionalExpression
+  ) {
+    return undefined;
+  }
+  if (node.kind === SyntaxKind.Identifier && !s.scope.has((node as Identifier).text)) return undefined;
+  const lowered = await lowerExpr(node, s);
+  return isArray(lowered.type) ? (lowered as ExprIR & { readonly type: ArrayType }) : undefined;
+}
+
+const ARRAY_SUBSET = "On an array, the compiled subset is `.length`, `.includes(value)` and `for … of`.";
+
+/**
+ * `xs.includes(value)` on scalar elements, as `array_position(xs, value) IS NOT NULL`.
+ *
+ * `includes` compares with SameValueZero, and `array_position` with
+ * `IS NOT DISTINCT FROM`, so both find a NULL and both treat NaN as equal to
+ * itself. On objects, `includes` compares identity, which SQL cannot see.
+ */
+async function lowerArrayMethod(
+  node: CallExpression,
+  access: PropertyAccessExpression,
+  array: ExprIR & { readonly type: ArrayType },
+  s: State,
+): Promise<ExprIR> {
+  const method = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  if (method !== "includes") {
+    throw CompileError.at(access, `\`.${method}()\` is not supported. ${ARRAY_SUBSET} Write the loop out.`);
+  }
+  const element = array.type.element;
+  if (isComposite(element)) {
+    throw CompileError.at(
+      node,
+      "`includes` on an array of objects compares identity in TypeScript, which SQL cannot see: it compares by value. Loop and compare the fields you care about.",
+    );
+  }
+  if (node.arguments.length !== 1) {
+    throw CompileError.at(node, "`includes` takes exactly one argument here: a start index is not supported.");
+  }
+
+  const argument = node.arguments[0] as Expression;
+  if (isNullLiteral(argument)) {
+    const value: ExprIR = { kind: "lit", value: null, type: scalarType(element.sql, true) };
+    return { kind: "arrayIncludes", array, value, type: scalarType("boolean") };
+  }
+  const value = await lowerExpr(argument, s);
+  if (!isScalar(value.type) || !sameFamily(value.type, element)) {
+    throw CompileError.at(argument, `Cannot look for \`${describe(value.type)}\` in \`${describe(array.type)}\`.`);
+  }
+  if (isNumeric(value.type) && widenNumeric(value.type.sql, element.sql) !== element.sql) {
+    throw CompileError.at(
+      argument,
+      `Looking for a \`${value.type.sql}\` in \`${describe(array.type)}\` would need a cast that rounds it. Declare the array's elements as wide as the value.`,
+    );
+  }
+  return { kind: "arrayIncludes", array, value: coerce(value, element), type: scalarType("boolean") };
 }
 
 /**
@@ -1000,6 +1141,22 @@ async function resolveAccess(node: Expression, s: State): Promise<ResolvedAccess
  * built-in type, and the third a composite field.
  */
 async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
+  const operand = (node as PropertyAccessExpression).expression;
+  const array = await arrayOperand(operand, s);
+  if (array) {
+    if (node.kind === SyntaxKind.ElementAccessExpression) {
+      throw CompileError.at(
+        node,
+        `\`${node.getText()}\` is not supported: out of range, TypeScript gives \`undefined\` where PostgreSQL gives NULL, and a PostgreSQL array need not start at 1. Iterate with \`for … of\`.`,
+      );
+    }
+    const name = (node as PropertyAccessExpression).name;
+    if (name.kind === SyntaxKind.Identifier && (name as Identifier).text === "length") {
+      return { kind: "arrayLength", operand: array, type: scalarType("integer") };
+    }
+    throw CompileError.at(node, `\`${node.getText()}\` is not supported. ${ARRAY_SUBSET}`);
+  }
+
   const resolved = await resolveAccess(node, s);
   if (resolved && isComposite(resolved.base.type) && resolved.path.length > 0) {
     return fieldOf(resolved, node);
@@ -1254,6 +1411,12 @@ function columnFor(target: CompositeType, path: readonly string[]): string | und
 
 /** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */
 function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void {
+  if (isArray(left.type) || isArray(right.type)) {
+    throw CompileError.at(
+      at,
+      "Arrays compare by identity in TypeScript and by value in SQL, so `===` on an array has no faithful translation.",
+    );
+  }
   if (isComposite(left.type) || isComposite(right.type)) {
     throw CompileError.at(
       at,
@@ -1460,6 +1623,8 @@ function numericOperands(left: ExprIR, right: ExprIR, node: Node, op: string): [
  */
 export function assignable(from: PgType, to: PgType): boolean {
   if (from.nullable && !to.nullable) return false;
+  // An array of nullable elements cannot stand in for one whose elements are not.
+  if (isArray(from) && isArray(to)) return sameFamily(from, to) && (!from.element.nullable || to.element.nullable);
   if (isNumeric(from) && isNumeric(to) && isScalar(from) && isScalar(to)) {
     return widenNumeric(from.sql, to.sql) === to.sql;
   }

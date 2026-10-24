@@ -205,6 +205,13 @@ Composites are the subtle part, and the README's "Object types" section carries 
   self-consistent was considered and rejected — it would make the parity harness go green while
   caller-visible behaviour still differed.
 
+Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters only, never nullable, elements a
+scalar or a non-nullable composite. `readonly` is required because arrays are passed by value — the
+same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
+`cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
+`= ANY`, NULL when an element is). Recognised through `checker.isArrayType`, not by name. The parity
+harness builds each array argument as `ARRAY[$1::t, …]::t[]`, so its query depends on the input.
+
 Only composites a successfully-lowered function mentions are emitted (`usedComposites`). `CREATE TYPE`
 has no `IF NOT EXISTS`, so it is wrapped in a `DO` block that also compares the existing shape and
 raises on drift. The compiler creates types; it never rewrites them.

@@ -1,11 +1,14 @@
 import {
   SyntaxKind,
+  type ArrayTypeNode,
   type LiteralTypeNode,
   type Node,
   type NumericLiteral,
   type ParenthesizedTypeNode,
   type StringLiteral,
+  type TypeAliasDeclaration,
   type TypeNode,
+  type TypeOperatorNode,
   type TypeReferenceNode,
   type UnionTypeNode,
 } from "typescript/unstable/ast";
@@ -20,8 +23,11 @@ import {
 } from "typescript/unstable/async";
 import { CompileError } from "./errors.ts";
 import {
+  arrayType,
   compositeType,
+  describe,
   fieldLabel,
+  isArray,
   isScalar,
   scalarType,
   shapeOf,
@@ -101,14 +107,98 @@ async function mapTypeNodeInner(node: TypeNode, ctx: TypeCtx): Promise<Mapped> {
       return mapLiteralTypeNode(node as LiteralTypeNode, ctx);
     case SyntaxKind.UnionType:
       return mapUnionTypeNode(node as UnionTypeNode, ctx);
-    case SyntaxKind.TypeReference: {
-      const alias = await resolveNumericAlias(node as TypeReferenceNode, ctx);
-      if (alias) return scalarType(alias);
+    case SyntaxKind.TypeOperator: {
+      const operator = node as TypeOperatorNode;
+      const operand = unparenthesized(operator.type);
+      if (operator.operator === SyntaxKind.ReadonlyKeyword && operand.kind === SyntaxKind.ArrayType) {
+        return mapArrayElement((operand as ArrayTypeNode).elementType, ctx);
+      }
       return mapTypeStructurally(await typeOf(node, ctx), node, ctx);
+    }
+    case SyntaxKind.ArrayType:
+      throw CompileError.at(node, MUTABLE_ARRAY);
+    case SyntaxKind.TupleType:
+      throw CompileError.at(node, TUPLE);
+    case SyntaxKind.TypeReference: {
+      const reference = node as TypeReferenceNode;
+      const alias = await resolveNumericAlias(reference, ctx);
+      if (alias) return scalarType(alias);
+      const type = await typeOf(node, ctx);
+      if (type.isObjectType() && (await ctx.checker.isArrayType(type))) return mapArrayReference(reference, type, ctx);
+      return mapTypeStructurally(type, node, ctx);
     }
     default:
       return mapTypeStructurally(await typeOf(node, ctx), node, ctx);
   }
+}
+
+const MUTABLE_ARRAY =
+  "A mutable array is not supported: PL/pgSQL passes an array by value, so a `push` or an assignment to an element would change the caller's array in TypeScript and only a copy in SQL. Declare it `readonly T[]`, and TypeScript refuses the mutation too.";
+
+const TUPLE = "Tuples are not supported: a PostgreSQL array has one element type and no fixed length.";
+
+function unparenthesized(node: TypeNode): TypeNode {
+  let current = node;
+  while (current.kind === SyntaxKind.ParenthesizedType) current = (current as ParenthesizedTypeNode).type;
+  return current;
+}
+
+/**
+ * The element of a `readonly T[]`, mapped from the type node the author wrote so
+ * that `readonly Integer[]` stays `integer[]`.
+ */
+async function mapArrayElement(element: TypeNode, ctx: TypeCtx): Promise<PgType> {
+  return arrayOf(await mapTypeNodeInner(element, ctx), element);
+}
+
+function arrayOf(element: Mapped, at: Node): PgType {
+  if (element === NULL_ONLY) {
+    throw CompileError.at(at, "An array of `null` alone has nothing to hold; write `readonly (T | null)[]`.");
+  }
+  if (isArray(element)) {
+    throw CompileError.at(
+      at,
+      "Arrays of arrays are not supported: a PostgreSQL array is one multi-dimensional value, not an array of arrays, so `T[][]` has no faithful translation.",
+    );
+  }
+  return arrayType(element);
+}
+
+/**
+ * An array written as a reference: `ReadonlyArray<T>`, `Array<T>`, or an alias
+ * such as `type Ids = readonly Integer[]`. The checker says whether it is an
+ * array and whether it is read-only; the element is still mapped from the type
+ * node the author wrote when there is one, so that `Integer` survives.
+ */
+async function mapArrayReference(reference: TypeReferenceNode, type: Type, ctx: TypeCtx): Promise<PgType> {
+  const aliased = await aliasedTypeNode(reference, ctx);
+  if (aliased) return mapTypeNode(aliased, ctx);
+
+  const readonly = (await ctx.checker.getIndexInfosOfType(type)).every((info) => info.isReadonly);
+  if (!readonly) throw CompileError.at(reference, MUTABLE_ARRAY);
+
+  const written = reference.typeArguments?.[0];
+  if (written) return mapArrayElement(written, ctx);
+  const [element] = await ctx.checker.getTypeArguments(type as Parameters<Checker["getTypeArguments"]>[0]);
+  if (!element) throw CompileError.at(reference, "The element type of this array could not be resolved.");
+  return arrayOf(await mapTypeStructurally(element, reference, ctx), reference);
+}
+
+/**
+ * The type node behind a reference to a non-generic type alias declared in this
+ * project — `readonly Integer[]` for `Ids` in `type Ids = readonly Integer[]`.
+ */
+async function aliasedTypeNode(reference: TypeReferenceNode, ctx: TypeCtx): Promise<TypeNode | undefined> {
+  if (reference.typeArguments && reference.typeArguments.length > 0) return undefined;
+  const local = await ctx.checker.getSymbolAtLocation(reference.typeName);
+  if (!local) return undefined;
+  const declared = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
+  const declaration = declared.declarations[0];
+  if (!declaration || declaration.kind !== SyntaxKind.TypeAliasDeclaration) return undefined;
+  if ((await originOfPath(declaration.path, ctx.project)) !== "project") return undefined;
+  const node = (await declaration.resolve(ctx.project)) as TypeAliasDeclaration | undefined;
+  if (!node || (node.typeParameters && node.typeParameters.length > 0)) return undefined;
+  return node.type;
 }
 
 async function mapLiteralTypeNode(node: LiteralTypeNode, ctx: TypeCtx): Promise<Mapped> {
@@ -184,11 +274,21 @@ async function mapTypeStructurally(type: Type, at: Node, ctx: TypeCtx): Promise<
     return merge(parts, at);
   }
 
-  if (type.isObjectType()) return mapCompositeType(type, at, ctx);
+  if (type.isObjectType()) {
+    if (await ctx.checker.isTupleType(type)) throw CompileError.at(at, TUPLE);
+    if (await ctx.checker.isArrayType(type)) {
+      const readonly = (await ctx.checker.getIndexInfosOfType(type)).every((info) => info.isReadonly);
+      if (!readonly) throw CompileError.at(at, MUTABLE_ARRAY);
+      const [element] = await ctx.checker.getTypeArguments(type as Parameters<Checker["getTypeArguments"]>[0]);
+      if (!element) throw CompileError.at(at, "The element type of this array could not be resolved.");
+      return arrayOf(await mapTypeStructurally(element, at, ctx), at);
+    }
+    return mapCompositeType(type, at, ctx);
+  }
 
   throw CompileError.at(
     at,
-    `Unsupported type \`${await ctx.checker.typeToString(type)}\`. Supported: string, number, boolean, Integer, Numeric, Float, unions of string literals, \`T | null\`, and named object types.`,
+    `Unsupported type \`${await ctx.checker.typeToString(type)}\`. Supported: string, number, boolean, Integer, Numeric, Float, unions of string literals, \`T | null\`, named object types, and \`readonly T[]\`.`,
   );
 }
 
@@ -355,6 +455,13 @@ async function mapField(
   const propertyType = await ctx.checker.getTypeOfSymbol(property);
   if (!propertyType) throw CompileError.at(site, `The type of ${where} could not be resolved.`);
 
+  if (propertyType.isObjectType() && ((await ctx.checker.isArrayType(propertyType)) || (await ctx.checker.isTupleType(propertyType)))) {
+    throw CompileError.at(
+      site,
+      `${where} is an array. Arrays are supported as parameters, not yet as fields of an object type.`,
+    );
+  }
+
   // A nested object is flattened into prefixed columns.
   if (propertyType.isObjectType()) {
     if (ancestors.includes(propertyType.id)) {
@@ -413,9 +520,15 @@ function merge(parts: readonly Mapped[], at: Node): Mapped {
       nullable = true;
       continue;
     }
+    if (isArray(part)) {
+      throw CompileError.at(
+        at,
+        `\`${describe(part)}\` cannot appear in a union: an array parameter is never null. Pass an empty array instead.`,
+      );
+    }
     if (!isScalar(part)) {
-      // `Subscription | null` is handled above; `Subscription | string` is not
-      // representable as one column.
+      // `Subscription | string` is not representable as one column, and
+      // `Subscription | null` is not supported either.
       throw CompileError.at(at, `\`${part.tsName}\` cannot appear in a union with another type.`);
     }
     if (scalar === undefined) {
