@@ -168,7 +168,13 @@ export type StmtIR =
       readonly kind: "searchedCase";
       readonly whens: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
       readonly orElse: readonly StmtIR[];
-    };
+    }
+  /** `WHILE cond LOOP … END LOOP;` — every TypeScript loop lowers to this. */
+  | { readonly kind: "while"; readonly cond: ExprIR; readonly body: readonly StmtIR[] }
+  /** `EXIT;` — an unlabelled `break` out of the innermost loop. */
+  | { readonly kind: "exit" }
+  /** `CONTINUE;` — the next turn of the innermost loop. */
+  | { readonly kind: "continue" };
 
 export type BinOp =
   | "="

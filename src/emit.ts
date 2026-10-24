@@ -233,6 +233,20 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         }
         lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
         break;
+
+      case "while":
+        lines.push(`${indent}WHILE ${emitExpr(statement.cond, q)} LOOP`);
+        lines.push(...emitBranch(statement.body, q, `${indent}  `));
+        lines.push(`${indent}END LOOP;`);
+        break;
+
+      case "exit":
+        lines.push(`${indent}EXIT;`);
+        break;
+
+      case "continue":
+        lines.push(`${indent}CONTINUE;`);
+        break;
     }
   }
   return lines;

@@ -251,7 +251,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -483,7 +483,8 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | Rejected | Why |
 | --- | --- |
 | `if (name)` | truthiness has no faithful SQL translation — compare explicitly |
-| `var`, loops | `var` is hoisted and function-scoped; iteration is not part of the subset yet |
+| `var` | hoisted and function-scoped: use `const`, or `let` for a value that changes |
+| `do … while`, `for … of`, `for … in`, labelled `break`/`continue` | write a `while`; arrays and object keys are not part of the subset yet |
 | `switch` without `default` | a `CASE` that matches nothing raises, and PostgreSQL does not enforce a union's values |
 | `switch` fallthrough | a non-empty clause running into the next has no `CASE` equivalent — end it with `break` or `return` |
 | `break` anywhere but the end of a `switch` clause | it would need control flow a `CASE` branch does not model |
