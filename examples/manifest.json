@@ -338,6 +338,42 @@
         "nullable": false,
         "module": "examples/input-2.ts"
       }
+    },
+    {
+      "tsName": "seatLimit",
+      "sqlName": "seat_limit",
+      "module": "examples/input-3.ts",
+      "params": [
+        {
+          "tsName": "tier",
+          "sqlName": "tier",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "enterprise",
+              "free",
+              "pro",
+              "starter"
+            ]
+          }
+        },
+        {
+          "tsName": "extraSeats",
+          "sqlName": "extra_seats",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "integer",
+        "nullable": false
+      }
     }
   ]
 }

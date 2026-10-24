@@ -158,6 +158,28 @@ BEGIN
 END;
 $$;
 
+-- examples/input-3.ts: seatLimit()
+--   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
+CREATE OR REPLACE FUNCTION app.seat_limit(
+  tier text,
+  extra_seats integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  CASE tier
+    WHEN 'free', 'starter' THEN
+      RETURN 1;
+    WHEN 'pro' THEN
+      RETURN 10 + extra_seats;
+    ELSE
+      RETURN 100 + extra_seats * 2;
+  END CASE;
+END;
+$$;
+
 -- examples/input-2.ts: someNestedAssignment()
 CREATE OR REPLACE FUNCTION app.some_nested_assignment(
   nested app.nested
