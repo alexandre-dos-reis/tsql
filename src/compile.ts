@@ -1,9 +1,17 @@
-import { SyntaxKind, type FunctionDeclaration, type SourceFile } from "typescript/unstable/ast";
+import {
+  NodeFlags,
+  SyntaxKind,
+  type ArrowFunction,
+  type FunctionDeclaration,
+  type Identifier,
+  type SourceFile,
+  type VariableStatement,
+} from "typescript/unstable/ast";
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, PgType, SignatureIR } from "./ir.ts";
-import { isExported, lowerFunction, lowerSignature } from "./lower.ts";
+import { isExported, lowerFunction, lowerSignature, type RuleFunction } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
 
 export interface CompileOptions {
@@ -83,18 +91,18 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
 
     // Pass 1: every signature, so call checking does not depend on file order.
     const signatures = new Map<string, SignatureIR>();
-    const pending: { fn: FunctionDeclaration; signature: SignatureIR; module: string }[] = [];
+    const pending: { fn: RuleFunction; signature: SignatureIR; module: string }[] = [];
     const claimed = new Map<string, string>();
 
     for (const file of files) {
-      for (const fn of exportedFunctions(file)) {
+      for (const fn of exportedRules(file, errors)) {
         try {
           const signature = await lowerSignature(fn, ctx);
           const previous = claimed.get(signature.sqlName);
           if (previous) {
             errors.push(
               CompileError.at(
-                fn.name ?? fn,
+                fn.name,
                 `\`${signature.tsName}\` maps to SQL name \`${signature.sqlName}\`, which is already used by \`${previous}\`.`,
               ),
             );
@@ -225,12 +233,60 @@ function selected(inProject: readonly string[], options: CompileOptions): Set<st
   return wanted;
 }
 
-function* exportedFunctions(file: SourceFile): Generator<FunctionDeclaration> {
+/**
+ * The rules in a file: exported `function` declarations, and exported `const`s
+ * bound to an arrow function. Other exported values (a number, a string) are
+ * not rules and are left alone. An exported function written any other way —
+ * a `let` or `var` binding, a `function` expression — would otherwise be
+ * skipped without a word, so it is refused instead.
+ */
+function exportedRules(file: SourceFile, errors: CompileError[]): RuleFunction[] {
+  const rules: RuleFunction[] = [];
   for (const statement of file.statements) {
-    if (statement.kind !== SyntaxKind.FunctionDeclaration) continue;
     if (!isExported(statement)) continue;
-    yield statement as FunctionDeclaration;
+
+    if (statement.kind === SyntaxKind.FunctionDeclaration) {
+      const fn = statement as FunctionDeclaration;
+      if (fn.name) rules.push({ name: fn.name, fn });
+      else errors.push(CompileError.at(fn, "Anonymous functions cannot be compiled."));
+      continue;
+    }
+
+    if (statement.kind !== SyntaxKind.VariableStatement) continue;
+    const list = (statement as VariableStatement).declarationList;
+    for (const declaration of list.declarations) {
+      const init = declaration.initializer;
+      if (!init) continue;
+      const isFunction = init.kind === SyntaxKind.ArrowFunction || init.kind === SyntaxKind.FunctionExpression;
+      if (!isFunction) continue;
+
+      const label = declaration.name.kind === SyntaxKind.Identifier ? (declaration.name as Identifier).text : "this";
+      if (init.kind === SyntaxKind.FunctionExpression) {
+        errors.push(
+          CompileError.at(
+          init,
+            `Write \`${label}\` as a \`function\` declaration or an arrow function; \`function\` expressions are not compiled.`,
+          ),
+        );
+        continue;
+      }
+      if (!(list.flags & NodeFlags.Const)) {
+        errors.push(
+          CompileError.at(
+            declaration,
+            `Export \`${label}\` with \`const\`: a \`let\` or \`var\` binding can be reassigned, so it is not a fixed rule.`,
+          ),
+        );
+        continue;
+      }
+      if (declaration.name.kind !== SyntaxKind.Identifier) {
+        errors.push(CompileError.at(declaration.name, "Destructuring is not supported."));
+        continue;
+      }
+      rules.push({ name: declaration.name as Identifier, fn: init as ArrowFunction });
+    }
   }
+  return rules;
 }
 
 function asCompileError(error: unknown): CompileError {

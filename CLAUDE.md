@@ -97,7 +97,8 @@ properties of that resolver are load-bearing:
 1. `openProject` (`src/program.ts`) opens the rules tsconfig.
 2. `typeCheck` runs TypeScript's own diagnostics first. Any error aborts before translation — so a
    construct can be blocked by *tsconfig* rather than by the translator (see isolation below).
-3. **Pass 1**: `lowerSignature` for every exported function in the project, collected into a map, so a
+3. **Pass 1**: `lowerSignature` for every exported rule in the project — a `function` declaration or a
+   `const` bound to an arrow function (`RuleFunction`; an arrow's expression body means `return` it) — collected into a map, so a
    call between compiled functions type-checks regardless of declaration order. SQL-name collisions
    are detected here.
 4. **Pass 2**: `lowerFunction` for each body, against those signatures.
