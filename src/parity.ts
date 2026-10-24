@@ -29,6 +29,14 @@ export type RowQuery = (sql: string, params: readonly unknown[]) => Promise<Reco
 const INT_BOUND = 1_000_000;
 const FLOAT_BOUND = 1e9;
 
+/**
+ * Doubles are also kept away from the subnormal range. PostgreSQL raises
+ * "value out of range: underflow" when a float8 result underflows to zero
+ * (`5e-324 / 10`), where TypeScript quietly gives 0 — a documented divergence,
+ * like integer overflow, rather than something to fuzz.
+ */
+const FLOAT_TINY = 1e-300;
+
 /** NUL and lone surrogates are not representable in a PostgreSQL text value. */
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
@@ -78,7 +86,9 @@ function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
     case "numeric":
       return fc.integer({ min: -INT_BOUND, max: INT_BOUND }).map((n) => n / 100);
     case "double precision":
-      return fc.double({ min: -FLOAT_BOUND, max: FLOAT_BOUND, noNaN: true });
+      return fc
+        .double({ min: -FLOAT_BOUND, max: FLOAT_BOUND, noNaN: true })
+        .filter((x) => x === 0 || Math.abs(x) >= FLOAT_TINY);
     case "boolean":
       return fc.boolean();
   }
