@@ -65,6 +65,14 @@ interface Binding {
 interface State extends TypeCtx {
   readonly signatures: ReadonlyMap<string, SignatureIR>;
   readonly scope: Map<string, Binding>;
+  /**
+   * Names that were bound once but are no longer in scope, with why. A `const`
+   * declared in one `switch` clause is visible to the later clauses in
+   * TypeScript, but reading it there throws at runtime when its own clause did
+   * not run; in SQL it would silently be NULL. So it is dropped from `scope`
+   * after its clause, and a later use is reported with this reason.
+   */
+  readonly outOfScope: Map<string, string>;
   readonly locals: LocalIR[];
   readonly used: Set<string>;
   readonly returns: PgType;
@@ -140,6 +148,7 @@ export async function lowerFunction(
     ...ctx,
     signatures,
     scope: new Map(signature.params.map((p) => [p.tsName, { sqlName: p.sqlName, type: p.type }])),
+    outOfScope: new Map(),
     locals: [],
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
@@ -314,7 +323,16 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
     const isLast = i === clauses.length - 1;
     if (clause.statements.length === 0 && !isLast) continue;
 
+    const before = new Set(s.scope.keys());
     const body = await lowerClauseBody(clause, isLast, s);
+    // A clause's own constants end with it: see `State.outOfScope`.
+    for (const name of [...s.scope.keys()].filter((n) => !before.has(n))) {
+      s.scope.delete(name);
+      s.outOfScope.set(
+        name,
+        `\`${name}\` is declared in another \`switch\` clause. TypeScript lets later clauses see it, but reading it there throws at runtime when its clause did not run — in SQL it would silently be NULL. Declare it before the \`switch\`, or inside a \`{ … }\` block in the clause that uses it.`,
+      );
+    }
     if (labels.length > 0) groups.push({ labels, body });
     if (hasDefault) orElse = body;
     labels = [];
@@ -693,6 +711,8 @@ async function lowerNew(node: NewExpression, s: State): Promise<ExprIR> {
  * compiled function, describing where the name actually comes from.
  */
 async function referenceError(name: string, at: Node, usage: Node, s: State): Promise<CompileError> {
+  const reason = s.outOfScope.get(name);
+  if (reason) return CompileError.at(usage, reason);
   const reference = await classifyReference(name, at, s);
   return CompileError.at(usage, referenceMessage(reference, usage.getText()));
 }

@@ -46,13 +46,17 @@ $$;`,
     expect(result.errors.map((e) => e.format())).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
+      "bonus_points",
       "can_create_todo",
       "can_create_todo_with_type",
+      "coupon_label",
       "is_eligible_for_trial",
       "is_not_empty",
       "price_cents",
       "remaining_todos",
+      "salutation",
       "seat_limit",
+      "shipping_cents",
       "some_nested_assignment",
       "todo_limit",
     ]);
@@ -166,6 +170,7 @@ describe("rejections — language constructs", () => {
     ["switchBreak.ts", "`break` is only supported as the last statement of a `switch` clause"],
     ["switchObject.ts", "a `switch` on an object has no faithful translation"],
     ["switchNoDefault.ts", "A `switch` needs a `default`"],
+    ["switchClauseScope.ts", "`bonus` is declared in another `switch` clause"],
   ]);
 
   test("a rejection points at the offending line", async () => {
