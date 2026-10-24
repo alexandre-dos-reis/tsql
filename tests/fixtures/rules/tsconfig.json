@@ -1,0 +1,19 @@
+{
+  "comment": "Positive fixtures: rules that must compile, covering every supported construct. tests/compile.test.ts, tests/cli.test.ts and tests/parity.test.ts read this project; examples/ is the user-facing showcase and no test depends on it. Isolated like a consuming project: no Bun/Node globals.",
+  "compilerOptions": {
+    "lib": [
+      "ESNext"
+    ],
+    "target": "ESNext",
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "types": []
+  },
+  "include": [
+    "."
+  ]
+}

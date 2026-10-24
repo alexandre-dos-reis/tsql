@@ -24,7 +24,8 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 bun run ex:check                # type check + translate the examples, write nothing
 bun run ex:compile              # write examples/output.sql + manifest from examples/*.ts
 bun run ex:parity               # tsql parity on the examples (PGlite; add --db-url=… for a server)
-bun test                        # unit + rejection + packaging + parity tests
+bun test                        # unit + rejection + packaging + parity tests (PGlite; PostgreSQL too
+                                #   when TSQL_TEST_DB_URL=postgres://… is set)
 bun test tests/compile.test.ts  # one file
 bun test -t "nested object"     # one test or describe block by name
 bun run typecheck               # bun check over src+tests, and over the examples project
@@ -57,7 +58,7 @@ pass paths explicitly.
 shadow the built-in subcommand, which is part of why the example scripts are `ex:check`/`ex:compile`;
 `--no-script` stays in `typecheck` so the built-in wins even if a `check` script reappears.
 
-After any change that alters generated SQL, re-run `bun run ex:compile` and commit the result:
+After any change that alters generated SQL for the examples, re-run `bun run ex:compile` and commit the result:
 `examples/output.sql` and `examples/manifest.json`, which sit beside the `examples/*.ts` they
 are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
 `examples/manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
@@ -207,14 +208,21 @@ Only composites a successfully-lowered function mentions are emitted (`usedCompo
 has no `IF NOT EXISTS`, so it is wrapped in a `DO` block that also compares the existing shape and
 raises on drift. The compiler creates types; it never rewrites them.
 
-## Three tsconfigs, deliberately
+## Four tsconfigs, deliberately
 
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`.
-- `examples/tsconfig.json` — the demo **input**, `types: []`. This is load-bearing: `process`, `Bun`
-  and `require` become *type errors* before the translator ever runs, so one class of rejection costs
-  no compiler code.
+- `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
+  `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
+  costs no compiler code.
+- `tests/fixtures/rules/tsconfig.json` — the **positive fixtures**: rules that must compile, covering
+  every supported construct, isolated the same way (`types: []`).
 - `tests/fixtures/tsconfig.json` — fixtures are valid TypeScript that falls outside the subset, so
-  rejection tests exercise the translator rather than `tsc`.
+  rejection tests exercise the translator rather than `tsc`. It excludes `rules/`.
+
+**No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
+them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,
+`ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL). Coverage belongs in
+`tests/fixtures/rules/`, where a new rule gets a parity test on both backends automatically.
 
 ## Tests
 
@@ -227,9 +235,11 @@ raises on drift. The compiler creates types; it never rewrites them.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `fast-check`, `@electric-sql/pglite` and `postgres`, and that the launcher stays Node-compatible.
-- `tests/parity.test.ts` runs the emitted SQL in PGlite (PostgreSQL 18 as WebAssembly, in process) and
-  generates one test per manifest function — so **adding a rule under `examples/` adds a parity test with
-  no edit to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
+- `tests/parity.test.ts` compiles `tests/fixtures/rules/` and runs it through `openDatabase` (the same
+  path `tsql parity` takes): on PGlite always, and on PostgreSQL when `TSQL_TEST_DB_URL` is set (CI sets
+  it, with a `postgres:18` service; locally the PostgreSQL suite is skipped). One test per manifest
+  function per backend — so **adding a rule under `tests/fixtures/rules/` adds a parity test with no edit
+  to the test file**. `src/parity.ts` derives a fast-check arbitrary per parameter from its
   PostgreSQL type, 200 inputs per function; composite returns are compared field by field via
   `(fn(...)).*`; arguments are snapshotted before the TypeScript call and compared after, so a mutating
   function cannot pass.

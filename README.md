@@ -116,19 +116,19 @@ BEGIN
 **Nullable comparisons are handled for you.** `x !== ""` on a nullable value is not `<>` — SQL's `=` is three-valued, so this would silently return NULL:
 
 ```ts
-export function isNotEmpty(string: string | null): boolean {
-  if (string === null) {
+export function isNotEmpty(couponCode: string | null): boolean {
+  if (couponCode === null) {
     return false;
   }
-  return string !== "";
+  return couponCode !== "";
 }
 ```
 
 ```sql
-IF string IS NULL THEN
+IF coupon_code IS NULL THEN
   RETURN false;
 END IF;
-RETURN string IS DISTINCT FROM '';
+RETURN coupon_code IS DISTINCT FROM '';
 ```
 
 **Objects become composite types**, and rules can call each other:
@@ -364,7 +364,7 @@ return nested.foo.bar;
 ```
 
 ```sql
--- examples/input-2.ts: Nested
+-- rules/nested.ts: Nested
 --   foo_bar: from foo.bar
 CREATE TYPE app.nested AS (
   foo_bar text
@@ -530,7 +530,7 @@ This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) ab
 
 The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it talks to — which is how `tsql parity` swaps PGlite for a real server under `--db-url`.
 
-That failure message in the overview is itself a test: `tests/parity.test.ts` installs a deliberately wrong SQL function and asserts the harness catches it, so the suite cannot pass vacuously.
+`tests/parity.test.ts` runs the harness on every rule in `tests/fixtures/rules`, through the same `openDatabase` the command uses: on PGlite always, and on a real PostgreSQL when `TSQL_TEST_DB_URL` names one (CI provides a PostgreSQL 18 service), inside the same rolled-back transaction as `--db-url`. That failure message in the overview is itself a test: it installs a deliberately wrong SQL function on each backend and asserts the harness catches it, so the suite cannot pass vacuously.
 
 Two further checks:
 
@@ -574,7 +574,8 @@ Three things worth knowing about TypeScript 7:
 bun run ex:check         # type check + translate the examples, write nothing
 bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
 bun run ex:parity        # tsql parity on the examples, in PGlite (add --db-url=… for a server)
-bun test                 # unit tests, rejection tests, and TS-vs-PostgreSQL parity
+bun test                 # unit, rejection and parity tests on tests/fixtures — PGlite, then PostgreSQL
+                         # too when TSQL_TEST_DB_URL is set
 bun run typecheck        # bun check over the compiler and over the examples project
 bun run format           # oxfmt, pinned as a dev dependency
 ```
@@ -592,18 +593,23 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
-3. `bun test` — including the PGlite parity tests
-4. `bun run ex:parity`, then again with `--db-url` against a PostgreSQL 18 service: `tsql parity` end to end on every example
+3. `bun test` — including the parity tests on `tests/fixtures/rules`, on PGlite and on the PostgreSQL 18 service
+4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
 5. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+
+`examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few rules, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. `tests/fixtures/rules/` is where coverage lives: adding a rule there adds a parity test on both backends, with nothing else to edit.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
 ### Layout
 
 ```
-examples/*.ts           demo business rules — the compiler's input, its own isolated tsconfig
-examples/output.sql     the emitted migration, checked in beside the rules it came from
-examples/manifest.json  what the parity harness reads
+examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
+examples/output.sql     what tsql emits for them, checked in beside the rules it came from
+examples/manifest.json  the manifest emitted with it
+tests/fixtures/rules/   positive fixtures: rules covering every supported construct, which the
+                        compile, CLI and parity tests run on (no test reads examples/)
+tests/fixtures/*.ts     one fixture per rejection, plus single-purpose positive fixtures
 src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives

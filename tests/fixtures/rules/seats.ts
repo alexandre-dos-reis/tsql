@@ -1,4 +1,4 @@
-import type { Integer } from "../src/pgtypes";
+import type { Integer } from "../../../src/pgtypes";
 
 export type Tier = "free" | "starter" | "pro" | "enterprise";
 

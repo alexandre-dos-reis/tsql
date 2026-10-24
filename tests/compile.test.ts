@@ -17,8 +17,8 @@ async function compileFixture(file: string) {
 describe("supported subset", () => {
   test("produces the SQL documented in the readme", async () => {
     const result = await compileProject({
-      tsconfig: "examples/tsconfig.json",
-      include: (fileName) => fileName.endsWith("examples/input-2.ts"),
+      tsconfig: "tests/fixtures/rules/tsconfig.json",
+      include: (fileName) => fileName.endsWith("tests/fixtures/rules/objects.ts"),
       emit: { schema: undefined, orReplace: false, comments: false },
     });
 
@@ -42,7 +42,7 @@ $$;`,
   });
 
   test("compiles the whole rules project", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.errors.map((e) => e.format())).toEqual([]);
     expect(result.ok).toBe(true);
     expect(result.functions.map((fn) => fn.sqlName).sort()).toEqual([
@@ -63,15 +63,15 @@ $$;`,
   });
 
   test("resolves the Integer alias instead of widening to double precision", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "canCreateTodo")!;
     expect(fn.params.map((p) => (p.type.kind === "scalar" ? p.type.sql : p.type.sqlName))).toEqual(["text", "integer"]);
   });
 
   test("naming files narrows the build to those rules", async () => {
     const result = await compileProject({
-      tsconfig: "examples/tsconfig.json",
-      files: ["examples/input-1.ts"],
+      tsconfig: "tests/fixtures/rules/tsconfig.json",
+      files: ["tests/fixtures/rules/plans.ts"],
       emit: { schema: "app" },
     });
     expect(result.errors.map((e) => e.format())).toEqual([]);
@@ -88,16 +88,16 @@ $$;`,
     // Reporting success having translated nothing is the quiet wrongness this
     // compiler exists to refuse, so a misspelled path has to say so.
     const failure = await compileProject({
-      tsconfig: "examples/tsconfig.json",
-      files: ["examples/nope.ts"],
+      tsconfig: "tests/fixtures/rules/tsconfig.json",
+      files: ["tests/fixtures/rules/nope.ts"],
       emit: { schema: "app" },
     }).then(
       () => undefined,
       (error: Error) => error,
     );
-    expect(failure?.message).toContain("`examples/nope.ts` is not a rule file in examples/tsconfig.json");
+    expect(failure?.message).toContain("`tests/fixtures/rules/nope.ts` is not a rule file in tests/fixtures/rules/tsconfig.json");
     // The message names what the project does hold, so the fix is visible.
-    expect(failure?.message).toContain("examples/input-1.ts");
+    expect(failure?.message).toContain("tests/fixtures/rules/plans.ts");
   });
 
   test("an identically named local alias is not mistaken for the real Integer", async () => {
@@ -113,7 +113,7 @@ $$;`,
   });
 
   test("keeps the values of a string-literal union for the reader", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     const fn = result.functions.find((f) => f.tsName === "todoLimit")!;
     expect(fn.params[0]!.type).toEqual({
       kind: "scalar",
@@ -124,17 +124,17 @@ $$;`,
   });
 
   test("translates a nullable comparison to IS DISTINCT FROM, not <>", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("referral IS NOT NULL");
   });
 
   test("schema-qualifies calls between compiled functions", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain('"limit" := app.todo_limit(plan);');
   });
 
   test("quotes identifiers that are reserved words", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain('"limit" integer;');
   });
 });
@@ -255,7 +255,7 @@ describe("object types", () => {
   });
 
   test("the composite is read with a parenthesised field reference", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("plan := (sub).plan;");
     expect(result.sql).toContain("sub app.subscription");
   });
@@ -267,7 +267,7 @@ describe("object types", () => {
   });
 
   test("types are emitted before the functions that use them", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql.indexOf("CREATE TYPE app.subscription")).toBeLessThan(result.sql.indexOf("sub app.subscription"));
   });
 
@@ -310,7 +310,7 @@ describe("nested object types", () => {
   });
 
   test("the rules project flattens the nested shape", async () => {
-    const result = await compileProject({ tsconfig: "examples/tsconfig.json", emit: { schema: "app" } });
+    const result = await compileProject({ tsconfig: "tests/fixtures/rules/tsconfig.json", emit: { schema: "app" } });
     expect(result.sql).toContain("CREATE TYPE app.nested AS (");
     expect(result.sql).toContain("foo_bar text");
     // The rule rebuilds the shape with a spread rather than mutating it.

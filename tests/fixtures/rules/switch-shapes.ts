@@ -1,4 +1,4 @@
-import type { Integer } from "../src/pgtypes";
+import type { Integer } from "../../../src/pgtypes";
 
 /**
  * One rule per shape a `switch` can compile to, so each is checked against the
