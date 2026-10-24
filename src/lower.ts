@@ -12,6 +12,7 @@ import {
   type ConditionalExpression,
   type Expression,
   type ExpressionStatement,
+  type ForStatement,
   type FunctionDeclaration,
   type Identifier,
   type IfStatement,
@@ -30,7 +31,9 @@ import {
   type Statement,
   type StringLiteral,
   type SwitchStatement,
+  type VariableDeclarationList,
   type VariableStatement,
+  type WhileStatement,
 } from "typescript/unstable/ast";
 import { CompileError } from "./errors.ts";
 import {
@@ -67,12 +70,20 @@ interface Binding {
   readonly kind: "param" | "const" | "let";
 }
 
+/**
+ * What an unlabelled `break` or `continue` refers to, innermost last. A `break`
+ * leaves the innermost loop or `switch`; a `continue` goes to the next turn of
+ * the innermost loop, after running that loop's increment if it is a `for`.
+ */
+type Target = { readonly kind: "switch" } | { readonly kind: "loop"; readonly increment: readonly StmtIR[] };
+
 interface State extends TypeCtx {
   readonly signatures: ReadonlyMap<string, SignatureIR>;
   readonly scope: Map<string, Binding>;
   readonly locals: LocalIR[];
   readonly used: Set<string>;
   readonly returns: PgType;
+  readonly targets: Target[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -160,6 +171,7 @@ export async function lowerFunction(
     locals: [],
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
+    targets: [],
   };
 
   const { fn } = rule;
@@ -221,12 +233,42 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.VariableStatement:
       return lowerVariableStatement(node as VariableStatement, s);
 
-    case SyntaxKind.BreakStatement:
+    case SyntaxKind.BreakStatement: {
+      if ((node as BreakStatement).label) throw CompileError.at(node, "Labelled `break` is not supported.");
+      const target = s.targets.at(-1);
+      if (target?.kind === "loop") return [{ kind: "exit" }];
       throw CompileError.at(
         node,
-        (node as BreakStatement).label
-          ? "Labelled `break` is not supported."
-          : "`break` is only supported as the last statement of a `switch` clause.",
+        target
+          ? "`break` is only supported as the last statement of a `switch` clause."
+          : "`break` is only supported inside a loop, or as the last statement of a `switch` clause.",
+      );
+    }
+
+    case SyntaxKind.ContinueStatement: {
+      if ((node as { label?: unknown }).label) throw CompileError.at(node, "Labelled `continue` is not supported.");
+      let loop: Target | undefined;
+      for (const target of s.targets) if (target.kind === "loop") loop = target;
+      if (!loop || loop.kind !== "loop") throw CompileError.at(node, "`continue` is only supported inside a loop.");
+      // A `for` loop's increment runs before the next turn; PL/pgSQL's CONTINUE
+      // would skip it, so it is emitted first.
+      return [...loop.increment, { kind: "continue" }];
+    }
+
+    case SyntaxKind.WhileStatement:
+      return [await lowerWhile(node as WhileStatement, s)];
+
+    case SyntaxKind.ForStatement:
+      return lowerFor(node as ForStatement, s);
+
+    case SyntaxKind.DoStatement:
+      throw CompileError.at(node, "`do … while` is not supported; write it as a `while` loop.");
+
+    case SyntaxKind.ForOfStatement:
+    case SyntaxKind.ForInStatement:
+      throw CompileError.at(
+        node,
+        "`for … of` and `for … in` are not supported: arrays and object keys are not part of the compiled subset.",
       );
 
     case SyntaxKind.ExpressionStatement: {
@@ -242,7 +284,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     default:
       throw CompileError.at(
         node,
-        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` declarations, \`if\`/\`else\`, \`switch\` and \`return\`.`,
+        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` and \`let\` declarations, assignments, \`if\`/\`else\`, \`switch\`, \`while\`, \`for\` and \`return\`.`,
       );
   }
 }
@@ -425,10 +467,10 @@ async function lowerClauseBody(
     if (breakAt !== statements.length - 1) {
       throw CompileError.at(statements[breakAt + 1]!, "Unreachable code after `break`.");
     }
-    return lowerStatements(statements.slice(0, breakAt), s);
+    return within(s, { kind: "switch" }, () => lowerStatements(statements.slice(0, breakAt), s));
   }
 
-  const body = await lowerStatements(statements, s);
+  const body = await within(s, { kind: "switch" }, () => lowerStatements(statements, s));
   if (!isLast && !alwaysReturns(body)) {
     throw CompileError.at(
       clause,
@@ -438,12 +480,102 @@ async function lowerClauseBody(
   return body;
 }
 
+/** Lower `body` with `target` as what `break` and `continue` refer to. */
+async function within<T>(s: State, target: Target, body: () => Promise<T>): Promise<T> {
+  s.targets.push(target);
+  try {
+    return await body();
+  } finally {
+    s.targets.pop();
+  }
+}
+
+/**
+ * Names declared inside a loop — its `for (let i …)` variable, a `const` in its
+ * body — are block-scoped in TypeScript, so the next loop may declare them again.
+ * They keep their (unique) SQL variable; only the TypeScript name is released.
+ */
+async function scoped<T>(s: State, body: () => Promise<T>): Promise<T> {
+  const before = new Set(s.scope.keys());
+  try {
+    return await body();
+  } finally {
+    for (const name of [...s.scope.keys()]) if (!before.has(name)) s.scope.delete(name);
+  }
+}
+
+/** Like an `if` condition: a boolean. NULL stops a `WHILE` as `false` stops a TypeScript loop. */
+function loopCondition(expression: Expression, cond: ExprIR, what: string): ExprIR {
+  if (!isExactly(cond.type, "boolean")) {
+    throw CompileError.at(
+      expression,
+      `A \`${what}\` condition must be a boolean, not \`${describe(cond.type)}\`. Truthiness is not translated — compare explicitly.`,
+    );
+  }
+  return cond;
+}
+
+/**
+ * `while (cond) { … }` is `WHILE cond LOOP … END LOOP;`. The condition is
+ * re-evaluated before each turn in both languages.
+ */
+async function lowerWhile(node: WhileStatement, s: State): Promise<StmtIR> {
+  const cond = loopCondition(node.expression, await lowerExpr(node.expression, s), "while");
+  const body = await scoped(s, () =>
+    within(s, { kind: "loop", increment: [] }, () => lowerStatements(asStatements(node.statement), s)),
+  );
+  return { kind: "while", cond, body };
+}
+
+/**
+ * `for (init; cond; step) { … }` is `init; WHILE cond LOOP …; step; END LOOP;`.
+ *
+ * Not PL/pgSQL's `FOR i IN a..b`: that evaluates its bounds once and forbids
+ * assigning to `i`, while a TypeScript `for` re-tests its condition every turn
+ * and lets the body change anything. `WHILE` keeps the TypeScript semantics
+ * exactly. A `continue` runs `step` before jumping, as TypeScript does.
+ */
+async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> {
+  return scoped(s, async () => {
+    const out: StmtIR[] = [];
+    const init = node.initializer;
+    if (init) {
+      if (init.kind === SyntaxKind.VariableDeclarationList) {
+        out.push(...(await lowerDeclarationList(init as VariableDeclarationList, init, s)));
+      } else {
+        const assignment = await lowerAssignment(init as Expression, s);
+        if (!assignment) throw CompileError.at(init, "A `for` initialiser must declare or assign a variable.");
+        out.push(assignment);
+      }
+    }
+
+    const cond: ExprIR = node.condition
+      ? loopCondition(node.condition, await lowerExpr(node.condition, s), "for")
+      : { kind: "lit", value: true, type: scalarType("boolean") };
+
+    const increment: StmtIR[] = [];
+    if (node.incrementor) {
+      const step = await lowerAssignment(node.incrementor, s);
+      if (!step) throw CompileError.at(node.incrementor, "A `for` step must assign a variable (`i++`, `i += 2`).");
+      increment.push(step);
+    }
+
+    const body = await within(s, { kind: "loop", increment }, () => lowerStatements(asStatements(node.statement), s));
+    out.push({ kind: "while", cond, body: [...body, ...increment] });
+    return out;
+  });
+}
+
 function asStatements(node: Statement): readonly Statement[] {
   return node.kind === SyntaxKind.Block ? (node as Block).statements : [node];
 }
 
 async function lowerVariableStatement(node: VariableStatement, s: State): Promise<StmtIR[]> {
-  const flags = node.declarationList.flags;
+  return lowerDeclarationList(node.declarationList, node, s);
+}
+
+async function lowerDeclarationList(list: VariableDeclarationList, node: Node, s: State): Promise<StmtIR[]> {
+  const flags = list.flags;
   const kind = flags & NodeFlags.Const ? "const" : flags & NodeFlags.Let ? "let" : undefined;
   if (!kind) {
     throw CompileError.at(
@@ -453,7 +585,7 @@ async function lowerVariableStatement(node: VariableStatement, s: State): Promis
   }
 
   const out: StmtIR[] = [];
-  for (const declaration of node.declarationList.declarations) {
+  for (const declaration of list.declarations) {
     if (declaration.name.kind === SyntaxKind.ObjectBindingPattern) {
       out.push(...(await lowerDestructuring(declaration.name as ObjectBindingPattern, declaration, kind, s)));
       continue;
