@@ -33,6 +33,7 @@ import {
   type Statement,
   type StringLiteral,
   type SwitchStatement,
+  type TemplateExpression,
   type VariableDeclarationList,
   type VariableStatement,
   type WhileStatement,
@@ -903,7 +904,17 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise
       return lowerExpr((node as ParenthesizedExpression).expression, s, expected);
 
     case SyntaxKind.StringLiteral:
+    case SyntaxKind.NoSubstitutionTemplateLiteral:
       return { kind: "lit", value: (node as StringLiteral).text, type: scalarType("text") };
+
+    case SyntaxKind.TemplateExpression:
+      return lowerTemplate(node as TemplateExpression, s);
+
+    case SyntaxKind.TaggedTemplateExpression:
+      throw CompileError.at(
+        node,
+        "Tagged templates are not supported: the tag is a function called with the pieces, which has no PL/pgSQL equivalent.",
+      );
 
     case SyntaxKind.NumericLiteral: {
       const value = Number((node as NumericLiteral).text);
@@ -964,6 +975,53 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise
     default:
       throw CompileError.at(node, `${formatSyntaxKind(node.kind)} is not supported in a compiled expression.`);
   }
+}
+
+/**
+ * `` `${plan}-${region}` `` is `plan || '-' || region`.
+ *
+ * A substitution is converted with `String(value)` in TypeScript, so only the
+ * types whose text is the same in both languages are accepted: text as is,
+ * `Integer` and `boolean` with `::text` — `String(42)` is `'42'` and
+ * `String(true)` is `'true'`, as `42::text` and `true::text` are. A double is
+ * refused: `String(0.1 + 0.2)` is `0.30000000000000004` and `1e21` keeps its
+ * exponent, where PostgreSQL writes its own shortest form; a `numeric` keeps
+ * trailing zeros (`1.10`). A nullable value is refused as for `+`: TypeScript
+ * writes `null` where SQL's `||` makes the whole string NULL.
+ */
+async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR> {
+  const text = scalarType("text");
+  const pieces: ExprIR[] = [];
+  const literal = (value: string) => {
+    if (value !== "") pieces.push({ kind: "lit", value, type: text });
+  };
+
+  literal(node.head.text);
+  for (const span of node.templateSpans) {
+    const value = await lowerExpr(span.expression, s);
+    if (value.type.nullable) {
+      throw CompileError.at(
+        span.expression,
+        `\`${span.expression.getText()}\` may be null: a template literal writes "null" in TypeScript, but SQL's \`||\` makes the whole string NULL. Narrow it first, or write the fallback with \`??\`.`,
+      );
+    }
+    if (isExactly(value.type, "text")) {
+      pieces.push(value);
+    } else if (isExactly(value.type, "integer") || isExactly(value.type, "boolean")) {
+      pieces.push({ kind: "cast", operand: value, to: "text", type: text });
+    } else {
+      throw CompileError.at(
+        span.expression,
+        isNumeric(value.type)
+          ? `A \`${describe(value.type)}\` in a template literal is not supported: TypeScript and PostgreSQL write fractional numbers differently (\`String(0.1 + 0.2)\`, \`1e21\`, trailing zeros). Only text, \`Integer\` and \`boolean\` are written the same way.`
+          : `A \`${describe(value.type)}\` in a template literal is not supported: only text, \`Integer\` and \`boolean\` are written the same way in both languages.`,
+      );
+    }
+    literal(span.literal.text);
+  }
+
+  if (pieces.length === 0) return { kind: "lit", value: "", type: text };
+  return pieces.reduce((left, right): ExprIR => ({ kind: "binary", op: "||", left, right, type: text }));
 }
 
 async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State): Promise<ExprIR> {
