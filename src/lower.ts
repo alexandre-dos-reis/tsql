@@ -2,6 +2,7 @@ import {
   NodeFlags,
   SyntaxKind,
   formatSyntaxKind,
+  type ArrayLiteralExpression,
   type ArrowFunction,
   type BinaryExpression,
   type BindingElement,
@@ -40,6 +41,7 @@ import { CompileError } from "./errors.ts";
 import {
   describe,
   fieldLabel,
+  arrayType,
   isArray,
   isComposite,
   isExactly,
@@ -49,6 +51,7 @@ import {
   scalarType,
   widenNumeric,
   withNullable,
+  type ArrayPart,
   type ArrayType,
   type BinOp,
   type ExprIR,
@@ -136,9 +139,6 @@ export async function lowerSignature(rule: RuleFunction, ctx: TypeCtx): Promise<
   }
 
   const returns = await mapTypeNode(fn.type, ctx);
-  if (isArray(returns)) {
-    throw CompileError.at(fn.type, "Returning an array is not supported yet: arrays are supported as parameters.");
-  }
   return { tsName, sqlName: toSnakeCase(tsName), params, returns };
 }
 
@@ -206,7 +206,7 @@ export async function lowerFunction(
 }
 
 async function lowerReturn(expr: Expression, s: State): Promise<StmtIR> {
-  const value = await lowerExpr(expr, s);
+  const value = await lowerExpr(expr, s, s.returns);
   requireAssignable(value.type, s.returns, expr, "return value");
   return { kind: "return", expr: coerce(value, s.returns) };
 }
@@ -667,14 +667,13 @@ async function lowerDeclarationList(list: VariableDeclarationList, node: Node, s
       throw CompileError.at(declaration.name, `\`${tsName}\` shadows an existing binding.`);
     }
 
-    const init = await lowerExpr(declaration.initializer, s);
     // Without an annotation, a `let` takes the type of its initial value, like a
     // `const`. TypeScript widens `let total = 0` to `number`; here it is an
     // `integer`, and assigning it 0.5 later is refused with a hint to annotate —
     // never silently rounded.
-    const declared = declaration.type
-      ? await mapTypeNode(declaration.type, s)
-      : await inferLocalType(init, declaration.initializer, s);
+    const annotated = declaration.type ? await mapTypeNode(declaration.type, s) : undefined;
+    const init = await lowerExpr(declaration.initializer, s, annotated);
+    const declared = annotated ?? (await inferLocalType(init, declaration.initializer, s));
     requireAssignable(init.type, declared, declaration.initializer, `initialiser for \`${tsName}\``);
 
     const sqlName = uniqueName(toSnakeCase(tsName), s.used);
@@ -714,7 +713,7 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
     if (binary.left.kind !== SyntaxKind.Identifier) return undefined; // field mutation: lowerBinary explains
     target = binary.left;
     if (op === SyntaxKind.EqualsToken) {
-      value = () => lowerExpr(binary.right, s);
+      value = (current) => lowerExpr(binary.right, s, current.type);
     } else {
       const base = COMPOUND.get(op);
       if (base === undefined) {
@@ -872,6 +871,10 @@ async function lowerDestructuring(
  * TypeScript type we could not represent is still rejected with a good message.
  */
 async function inferLocalType(init: ExprIR, at: Expression, s: State): Promise<PgType> {
+  // An array's type is the one lowering built. The checker would see `[1, 2]`
+  // as a mutable `number[]`, which is harmless in a local: every way to mutate
+  // it — a method, an element or a `length` assignment — is refused anyway.
+  if (isArray(init.type)) return init.type;
   const checked = await s.checker.getTypeAtLocation(at);
   if (checked) await mapInferredType(checked, at, s);
   return init.type;
@@ -889,10 +892,15 @@ function uniqueName(base: string, used: Set<string>): string {
 /* Expressions                                                                */
 /* -------------------------------------------------------------------------- */
 
-async function lowerExpr(node: Expression, s: State): Promise<ExprIR> {
+/**
+ * Lower an expression. `expected`, when the position has one — a return, an
+ * annotated declaration, an assignment, an argument, an object field — types
+ * what has no type of its own: `[]`, and `null`.
+ */
+async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise<ExprIR> {
   switch (node.kind) {
     case SyntaxKind.ParenthesizedExpression:
-      return lowerExpr((node as ParenthesizedExpression).expression, s);
+      return lowerExpr((node as ParenthesizedExpression).expression, s, expected);
 
     case SyntaxKind.StringLiteral:
       return { kind: "lit", value: (node as StringLiteral).text, type: scalarType("text") };
@@ -907,7 +915,13 @@ async function lowerExpr(node: Expression, s: State): Promise<ExprIR> {
     case SyntaxKind.FalseKeyword:
       return { kind: "lit", value: false, type: scalarType("boolean") };
     case SyntaxKind.NullKeyword:
-      return { kind: "lit", value: null, type: scalarType("boolean", true) };
+      // `null` is NULL of whatever type is expected; with nothing expected it
+      // still needs a type, and only a comparison with it can follow.
+      return {
+        kind: "lit",
+        value: null,
+        type: expected && isScalar(expected) ? scalarType(expected.sql, true, expected.allowed) : scalarType("boolean", true),
+      };
 
     case SyntaxKind.Identifier: {
       const name = (node as Identifier).text;
@@ -936,7 +950,10 @@ async function lowerExpr(node: Expression, s: State): Promise<ExprIR> {
       return lowerBinary(node as BinaryExpression, s);
 
     case SyntaxKind.ConditionalExpression:
-      return lowerConditional(node as ConditionalExpression, s);
+      return lowerConditional(node as ConditionalExpression, s, expected);
+
+    case SyntaxKind.ArrayLiteralExpression:
+      return lowerArrayLiteral(node as ArrayLiteralExpression, s, expected);
 
     case SyntaxKind.CallExpression:
       return lowerCall(node as CallExpression, s);
@@ -969,7 +986,7 @@ async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State): Promise<
   }
 }
 
-async function lowerConditional(node: ConditionalExpression, s: State): Promise<ExprIR> {
+async function lowerConditional(node: ConditionalExpression, s: State, expected?: PgType): Promise<ExprIR> {
   const cond = await lowerExpr(node.condition, s);
   if (!isExactly(cond.type, "boolean")) {
     throw CompileError.at(
@@ -977,8 +994,8 @@ async function lowerConditional(node: ConditionalExpression, s: State): Promise<
       `A conditional expression needs a boolean condition, not \`${describe(cond.type)}\`.`,
     );
   }
-  const whenTrue = await lowerExpr(node.whenTrue, s);
-  const whenFalse = await lowerExpr(node.whenFalse, s);
+  const whenTrue = await lowerExpr(node.whenTrue, s, expected);
+  const whenFalse = await lowerExpr(node.whenFalse, s, expected);
   const type = unify(whenTrue.type, whenFalse.type, node, "branches of a conditional expression");
   return { kind: "case", cond, whenTrue: coerce(whenTrue, type), whenFalse: coerce(whenFalse, type), type };
 }
@@ -1015,11 +1032,77 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
   const args: ExprIR[] = [];
   for (const [i, argument] of node.arguments.entries()) {
     const param = target.params[i]!;
-    const lowered = await lowerExpr(argument as Expression, s);
+    const lowered = await lowerExpr(argument as Expression, s, param.type);
     requireAssignable(lowered.type, param.type, argument as Node, `argument \`${param.tsName}\``);
     args.push(coerce(lowered, param.type));
   }
   return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
+}
+
+/**
+ * `[a, b, ...xs]`, as `ARRAY[a, b]::t[] || xs`.
+ *
+ * The element type comes from the position when it has one — `readonly
+ * Integer[]` keeps a `1` an `integer` and makes `[]` an `integer[]` — and
+ * otherwise from the elements themselves. Each element must fit it, as an
+ * assignment would; a spread must be an array whose elements do. Concatenating
+ * copies, so `[...acc, x]` builds a new array and leaves `acc` as it was, in
+ * both languages.
+ */
+async function lowerArrayLiteral(node: ArrayLiteralExpression, s: State, expected?: PgType): Promise<ExprIR> {
+  const target = expected && isArray(expected) ? expected : undefined;
+  const lowered: { node: Expression; spread: boolean; expr: ExprIR }[] = [];
+  for (const element of node.elements) {
+    if (element.kind === SyntaxKind.OmittedExpression) {
+      throw CompileError.at(node, "An array with holes is not supported: a hole is `undefined`, which SQL lacks.");
+    }
+    if (element.kind === SyntaxKind.SpreadElement) {
+      const operand = (element as unknown as { readonly expression: Expression }).expression;
+      const expr = await lowerExpr(operand, s, target);
+      if (!isArray(expr.type)) {
+        throw CompileError.at(element, `Only an array can be spread into an array, not \`${describe(expr.type)}\`.`);
+      }
+      lowered.push({ node: element, spread: true, expr });
+    } else {
+      lowered.push({ node: element, spread: false, expr: await lowerExpr(element, s, target?.element) });
+    }
+  }
+
+  let element: PgType | undefined = target?.element;
+  if (!element) {
+    for (const item of lowered) {
+      const type = item.spread ? (item.expr.type as ArrayType).element : item.expr.type;
+      element = element ? unify(element, type, item.node, "elements of this array") : type;
+    }
+  }
+  if (!element) {
+    throw CompileError.at(
+      node,
+      "An empty array needs a type: annotate it (`const xs: readonly T[] = []`), or use it where an array type is expected.",
+    );
+  }
+  if (isArray(element)) {
+    throw CompileError.at(
+      node,
+      "Arrays of arrays are not supported: a PostgreSQL array is one multi-dimensional value, not an array of arrays.",
+    );
+  }
+  const type = arrayType(element);
+
+  const parts: ArrayPart[] = [];
+  for (const item of lowered) {
+    if (item.spread) {
+      requireAssignable(item.expr.type, type, item.node, "spread array");
+      parts.push({ kind: "spread", array: coerce(item.expr, type) });
+      continue;
+    }
+    requireAssignable(item.expr.type, element, item.node, "array element");
+    const value = coerce(item.expr, element);
+    const last = parts.at(-1);
+    if (last?.kind === "items") parts[parts.length - 1] = { kind: "items", items: [...last.items, value] };
+    else parts.push({ kind: "items", items: [value] });
+  }
+  return { kind: "arrayLiteral", parts, type };
 }
 
 /**
@@ -1041,9 +1124,16 @@ async function arrayOperand(node: Expression, s: State): Promise<(ExprIR & { rea
   if (
     node.kind !== SyntaxKind.Identifier &&
     node.kind !== SyntaxKind.ParenthesizedExpression &&
-    node.kind !== SyntaxKind.ConditionalExpression
+    node.kind !== SyntaxKind.ConditionalExpression &&
+    node.kind !== SyntaxKind.CallExpression &&
+    node.kind !== SyntaxKind.ArrayLiteralExpression
   ) {
     return undefined;
+  }
+  // A call to anything but a compiled rule is left to `lowerCall`'s own error.
+  if (node.kind === SyntaxKind.CallExpression) {
+    const callee = (node as CallExpression).expression;
+    if (callee.kind !== SyntaxKind.Identifier || !s.signatures.has((callee as Identifier).text)) return undefined;
   }
   if (node.kind === SyntaxKind.Identifier && !s.scope.has((node as Identifier).text)) return undefined;
   const lowered = await lowerExpr(node, s);
@@ -1361,7 +1451,7 @@ async function resolveLiteral(
           break;
         }
 
-        const lowered = await lowerExpr(value as Expression, s);
+        const lowered = await lowerExpr(value as Expression, s, target.fields.find((f) => samePath(f.path, path))?.type);
         const column = columnFor(target, path);
         if (!column) {
           throw CompileError.at(property, `\`${target.tsName}\` has no field \`${fieldLabel(path)}\`.`);
@@ -1626,8 +1716,15 @@ function numericOperands(left: ExprIR, right: ExprIR, node: Node, op: string): [
  */
 export function assignable(from: PgType, to: PgType): boolean {
   if (from.nullable && !to.nullable) return false;
-  // An array of nullable elements cannot stand in for one whose elements are not.
-  if (isArray(from) && isArray(to)) return sameFamily(from, to) && (!from.element.nullable || to.element.nullable);
+  if (isArray(from) || isArray(to)) {
+    if (!isArray(from) || !isArray(to)) return false;
+    // An array of nullable elements cannot stand in for one whose elements are not.
+    if (from.element.nullable && !to.element.nullable) return false;
+    // Numeric elements widen as numbers do, by an array cast.
+    const [a, b] = [from.element, to.element];
+    if (isScalar(a) && isScalar(b) && isNumeric(a) && isNumeric(b)) return widenNumeric(a.sql, b.sql) === b.sql;
+    return sameFamily(from, to);
+  }
   if (isNumeric(from) && isNumeric(to) && isScalar(from) && isScalar(to)) {
     return widenNumeric(from.sql, to.sql) === to.sql;
   }
@@ -1667,6 +1764,14 @@ function unify(a: PgType, b: PgType, at: Node, what: string): PgType {
 
 /** Widening casts are explicit in the IR so the emitter never has to guess. */
 function coerce(expr: ExprIR, to: PgType): ExprIR {
+  if (isArray(expr.type) && isArray(to)) {
+    const [from, into] = [expr.type.element, to.element];
+    if (!isScalar(from) || !isScalar(into) || from.sql === into.sql) return expr;
+    // `[]` and `[1, 2]` were already built with the target's element type; a
+    // literal reaching here can be retyped rather than cast.
+    if (expr.kind === "arrayLiteral" && expr.parts.length === 0) return { ...expr, type: to };
+    return { kind: "arrayCast", operand: expr, type: to };
+  }
   if (!isScalar(expr.type) || !isScalar(to)) return expr;
   if (expr.type.sql === to.sql) return expr;
   if (!isNumeric(expr.type) || !isNumeric(to)) return expr;

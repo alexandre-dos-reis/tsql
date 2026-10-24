@@ -206,8 +206,9 @@ Composites are the subtle part, and the README's "Object types" section carries 
   caller-visible behaviour still differed.
 
 Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters, locals or composite fields (one
-column of array type, not flattened), never nullable, never returned, elements a scalar or a
-non-nullable composite. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
+column of array type, not flattened) and return values, never nullable, elements a scalar or a
+non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
+and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
 and a shape recursive through an array is refused (`TypeCtx.mapping`). `readonly` is required because arrays are passed by value — the
 same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
 `cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
