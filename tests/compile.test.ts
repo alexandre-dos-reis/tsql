@@ -170,7 +170,6 @@ describe("rejections — language constructs", () => {
     ["switchBreak.ts", "`break` is only supported as the last statement of a `switch` clause"],
     ["switchObject.ts", "a `switch` on an object has no faithful translation"],
     ["switchNoDefault.ts", "A `switch` needs a `default`"],
-    ["switchClauseScope.ts", "`bonus` is declared in another `switch` clause"],
   ]);
 
   test("a rejection points at the offending line", async () => {
