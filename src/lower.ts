@@ -4,7 +4,9 @@ import {
   formatSyntaxKind,
   type BinaryExpression,
   type Block,
+  type BreakStatement,
   type CallExpression,
+  type CaseClause,
   type ConditionalExpression,
   type Expression,
   type ExpressionStatement,
@@ -24,6 +26,7 @@ import {
   type SpreadAssignment,
   type Statement,
   type StringLiteral,
+  type SwitchStatement,
   type VariableStatement,
 } from "typescript/unstable/ast";
 import { CompileError } from "./errors.ts";
@@ -186,8 +189,19 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.IfStatement:
       return [await lowerIf(node as IfStatement, s)];
 
+    case SyntaxKind.SwitchStatement:
+      return lowerSwitch(node as SwitchStatement, s);
+
     case SyntaxKind.VariableStatement:
       return lowerVariableStatement(node as VariableStatement, s);
+
+    case SyntaxKind.BreakStatement:
+      throw CompileError.at(
+        node,
+        (node as BreakStatement).label
+          ? "Labelled `break` is not supported."
+          : "`break` is only supported as the last statement of a `switch` clause.",
+      );
 
     case SyntaxKind.ExpressionStatement: {
       // Lower it first: if it reaches for a runtime global, that is the more
@@ -199,7 +213,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     default:
       throw CompileError.at(
         node,
-        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` declarations, \`if\`/\`else\` and \`return\`.`,
+        `${formatSyntaxKind(node.kind)} is not supported. The compiled subset is: \`const\` declarations, \`if\`/\`else\`, \`switch\` and \`return\`.`,
       );
   }
 }
@@ -229,6 +243,110 @@ async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
   }
 
   return orElse ? { kind: "if", branches, orElse } : { kind: "if", branches };
+}
+
+/**
+ * `switch` lowers to the same IR as an `if`/`else if` chain, so the emitter
+ * needs nothing new. What lowering has to prove is that the chain means the
+ * same thing:
+ *
+ * - Matching is `===`, so each label goes through the same equality rules as
+ *   an explicit comparison (`IS NOT DISTINCT FROM` when nullable, `case null`
+ *   is a null test, objects are refused).
+ * - The discriminant is evaluated once, as in JavaScript, by holding it in a
+ *   local unless it is already a plain reference or literal.
+ * - Fallthrough has no `ELSIF` equivalent, so a clause that has statements must
+ *   end in `break`, always return, or be the last clause. Empty clauses group
+ *   their labels with the next clause, which is the one fallthrough form that
+ *   maps onto `OR`.
+ * - `default` runs only when no label matches, wherever it is written, so it
+ *   becomes the `ELSE`. Labels grouped with it keep their place in the chain,
+ *   because an earlier match must still win over a later duplicate label.
+ */
+async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
+  const out: StmtIR[] = [];
+  let subject = await lowerExpr(node.expression, s);
+  if (subject.kind !== "ref" && subject.kind !== "lit") {
+    const sqlName = uniqueName("switch_value", s.used);
+    s.locals.push({ tsName: sqlName, sqlName, type: subject.type });
+    out.push({ kind: "assign", sqlName, expr: subject });
+    subject = { kind: "ref", sqlName, type: subject.type };
+  }
+
+  const clauses = node.caseBlock.clauses;
+  const branches: { cond: ExprIR; body: StmtIR[] }[] = [];
+  let orElse: StmtIR[] | undefined;
+  let labels: ExprIR[] = [];
+  let hasDefault = false;
+
+  for (const [i, clause] of clauses.entries()) {
+    if (clause.kind === SyntaxKind.CaseClause) {
+      labels.push(await lowerCaseLabel(subject, (clause as CaseClause).expression, s));
+    } else {
+      hasDefault = true;
+    }
+
+    const isLast = i === clauses.length - 1;
+    if (clause.statements.length === 0 && !isLast) continue;
+
+    const body = await lowerClauseBody(clause, isLast, s);
+    if (labels.length > 0) {
+      const cond = labels.reduce(
+        (left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") }),
+      );
+      branches.push({ cond, body });
+    }
+    if (hasDefault) orElse = body;
+    labels = [];
+    hasDefault = false;
+  }
+
+  if (branches.length === 0) {
+    out.push(...(orElse ?? []));
+  } else {
+    // An empty `default: break;` adds nothing an absent ELSE does not.
+    const hasElse = orElse !== undefined && orElse.length > 0;
+    out.push(hasElse ? { kind: "if", branches, orElse } : { kind: "if", branches });
+  }
+  return out;
+}
+
+async function lowerCaseLabel(subject: ExprIR, label: Expression, s: State): Promise<ExprIR> {
+  if (isNullLiteral(label)) {
+    return { kind: "nullTest", operand: subject, negated: false, type: scalarType("boolean") };
+  }
+  return strictEquality(subject, await lowerExpr(label, s), false, label);
+}
+
+async function lowerClauseBody(
+  clause: SwitchStatement["caseBlock"]["clauses"][number],
+  isLast: boolean,
+  s: State,
+): Promise<StmtIR[]> {
+  // `case x: { ...; break; }` is the same clause written with a block.
+  const statements: readonly Statement[] =
+    clause.statements.length === 1 && clause.statements[0]!.kind === SyntaxKind.Block
+      ? (clause.statements[0] as Block).statements
+      : clause.statements;
+
+  const breakAt = statements.findIndex((st) => st.kind === SyntaxKind.BreakStatement);
+  if (breakAt !== -1) {
+    const brk = statements[breakAt] as BreakStatement;
+    if (brk.label) throw CompileError.at(brk, "Labelled `break` is not supported.");
+    if (breakAt !== statements.length - 1) {
+      throw CompileError.at(statements[breakAt + 1]!, "Unreachable code after `break`.");
+    }
+    return lowerStatements(statements.slice(0, breakAt), s);
+  }
+
+  const body = await lowerStatements(statements, s);
+  if (!isLast && !alwaysReturns(body)) {
+    throw CompileError.at(
+      clause,
+      "This `switch` clause falls through into the next one, which has no PL/pgSQL equivalent. End it with `break` or `return`.",
+    );
+  }
+  return body;
 }
 
 function asStatements(node: Statement): readonly Statement[] {
@@ -716,6 +834,22 @@ function columnFor(target: CompositeType, path: readonly string[]): string | und
   return target.fields.find((f) => samePath(f.path, path))?.sqlName;
 }
 
+/** `===` / `!==` between two lowered operands; also how a `switch` label matches. */
+function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node): ExprIR {
+  if (isComposite(left.type) || isComposite(right.type)) {
+    throw CompileError.at(
+      at,
+      "Objects compare by identity in TypeScript and by value in SQL, so `===` on an object has no faithful translation. Compare the fields you care about.",
+    );
+  }
+  requireComparable(left.type, right.type, at);
+  // TypeScript's equality is total; SQL's `=` is three-valued. When either
+  // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
+  const nullable = left.type.nullable || right.type.nullable;
+  const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
+  return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+}
+
 async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   const op = node.operatorToken.kind;
 
@@ -757,19 +891,7 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
   switch (op) {
     case SyntaxKind.EqualsEqualsEqualsToken:
     case SyntaxKind.ExclamationEqualsEqualsToken: {
-      if (isComposite(left.type) || isComposite(right.type)) {
-        throw CompileError.at(
-          node,
-          "Objects compare by identity in TypeScript and by value in SQL, so `===` on an object has no faithful translation. Compare the fields you care about.",
-        );
-      }
-      requireComparable(left.type, right.type, node);
-      const negated = op === SyntaxKind.ExclamationEqualsEqualsToken;
-      // TypeScript's equality is total; SQL's `=` is three-valued. When either
-      // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
-      const nullable = left.type.nullable || right.type.nullable;
-      const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
-      return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+      return strictEquality(left, right, op === SyntaxKind.ExclamationEqualsEqualsToken, node);
     }
 
     case SyntaxKind.LessThanToken:

@@ -188,7 +188,7 @@ Adding a rule adds a test. You don't write it.
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 
-Plus `if`/`else if`/`else`, `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Plus `if`/`else if`/`else`, `switch` (as `IF`/`ELSIF`), `const` locals, comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -220,6 +220,8 @@ A file the project does not hold is an error listing what it does hold, rather t
 
 - **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
 - **`x === null`** becomes `IS NULL` rather than a comparison.
+- **`switch`** becomes an `IF`/`ELSIF` chain, not SQL `CASE`. Each label matches with `===`, so it follows the two rules above (`case null` is `IS NULL`). The discriminant is held in a local when it is more than a plain name, so it is evaluated once, as in JavaScript. `default` becomes the `ELSE` wherever it is written, since it only runs when no label matched. Empty clauses group their labels with `OR`. Any other fallthrough is rejected: a clause with statements must end in `break`, always return, or be the last one.
+- **A `switch` over a union is not exhaustive in SQL.** TypeScript knows `switch (plan)` covers `"free" \| "pro"` and needs no `default`; PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The function would then reach its end on an unexpected value, so without a `default` (or a `return` after the `switch`) the rule is rejected as able to finish without returning.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
@@ -413,6 +415,8 @@ Each of these has a test in `tests/compile.test.ts`, with the fixture that provo
 | --- | --- |
 | `if (name)` | truthiness has no faithful SQL translation — compare explicitly |
 | `let` / `var`, loops | would need mutable state or iteration this subset does not model |
+| `switch` fallthrough | a non-empty clause running into the next has no `ELSIF` equivalent — end it with `break` or `return` |
+| `break` anywhere but the end of a `switch` clause | it would need control flow the `IF` chain does not model |
 | `n = n + 1` | assignment: values are computed with `const` and returned |
 | `n + 1;` as a statement | a discarded value has no effect in a pure function |
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |

@@ -161,6 +161,9 @@ describe("rejections — language constructs", () => {
     ["unsupportedType.ts", "`Date` is a built-in JavaScript type"],
     ["undefinedType.ts", "`undefined` has no SQL equivalent"],
     ["generic.ts", "Generic functions are not supported"],
+    ["switchFallthrough.ts", "falls through into the next one"],
+    ["switchBreak.ts", "`break` is only supported as the last statement of a `switch` clause"],
+    ["switchObject.ts", "`===` on an object has no faithful translation"],
   ]);
 
   test("a rejection points at the offending line", async () => {
@@ -169,6 +172,35 @@ describe("rejections — language constructs", () => {
     expect(error.fileName).toEndWith("tests/fixtures/truthiness.ts");
     expect(error.line).toBe(2);
     expect(error.format()).toContain("if (name) {");
+  });
+});
+
+describe("switch", () => {
+  test("lowers to an IF/ELSIF chain with grouped labels and default as ELSE", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.errors.map((e) => e.format())).toEqual([]);
+    expect(result.sql).toContain(`  IF tier = 'free' OR tier = 'starter' THEN
+    RETURN 1;
+  ELSIF tier = 'pro' THEN
+    RETURN 10;
+  ELSE
+    RETURN 100;
+  END IF;`);
+  });
+
+  test("matches a nullable discriminant the way === does", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain("IF code IS NULL THEN");
+    expect(result.sql).toContain("ELSIF code IS NOT DISTINCT FROM 'a' THEN");
+  });
+
+  test("evaluates a computed discriminant once, and drops an empty default", async () => {
+    const result = await compileFixture("switchStatement.ts");
+    expect(result.sql).toContain("switch_value integer;");
+    expect(result.sql).toContain("switch_value := n % 3;");
+    expect(result.sql).toContain(`  IF switch_value = 0 THEN
+    RETURN 'fizz';
+  END IF;`);
   });
 });
 
