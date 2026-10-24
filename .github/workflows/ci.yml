@@ -11,6 +11,19 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A real PostgreSQL, so `tsql test --db-url` is exercised against a server
+    # and not only against PGlite.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -24,14 +37,7 @@ jobs:
         with:
           node-version: 24
 
-      # TEMPORARY: add postgres.js and post the lockfile diff in chunks.
-      - name: Add postgres
-        run: |
-          bun add postgres
-          git diff | gzip -9 | base64 -w0 | fold -w 3900 | nl -nln -w1 -s' ' | while read -r n chunk; do
-            echo "::notice title=bootstrap ${n}::${chunk}"
-          done
-          exit 1
+      - run: bun install --frozen-lockfile
 
       - run: bun run typecheck
 

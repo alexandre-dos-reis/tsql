@@ -28,6 +28,8 @@ Options:
   --no-comments          Omit provenance comments from the generated SQL
   --runs <n>             test: random inputs per function (default: 200)
   --seed <n>             test: replay a failure; a negative seed needs \`--seed=-123\`
+  --db-url <url>         test: run against this PostgreSQL instead of an in-process PGlite,
+                         inside a transaction that is rolled back (default: PGlite)
 `;
 
 const { values, positionals } = parseArgs({
@@ -41,6 +43,7 @@ const { values, positionals } = parseArgs({
     "no-comments": { type: "boolean", default: false },
     runs: { type: "string" },
     seed: { type: "string" },
+    "db-url": { type: "string" },
     help: { type: "boolean", default: false },
   },
 });
@@ -94,6 +97,12 @@ function integerOption(name: string, raw: string | undefined, min?: number): num
 const runs = integerOption("runs", values.runs, 1);
 const seed = integerOption("seed", values.seed);
 
+const dbUrl = values["db-url"];
+if (dbUrl !== undefined && !/^postgres(ql)?:\/\//.test(dbUrl)) {
+  console.error(`tsql: --db-url expects a postgres:// or postgresql:// URL.`);
+  process.exit(1);
+}
+
 // A toolchain that cannot be assembled — no native compiler, an unreadable
 // tsconfig — is a message to the user, not a stack trace through bundled code.
 const result = await compileProject({
@@ -127,11 +136,13 @@ const names = result.functions.map((fn) => fn.sqlName).sort();
 if (command === "test") {
   // Loaded only here: PGlite brings a PostgreSQL in WebAssembly, which
   // `check` and `compile` have no use for.
-  const { runParity } = await import("./runParity.ts");
+  const { redact, runParity } = await import("./runParity.ts");
   const schema = result.manifest.schema;
+  if (dbUrl) console.log(`Testing against ${redact(dbUrl)}, in a transaction that is rolled back.\n`);
   const outcomes = await runParity(result, {
     ...(runs === undefined ? {} : { runs }),
     ...(seed === undefined ? {} : { seed }),
+    ...(dbUrl === undefined ? {} : { dbUrl }),
     onOutcome: ({ fn, error }) => {
       const sqlName = schema ? `${schema}.${fn.sqlName}` : fn.sqlName;
       if (error) {
@@ -140,6 +151,11 @@ if (command === "test") {
         console.log(`✓ ${fn.tsName}() agrees with ${sqlName}()`);
       }
     },
+  }).catch((error: unknown) => {
+    // An unreachable server or a migration the database refuses is a message,
+    // not a stack trace.
+    console.error(`tsql: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
   });
   const failed = outcomes.filter((o) => o.error !== undefined).length;
   const perFunction = runs ?? 200;

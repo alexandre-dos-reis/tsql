@@ -113,6 +113,50 @@ describe("tsql test proves the SQL agrees with the TypeScript", () => {
     expect(stderr).toContain("--runs expects an integer of at least 1, got `lots`");
   });
 
+  test("a --db-url that is not a postgres URL is refused", async () => {
+    const { stderr, exitCode } = await run(["test", "examples/input-1.ts", "--db-url=mysql://x", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--db-url expects a postgres:// or postgresql:// URL");
+  });
+
+  test("an unreachable server is a message, with the password hidden", async () => {
+    const url = "postgres://someone:hunter2@127.0.0.1:1/nowhere";
+    const { stderr, exitCode } = await run(["test", "examples/input-1.ts", `--db-url=${url}`, ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Could not connect to postgres://someone:***@127.0.0.1:1/nowhere");
+    expect(stderr).not.toContain("hunter2");
+    expect(stderr).not.toContain("at <anonymous>");
+  });
+
+  // Needs a real server: CI provides one through TSQL_TEST_DB_URL.
+  const dbUrl = process.env.TSQL_TEST_DB_URL;
+  test.skipIf(!dbUrl)("--db-url runs against a real PostgreSQL and leaves it untouched", async () => {
+    const { stdout, stderr, exitCode } = await run([
+      "test",
+      "examples/input-1.ts",
+      "examples/input-2.ts",
+      "examples/input-3.ts",
+      "--runs",
+      "20",
+      `--db-url=${dbUrl}`,
+      ...PROJECT,
+    ]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("in a transaction that is rolled back");
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
+
+    // Everything ran in a transaction that was rolled back: no schema, no functions.
+    const { default: postgres } = await import("postgres");
+    const sql = postgres(dbUrl!, { max: 1 });
+    try {
+      const [row] = await sql`select to_regnamespace('app') is null as gone`;
+      expect(row!.gone).toBe(true);
+    } finally {
+      await sql.end();
+    }
+  });
+
   test("a rule that does not compile is reported before any test runs", async () => {
     const { stderr, exitCode } = await run(["test", "examples/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);

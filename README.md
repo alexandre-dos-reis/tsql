@@ -221,15 +221,23 @@ tsql test rules/*.ts
 ok — 3 function(s) agree with their TypeScript on 200 random inputs each.
 ```
 
-`tsql test` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. Both fast-check and PGlite ship with `@adr/tsql`.
+`tsql test` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
 
 `--runs 1000` raises the inputs per function; `--seed=-315639818` replays a failure with the seed it printed.
 
+**Against your own PostgreSQL.** PGlite is the default, but it is not your server: a different version, no extensions, none of your settings. To check the rules on the PostgreSQL you actually deploy to, give it a URL:
+
+```bash
+tsql test rules/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
+```
+
+Everything — the migration and every check — runs in one transaction that is rolled back at the end, so nothing is committed and other sessions never see the generated functions. `CREATE OR REPLACE FUNCTION` still locks any same-named function while the run lasts, so point it at a test database, not production. The password is never printed.
+
 The rules are imported as they are, so they have to load under the runtime running `tsql` — on Node, a relative import between rule files needs its `.ts` extension. Type-only imports, such as `@adr/tsql/pgtypes`, are erased and never matter.
 
-### In your own test suite, or against your own database
+### In your own test suite
 
-`tsql test` is the harness with PGlite wired in. To run it inside your test runner, or against a real PostgreSQL, use `@adr/tsql/parity` directly on the files `tsql compile` wrote:
+`tsql test` is the harness with a database wired in. To run it inside your own test runner instead, use `@adr/tsql/parity` directly on the files `tsql compile` wrote:
 
 ```ts
 // tests/parity.test.ts
@@ -295,6 +303,8 @@ tsql test    <files...> [options]   Type check, translate, and run the parity te
   --no-comments          Omit provenance comments from the generated SQL
   --runs <n>             test: random inputs per function (default: 200)
   --seed <n>             test: replay a failure; a negative seed needs `--seed=-123`
+  --db-url <url>         test: run against this PostgreSQL instead of an in-process PGlite,
+                         inside a transaction that is rolled back (default: PGlite)
 ```
 
 Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
