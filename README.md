@@ -29,7 +29,7 @@ $$;
 
 One rule, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
 
-**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL, and generates tests that run both implementations on hundreds of random inputs to prove they still agree.
+**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL. Then it *proves* the two agree: a parity harness built on [fast-check](https://fast-check.dev) runs every compiled rule on hundreds of random inputs, through your TypeScript and through the generated function in a real PostgreSQL, and fails your test suite the moment they disagree.
 
 And when it meets something it cannot translate *faithfully*, it refuses to compile rather than guessing. A build error beats a function that quietly returns the wrong answer at 3am.
 
@@ -88,7 +88,11 @@ END;
 $$;
 ```
 
-Point your migration tool at the emitted file and you are done. `tsql check` does the same without writing anything — put it in CI next to your type checker.
+Point your migration tool at the emitted file. `tsql check` does the same without writing anything — put it in CI next to your type checker.
+
+`compile` also writes a manifest (`generated/manifest.json`) describing every function it emitted. That manifest is what the next step reads.
+
+> **`check` and `compile` translate; they do not run the parity tests.** Proving the SQL matches the TypeScript needs a PostgreSQL to execute it, so that step lives in your test suite — see [Prove it](#prove-it-parity-tests-with-fast-check). Compiling without it gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree.
 
 ## More examples
 
@@ -162,9 +166,13 @@ rules/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
 
 A few others: `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
 
-## Parity tests, for free
+## Prove it: parity tests with fast-check
 
-`tsql` emits a manifest describing every function it compiled. Point the harness at it and it runs each rule 200 times — same inputs through your TypeScript and through the generated PL/pgSQL — and tells you if they ever disagree:
+This is the step that turns "the compiler says it's equivalent" into "it was checked." For every function in the manifest, the harness in `@adr/tsql/parity`:
+
+1. derives a [fast-check](https://fast-check.dev) generator for each parameter from its PostgreSQL type — permitted values for a string-literal union, int32-safe integers for `Integer`, nested objects for a composite;
+2. runs **200 random inputs** through your TypeScript function and through the generated SQL function;
+3. fails, with the shrunk counterexample and the seed to replay it, if the two ever give different answers — or if the TypeScript mutates its arguments, which PL/pgSQL could never reproduce.
 
 ```
 todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
@@ -172,7 +180,39 @@ todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
   reproduce with seed -315639818, path 0
 ```
 
-Adding a rule adds a test. You don't write it.
+Wire it once and **every rule you add gets a parity test automatically** — the loop runs over the manifest, so there is nothing to write per rule:
+
+```bash
+bun add -d fast-check @electric-sql/pglite   # the harness needs fast-check; any PostgreSQL works
+```
+
+```ts
+// tests/parity.test.ts
+import { PGlite } from "@electric-sql/pglite";
+import { test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Manifest } from "@adr/tsql";
+import { checkParity, type RowQuery } from "@adr/tsql/parity";
+
+const manifest: Manifest = JSON.parse(readFileSync("generated/manifest.json", "utf8"));
+
+// PGlite is PostgreSQL compiled to WebAssembly: a real PL/pgSQL, in process, no server.
+const db = await PGlite.create();
+await db.exec(readFileSync("generated/0001_rules.sql", "utf8"));
+const query: RowQuery = async (sql, params) => (await db.query<Record<string, unknown>>(sql, [...params])).rows[0]!;
+
+for (const fn of manifest.functions) {
+  test(`${fn.tsName}() agrees with ${manifest.schema}.${fn.sqlName}()`, async () => {
+    const module = await import(resolve(fn.module));
+    await checkParity(fn, module[fn.tsName], query, manifest.schema);
+  });
+}
+```
+
+`RowQuery` is a plain callback, so PGlite is only a convenience: point it at your real database (or a throwaway one in CI) and the harness does not care. `checkParity` takes `{ runs, seed }` as a last argument to raise the input count or replay a failure.
+
+In CI, run `tsql compile` and then your tests. A rule that compiles but diverges then fails the build instead of reaching production — which is the gap this project exists to close.
 
 ## What's supported
 
@@ -451,6 +491,8 @@ Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier
 Rejections carry a file, line, column and the offending source line.
 
 ## Parity tests
+
+This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) above is the *what* and the setup. The CLI never runs these tests — they need a PostgreSQL to execute the generated SQL, which belongs to your test suite, not to a compiler.
 
 `src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a rule adds a parity test with no edit to the test file.
 
