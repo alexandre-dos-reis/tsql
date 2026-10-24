@@ -39,16 +39,6 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      # TEMPORARY: generate tests/parity/*.sql and post them in chunks.
-      - name: Generate expected SQL
-        run: |
-          UPDATE_SQL=1 bun test tests/parity.test.ts || true
-          git add -N tests/parity
-          git diff -- tests/parity | gzip -9 | base64 -w0 | fold -w 3900 | nl -nln -w1 -s' ' | while read -r n chunk; do
-            echo "::notice title=golden ${n}::${chunk}"
-          done
-          exit 1
-
       - run: bun run typecheck
 
       - run: bun test

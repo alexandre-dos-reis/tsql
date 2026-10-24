@@ -474,7 +474,7 @@ Built-in object types are excluded by the same provenance check that catches run
 
 ## Rejected at build time
 
-Each of these has a test in `tests/rejected.test.ts`, with the case that provokes it in `tests/rejected/`, one file per case. Each file opens with a comment explaining the refusal, often with the SQL that would have diverged.
+Each of these is a case in `tests/rejected/`, one file per case. Each file opens with a comment explaining the refusal, often with the SQL that would have diverged, and the message the compiler must give; `tests/rejected.test.ts` runs them all.
 
 **Language constructs:**
 
@@ -607,10 +607,9 @@ Formatting is not checked in CI; run `bun run format` before committing.
 examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
 examples/output.sql     what tsql emits for them, checked in beside the rules it came from
 examples/manifest.json  the manifest emitted with it
-tests/parity/           accepted cases, one file per case: each is proven against its TypeScript
-                        on PGlite and PostgreSQL (parity.test.ts); sql.test.ts checks the SQL shape
-tests/rejected/         rejected cases, one file per case, with the expected message in
-                        rejected.test.ts
+tests/parity/           accepted cases: name.ts and name.sql, the exact SQL it must compile to;
+                        each is also proven against its TypeScript on PGlite and PostgreSQL
+tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
 tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them
 tests/README.md         what each kind of case and each test file is for
 src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
