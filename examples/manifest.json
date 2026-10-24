@@ -374,6 +374,104 @@
         "sql": "integer",
         "nullable": false
       }
+    },
+    {
+      "tsName": "shippingCents",
+      "sqlName": "shipping_cents",
+      "module": "examples/input-4.ts",
+      "params": [
+        {
+          "tsName": "region",
+          "sqlName": "region",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": false,
+            "allowed": [
+              "apac",
+              "eu",
+              "us"
+            ]
+          }
+        },
+        {
+          "tsName": "weightGrams",
+          "sqlName": "weight_grams",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "integer",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "couponLabel",
+      "sqlName": "coupon_label",
+      "module": "examples/input-4.ts",
+      "params": [
+        {
+          "tsName": "code",
+          "sqlName": "code",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": true
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "text",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "salutation",
+      "sqlName": "salutation",
+      "module": "examples/input-4.ts",
+      "params": [
+        {
+          "tsName": "name",
+          "sqlName": "name",
+          "type": {
+            "kind": "scalar",
+            "sql": "text",
+            "nullable": true
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "text",
+        "nullable": false
+      }
+    },
+    {
+      "tsName": "bonusPoints",
+      "sqlName": "bonus_points",
+      "module": "examples/input-4.ts",
+      "params": [
+        {
+          "tsName": "spentCents",
+          "sqlName": "spent_cents",
+          "type": {
+            "kind": "scalar",
+            "sql": "integer",
+            "nullable": false
+          }
+        }
+      ],
+      "returns": {
+        "kind": "scalar",
+        "sql": "integer",
+        "nullable": false
+      }
     }
   ]
 }
