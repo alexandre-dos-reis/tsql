@@ -182,22 +182,30 @@ describe("switch", () => {
     // SQL's CASE expression takes one value per WHEN, so grouped labels repeat the result.
     const result = await compileFixture("switchStatement.ts");
     expect(result.errors.map((e) => e.format())).toEqual([]);
-    expect(result.sql).toContain(
-      "RETURN CASE tier WHEN 'free' THEN 1 WHEN 'starter' THEN 1 WHEN 'pro' THEN 10 ELSE 100 END;",
-    );
+    expect(result.sql).toContain(`  RETURN CASE tier
+    WHEN 'free' THEN 1
+    WHEN 'starter' THEN 1
+    WHEN 'pro' THEN 10
+    ELSE 100
+  END;`);
   });
 
   test("keeps the simple form for a nullable discriminant", async () => {
     // NULL = 'bob' is not true, so a NULL name reaches the ELSE, as null === "bob" is false.
     const result = await compileFixture("switchStatement.ts");
-    expect(result.sql).toContain("RETURN CASE name WHEN 'bob' THEN 'hi bob' ELSE 'hi' END;");
+    expect(result.sql).toContain(`  RETURN CASE name
+    WHEN 'bob' THEN 'hi bob'
+    ELSE 'hi'
+  END;`);
   });
 
   test("uses the searched form for case null", async () => {
     const result = await compileFixture("switchStatement.ts");
-    expect(result.sql).toContain(
-      "RETURN CASE WHEN code IS NULL THEN 'none' WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha' ELSE 'other' END;",
-    );
+    expect(result.sql).toContain(`  RETURN CASE
+    WHEN code IS NULL THEN 'none'
+    WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha'
+    ELSE 'other'
+  END;`);
   });
 
   test("a branch doing more than return keeps the CASE statement, with grouped labels", async () => {

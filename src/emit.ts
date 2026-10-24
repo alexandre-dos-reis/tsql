@@ -182,9 +182,22 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
   const lines: string[] = [];
   for (const statement of body) {
     switch (statement.kind) {
-      case "return":
-        lines.push(`${indent}RETURN ${emitExpr(statement.expr, q)};`);
+      case "return": {
+        // A returned CASE expression is laid out one WHEN per line: on a single
+        // line it is short but hard to read. Nested ones stay inline.
+        const expr = statement.expr;
+        if (expr.kind === "simpleCaseExpr" || expr.kind === "searchedCaseExpr") {
+          lines.push(`${indent}RETURN CASE${expr.kind === "simpleCaseExpr" ? ` ${emitExpr(expr.subject, q)}` : ""}`);
+          for (const when of expr.whens) {
+            const test = "value" in when ? when.value : when.cond;
+            lines.push(`${indent}  WHEN ${emitExpr(test, q)} THEN ${emitExpr(when.result, q)}`);
+          }
+          lines.push(`${indent}  ELSE ${emitExpr(expr.orElse, q)}`, `${indent}END;`);
+          break;
+        }
+        lines.push(`${indent}RETURN ${emitExpr(expr, q)};`);
         break;
+      }
 
       case "assign":
         lines.push(`${indent}${quoteIdentifier(statement.sqlName)} := ${emitExpr(statement.expr, q)};`);

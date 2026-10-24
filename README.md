@@ -165,7 +165,12 @@ export function seatLimit(tier: Tier, extraSeats: Integer): Integer {
 ```
 
 ```sql
-RETURN CASE tier WHEN 'free' THEN 1 WHEN 'starter' THEN 1 WHEN 'pro' THEN 10 + extra_seats ELSE 100 + extra_seats * 2 END;
+RETURN CASE tier
+  WHEN 'free' THEN 1
+  WHEN 'starter' THEN 1
+  WHEN 'pro' THEN 10 + extra_seats
+  ELSE 100 + extra_seats * 2
+END;
 ```
 
 When every branch only returns a value, as here, the `switch` becomes a single `RETURN CASE … END`. A branch that does more — a `const`, a nested `if` — keeps the PL/pgSQL `CASE … END CASE` statement, where grouped labels share one `WHEN 'free', 'starter'`.
