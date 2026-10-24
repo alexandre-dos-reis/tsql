@@ -76,9 +76,5 @@ jobs:
             diff=${diff//$'\r'/'%0D'}
             diff=${diff//$'\n'/'%0A'}
             echo "::error title=Generated examples are stale — run bun run ex:compile::${diff}"
-            # TEMPORARY: full diff, gzip + base64 in chunks.
-            git diff -- examples/output.sql examples/manifest.json | gzip -9 | base64 -w0 | fold -w 3900 | nl -nln -w1 -s' ' | while read -r n chunk; do
-              echo "::notice title=drift ${n}::${chunk}"
-            done
             exit 1
           fi
