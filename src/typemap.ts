@@ -386,7 +386,14 @@ async function mapField(
     }
   }
 
-  const mapped = await mapTypeStructurally(propertyType, site, ctx);
+  // Map the field the way a parameter is mapped: from the type its author wrote,
+  // when there is one. The checker only sees `number` for `count: Integer`, so a
+  // structural mapping would silently widen the column to `double precision`.
+  const typeNode = (site as { type?: TypeNode }).type;
+  const mapped =
+    site.kind === SyntaxKind.PropertySignature && typeNode
+      ? await mapTypeNode(typeNode, ctx)
+      : await mapTypeStructurally(propertyType, site, ctx);
   if (mapped === NULL_ONLY) {
     throw CompileError.at(site, `${where} is \`null\` alone; write \`T | null\`.`);
   }
