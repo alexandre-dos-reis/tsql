@@ -17,7 +17,7 @@ import { PACKAGE_NAME } from "../src/typemap.ts";
 const manifest = (await Bun.file("package.json").json()) as {
   name: string;
   version: string;
-  exports: Record<string, string>;
+  exports: Record<string, string | { types: string; default: string }>;
   files: string[];
   bin: Record<string, string>;
   dependencies?: Record<string, string>;
@@ -98,16 +98,24 @@ describe("the published layout is coherent", () => {
     expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(["typescript"]);
   });
 
-  test("every exported entry point ships and exists", async () => {
-    for (const [entry, path] of Object.entries(manifest.exports)) {
-      expect(await Bun.file(path).exists()).toBe(true);
-      const top = path.replace("./", "").split("/")[0]!;
-      if (top !== "package.json") expect(manifest.files).toContain(top);
+  // Types come from the sources, code from the build: `dist/` is not in the
+  // repository, so only its place in `files` is checked here, and the
+  // installed-copy test below builds it and runs it.
+  test("every exported entry point ships: its types from src, its code from dist", async () => {
+    for (const [entry, target] of Object.entries(manifest.exports)) {
       expect(entry.startsWith(".")).toBe(true);
+      if (typeof target === "string") {
+        expect(target).toBe("./package.json");
+        continue;
+      }
+      expect(target.types).toMatch(/^\.\/src\/.+\.ts$/);
+      expect(await Bun.file(target.types).exists()).toBe(true);
+      expect(target.default).toMatch(/^\.\/dist\/.+\.mjs$/);
     }
+    expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist", "src"]));
   });
 
-  test("the launcher ships, and runs the sources rather than a build", async () => {
+  test("the launcher ships, and runs the build", async () => {
     const launcher = manifest.bin["tsql"]!;
     expect(await Bun.file(launcher).exists()).toBe(true);
     expect(manifest.files).toContain(launcher.split("/")[0]!);
@@ -116,22 +124,24 @@ describe("the published layout is coherent", () => {
     // start in order to report a missing Bun at all.
     const source = await Bun.file(launcher).text();
     expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
-    expect(source).toContain('"cli.ts"');
+    expect(source).toContain("../dist/cli.mjs");
   });
 
   // Node strips types, but not under node_modules — where every installed copy
   // lives — so a check run from the repository would pass while every `npx tsql`
-  // failed. Install a copy there, its dependencies beside it, and run it under node.
+  // failed. Build, install a copy there with its dependencies beside it, and run
+  // it under node: the CLI, and the library entry point too.
   test("an installed copy runs under node, from node_modules", async () => {
     const { cpSync, symlinkSync, rmSync } = await import("node:fs");
     const root = mkdtempSync(join(tmpdir(), "tsql-installed-"));
     try {
       const installed = join(root, "node_modules", ...manifest.name.split("/"));
       mkdirSync(installed, { recursive: true });
-      for (const entry of ["package.json", ...manifest.files.filter((f) => f === "bin" || f === "src")]) {
-        cpSync(entry, join(installed, entry), { recursive: true });
-      }
-      for (const dependency of ["commander", "typescript"]) {
+      for (const entry of ["package.json", "bin", "src"]) cpSync(entry, join(installed, entry), { recursive: true });
+      const { build } = await import("../scripts/build.ts");
+      await build(join(installed, "dist"));
+      for (const dependency of [...Object.keys(manifest.dependencies ?? {}), "typescript"]) {
+        mkdirSync(dirname(join(root, "node_modules", dependency)), { recursive: true });
         symlinkSync(resolve("node_modules", dependency), join(root, "node_modules", dependency), "dir");
       }
       const proc = Bun.spawn(
@@ -143,6 +153,13 @@ describe("the published layout is coherent", () => {
       expect(stderr).not.toContain("ExperimentalWarning");
       expect(stdout).toContain("ok");
       expect(await proc.exited).toBe(0);
+
+      const library = Bun.spawn(
+        ["node", "--input-type=module", "-e", `const m = await import(${JSON.stringify(manifest.name)}); console.log(typeof m.compileProject);`],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      expect((await new Response(library.stdout).text()).trim()).toBe("function");
+      expect(await new Response(library.stderr).text()).toBe("");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

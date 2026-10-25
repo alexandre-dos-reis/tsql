@@ -39,6 +39,9 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The published JavaScript: what bin/tsql.mjs and the package's exports load.
+      - run: bun run build
+
       - run: bun run typecheck
 
       - run: bun test
