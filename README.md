@@ -145,6 +145,7 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 | `--no-comments` | all | comments on |
 | `--out <file>` | `compile` | `generated/0001_functions.sql` |
 | `--manifest <file>` | `compile` | `generated/manifest.json` |
+| `-w, --watch` | `check` | off; keeps running and checks again on every save |
 | `--runs <n>` | `parity` | `200` |
 | `--seed <n>` | `parity` | random; replays a failure |
 | `--db-url <url>` | `parity` | an in-process PGlite |
