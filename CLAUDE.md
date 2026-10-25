@@ -44,7 +44,7 @@ winning; the CLI writes to `process.stdout`/`stderr` directly because Bun's `con
 colour. Anything a test or a script reads is therefore plain. `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
 then it runs on one reserved postgres.js connection inside a transaction that is always rolled back,
 with a savepoint around each query so one raising check does not abort the rest. Every command takes
-`--project`, `--schema`, `--no-comments`; only `compile` takes `--out`, `--manifest`; only `check`
+`--project`, `--schema`, `--no-comments`; only `compile` takes `--out` and `--manifest`; only `check`
 takes `--watch`; only `parity` takes `--runs`, `--seed`, `--db-url` — another command's option is refused.
 `check --watch` (`watchCheck`) re-runs the whole compile on any `.ts`/`.json` change under the
 tsconfig's directory, debounced, never exiting on errors. Its output is for a person: on a terminal
@@ -61,7 +61,11 @@ files throws, listing what the project holds, because reporting success having t
 the same class of quiet wrongness the translator refuses. `CompileOptions.include` is the unvalidated
 predicate form, used by the tests.
 
-The CLI's `--project` default (`functions/tsconfig.json`) and `--out`/`--manifest` defaults describe a
+`compile --manifest` is a flag, not a path: it writes `tsql-manifest.json` beside the migration, under
+that name only, so tooling finds it without being told; without it only the migration is written. No
+command reads the manifest back — `check` and `parity` use the one built in memory.
+
+The CLI's `--project` and `--out` defaults describe a
 *consuming* project, not this repo — the demo functions live under `examples/`, so repo scripts and tests
 pass paths explicitly.
 
@@ -71,9 +75,9 @@ shadow the built-in subcommand, which is part of why the example scripts are `ex
 `--no-script` stays in `typecheck` so the built-in wins even if a `check` script reappears.
 
 After any change that alters generated SQL for the examples, re-run `bun run ex:compile` and commit the result:
-`examples/output.sql` and `examples/manifest.json`, which sit beside the `examples/*.ts` they
+`examples/output.sql` and `examples/tsql-manifest.json`, which sit beside the `examples/*.ts` they
 are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
-`examples/manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
+`examples/tsql-manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
 compile, forever.
 
 ## TypeScript 7 compiler API
@@ -290,8 +294,8 @@ test file. `tests/README.md` explains the three.
 - `tests/divergent.test.ts` is the negative control: each pair in `tests/divergent/` must be reported as
   a divergence, on both backends. Keep it working: a parity harness that cannot fail proves nothing.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
-  visible to the library tests. It runs `check` and `parity`, never `compile` — `compile` writes, and a
-  test suite has no business rewriting checked-in output.
+  visible to the library tests. `compile` only ever writes into a throwaway directory — a test suite has
+  no business rewriting checked-in output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the

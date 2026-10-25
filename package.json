@@ -47,7 +47,7 @@
     "format:check": "oxfmt --check",
     "typecheck": "bun check --no-script && bun check --no-script -p examples/tsconfig.json",
     "prepublishOnly": "bun run typecheck && bun test",
-    "ex:compile": "bun run src/cli.ts compile examples/*.ts --project examples/tsconfig.json --out examples/output.sql --manifest examples/manifest.json",
+    "ex:compile": "bun run src/cli.ts compile examples/*.ts --project examples/tsconfig.json --out examples/output.sql --manifest",
     "ex:check": "bun run src/cli.ts check examples/*.ts --project examples/tsconfig.json",
     "ex:parity": "bun run src/cli.ts parity examples/*.ts --project examples/tsconfig.json",
     "changeset": "changeset",

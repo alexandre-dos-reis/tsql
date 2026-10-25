@@ -58,7 +58,7 @@ jobs:
       - name: Functions used from SQL (PostgreSQL 18)
         run: psql "$TSQL_TEST_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f examples/output.sql -f examples/usage.sql
 
-      # The compiler owns examples/output.sql and manifest.json and guarantees
+      # The compiler owns examples/output.sql and tsql-manifest.json and guarantees
       # byte-identical re-runs, so a stale committed copy is a build failure.
       - name: Generated examples are up to date
         run: bun run ex:compile
@@ -70,14 +70,14 @@ jobs:
           name: examples
           path: |
             examples/output.sql
-            examples/manifest.json
+            examples/tsql-manifest.json
 
       # On drift, the diff is also posted as an annotation, so it can be read
       # (and applied with `git apply`) from the PR without downloading anything.
       - name: Fail if generated examples drifted
         run: |
-          if ! git diff --quiet -- examples/output.sql examples/manifest.json; then
-            diff=$(git diff -- examples/output.sql examples/manifest.json)
+          if ! git diff --quiet -- examples/output.sql examples/tsql-manifest.json; then
+            diff=$(git diff -- examples/output.sql examples/tsql-manifest.json)
             diff=${diff//'%'/'%25'}
             diff=${diff//$'\r'/'%0D'}
             diff=${diff//$'\n'/'%0A'}

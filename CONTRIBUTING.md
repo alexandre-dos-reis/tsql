@@ -38,7 +38,7 @@ bun run format           # oxfmt, pinned as a dev dependency
 
 `.oxfmtrc.json` sets `printWidth` to 120 and excludes two things:
 
-- **`examples/manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
+- **`examples/tsql-manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
 - **`**/*.md`** — oxfmt reflows prose and flattens tables.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
@@ -52,7 +52,7 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
 4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
 5. `psql` runs `examples/output.sql` then `examples/usage.sql` on the PostgreSQL service: the [Using the functions from SQL](README.md#using-the-functions-from-sql) patterns, with assertions that raise if one misbehaves
-6. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+6. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/tsql-manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
 
 `examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few functions, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
@@ -66,7 +66,7 @@ docs/design.md          why: every semantic mapping and every refusal, with its 
 CONTRIBUTING.md         this file
 examples/*.ts           a short showcase for users — the functions the README walks through, own tsconfig
 examples/output.sql     what tsql emits for them, checked in beside the functions it came from
-examples/manifest.json  the manifest emitted with it
+examples/tsql-manifest.json  the manifest emitted with it (`compile --manifest`)
 examples/usage.sql      hand-written: the functions used from SQL (CHECK, generated column, trigger), run by CI
 tests/parity/           accepted cases: name.ts, the functions, and name.sql, the SQL it must compile to;
                         each is also proven against its TypeScript on PGlite and PostgreSQL

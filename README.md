@@ -134,7 +134,7 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 
 | Command | Does | Writes |
 | --- | --- | --- |
-| `tsql compile <files…>` | type check, translate, write the migration and a manifest | yes |
+| `tsql compile <files…>` | type check, translate, write the migration | yes |
 | `tsql check <files…>` | type check and translate — put it in CI next to your type checker | nothing |
 | `tsql parity <files…>` | prove each function agrees with its TypeScript | nothing |
 
@@ -144,7 +144,7 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 | `--schema <name>` | all | `app` |
 | `--no-comments` | all | comments on |
 | `--out <file>` | `compile` | `generated/0001_functions.sql` |
-| `--manifest <file>` | `compile` | `generated/manifest.json` |
+| `--manifest` | `compile` | off; also writes `tsql-manifest.json` beside the migration, for tooling |
 | `-w, --watch` | `check` | off; keeps running and checks again on every save |
 | `--runs <n>` | `parity` | `200` |
 | `--seed <n>` | `parity` | random; replays a failure |
