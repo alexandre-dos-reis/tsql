@@ -10,8 +10,8 @@
  * refuses to strip types there (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING),
  * so that a dependency cannot ship TypeScript. This launcher therefore strips
  * this package's own sources itself, with Node's own `stripTypeScriptTypes`,
- * through a load hook that touches nothing but `../src/*.ts`. Bun needs none
- * of it.
+ * through a load hook that touches nothing but `../src/*.ts`. Run from a
+ * checkout, or on Bun, none of it is needed, and none of it is installed.
  *
  * Nothing here is TypeScript, because npm puts this file on PATH: it has to
  * start even on a runtime that cannot load the rest, in order to say so.
@@ -21,7 +21,14 @@ import * as nodeModule from "node:module";
 
 const src = new URL("../src/", import.meta.url).href;
 
-if (!process.versions.bun && nodeModule.registerHooks && nodeModule.stripTypeScriptTypes) {
+if (!process.versions.bun && src.includes("/node_modules/") && nodeModule.registerHooks && nodeModule.stripTypeScriptTypes) {
+  // `stripTypeScriptTypes` announces itself as experimental on first use; that
+  // warning is ours to hide, not the user's to read. Every other warning passes.
+  const emitWarning = process.emitWarning;
+  process.emitWarning = function (warning, ...rest) {
+    if (String(warning?.message ?? warning).startsWith("stripTypeScriptTypes is an experimental feature")) return;
+    return emitWarning.call(process, warning, ...rest);
+  };
   nodeModule.registerHooks({
     load(url, context, nextLoad) {
       if (!url.startsWith(src) || !url.endsWith(".ts")) return nextLoad(url, context);

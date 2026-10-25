@@ -140,6 +140,7 @@ describe("the published layout is coherent", () => {
       );
       const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       expect(stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+      expect(stderr).not.toContain("ExperimentalWarning");
       expect(stdout).toContain("ok");
       expect(await proc.exited).toBe(0);
     } finally {
