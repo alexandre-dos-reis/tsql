@@ -30,8 +30,9 @@ export async function openProject(tsconfigPath: string): Promise<OpenProject> {
   if (!existsSync(configFileName)) throw new ProjectNotFoundError(configFileName);
 
   // The executable is resolved here rather than left to the `typescript`
-  // package, which finds it relative to its own module URL — inside a compiled
-  // binary that URL is `/$bunfs/root/…` and the lookup dies with ENOENT.
+  // package: it belongs to the user's own install, and when it cannot be found
+  // (or lacks its library files, on which it would hang) the error lists every
+  // place that was tried instead of failing deep inside the API.
   const tsserverPath = findTscPath({ near: configFileName });
   if (!tsserverPath) throw new Error(describeSearch({ near: configFileName }));
 

@@ -4,15 +4,15 @@ import { dirname, join, resolve } from "node:path";
 /**
  * Locating the TypeScript 7 native executable.
  *
- * The `typescript` package normally finds its own binary with `getExePath()`,
- * which reads `../package.json` relative to its module URL. Inside a
- * `bun build --compile` binary that URL is `/$bunfs/root/…`, so the read fails
- * with ENOENT and the compiler dies before translating anything. The API takes
- * a `tsserverPath` option for precisely this case, so tsql resolves the
- * executable itself and hands it over.
+ * The `typescript` package can find its own binary with `getExePath()`, which
+ * reads `../package.json` relative to its module URL. tsql resolves it itself
+ * instead and passes it to the API as `tsserverPath`: the executable belongs to
+ * the user's own `typescript` install, which may be hoisted anywhere in a
+ * monorepo, and a resolution done here can insist on the library files beside
+ * it — without them the native compiler hangs — and report every path it tried.
  *
- * The same resolution also covers the published binary, which ships without a
- * `node_modules` of its own and finds the executable in the consuming project.
+ * (It began as a workaround: inside a `bun build --compile` binary, which tsql
+ * no longer ships, the module URL is `/$bunfs/root/…` and `getExePath()` fails.)
  */
 
 /** The platform package name, spelled exactly as the `typescript` package spells it. */
@@ -78,8 +78,9 @@ function candidates(options: TscPathOptions): string[] {
   // layout this resolver does not anticipate.
   add(process.env["TSQL_TSC"] ? resolve(process.env["TSQL_TSC"]) : undefined);
 
-  // Beside the running executable: a standalone bundle that vendors the
-  // compiler next to the binary rather than resolving it from a project.
+  // Beside the running executable: for a standalone build that vendors the
+  // compiler next to itself. None is published today; the npm package always
+  // finds the user's own install below.
   const self = dirname(process.execPath);
   add(join(self, EXE));
   add(join(self, "vendor", EXE));

@@ -81,13 +81,12 @@ const NUMERIC_ALIASES: Record<string, PgScalar> = {
 
 /**
  * This package's own name, which is how `Integer`, `Numeric` and `Float` are
- * told apart from identically named local aliases. Kept in step with
- * package.json by a test rather than read at runtime, since the compiled
- * binary has no package.json of its own to read.
+ * told apart from identically named local aliases. A constant kept in step
+ * with package.json by a test, so recognising it needs no file read at run time.
  */
 export const PACKAGE_NAME = "@adr/tsql";
 
-/** `pgtypes.ts` when running from source; the published package may carry `.d.ts`/`.js`. */
+/** `pgtypes.ts`, which is what the published types point at too; a `.d.ts` or `.js` copy is accepted as well. */
 const PGTYPES_FILE = /(^|\/)pgtypes\.(ts|d\.ts|js)$/;
 
 /** Was this declaration written in tsql's own authoring vocabulary? */
