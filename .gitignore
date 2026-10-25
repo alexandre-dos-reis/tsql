@@ -5,3 +5,4 @@ node_modules/
 .devenv*
 devenv.local.nix
 .direnv
+dist/

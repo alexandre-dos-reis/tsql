@@ -141,8 +141,8 @@ dumb?"
 
 ## Publishing
 
-The package is **sources only** — `bin/tsql.mjs` plus `src/`, 45 kB, no build output. Releases go
-through changesets:
+The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` (`bun run build`, run by
+`prepublishOnly`, not committed) and `src/` for the types. Releases go through changesets:
 
 ```
 bun run changeset   # describe a change (interactive — needs a TTY)
@@ -163,15 +163,21 @@ bun run release     # changeset publish
   dependencies are `commander` (the CLI, itself dependency-free) and `fast-check`,
   `@electric-sql/pglite` and `postgres`, for the parity harness and `tsql parity`, which
   `tests/packaging.test.ts` asserts.
-- **`exports` points at `src/*.ts`.** Node has stripped types natively since 22.18, Bun always has,
-  and TypeScript resolves `.ts` as its own types — so there is no build step and no
-  emitted-declaration drift. **The price is that every file in `src/` must be erasable**: no enums,
-  no namespaces, no constructor parameter properties, because those generate code rather than only
-  describing types. `erasableSyntaxOnly` in `tsconfig.json` makes that a type error rather than a
-  runtime failure in a consumer's Node.
-- **`bin/tsql.mjs` must stay plain JavaScript.** npm puts it on PATH, so it has to start on a runtime
-  too old to load the rest in order to say so. It `import()`s `src/cli.ts` directly — no subprocess,
-  no bundled runtime, and it runs under whichever of Node or Bun invoked it.
+- **Code from `dist/`, types from `src/`.** Node strips TypeScript types, but refuses to under
+  `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every installed copy
+  lives — so the published code is JavaScript. `scripts/build.ts` runs `Bun.build` on `cli.ts`,
+  `index.ts` and `pgtypes.ts`: ESM, `target: "node"`, **no dependency bundled** (`typescript` must be
+  the consumer's own, with its native executable; PGlite loads its WebAssembly from beside itself),
+  code splitting so `runParity` and PGlite stay in a chunk only `parity` loads, not minified.
+  `exports` maps `types` to `src/*.ts` and `default` to `dist/*.mjs`, so there are no emitted
+  declarations to drift. In the repository nothing changes: tests and scripts run `src/` directly.
+  A test from the repository cannot see the `node_modules` problem — the path has none — which is why
+  `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the library with `node`.
+- **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter
+  properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources runnable as they are in the
+  repository, under Node as well as Bun.
+- **`bin/tsql.mjs` stays plain JavaScript**: npm puts it on PATH. It `import()`s `dist/cli.mjs` — no
+  subprocess, no bundled runtime, whichever of Node or Bun invoked it.
 - **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global
   type checks and then breaks every consumer on Node. `tests/cli.test.ts` spawns the CLI under `node`
   for that reason.

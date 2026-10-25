@@ -92,7 +92,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 
 ## Publishing
 
-The package is **sources only** — 45 kB, no build output and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets):
+The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` and the TypeScript sources in `src/` (for the types) — no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets):
 
 ```
 bun run changeset   # describe a change (interactive)
@@ -100,10 +100,10 @@ bun run version     # bump and write CHANGELOG.md
 bun run release     # changeset publish
 ```
 
-`prepublishOnly` runs the type checker and the test suite.
+`prepublishOnly` runs the build (`bun run build`, `scripts/build.ts`), the type checker and the test suite. `dist/` is not committed.
 
 Three decisions worth stating:
 
 - **No compiled binary.** `bun build --compile` was tried and removed. The embedded Bun runtime is the entire weight: a `console.log("hi")` binary is 104 MB, and this whole compiler adds 0.5 MB to it. `strip` is a no-op — the runtime ships stripped — and no amount of minifying 0.3 MB of JavaScript moves a 104 MB number. Five platforms meant 231 MB per release, immutable on the registry forever, to solve "the user has no JavaScript runtime", which is not true of anyone running `npm i`.
 - **`typescript` is a peer dependency, not a dependency.** The checker has to be the one that agrees with the consumer's own code; a second copy resolved under this package would be a different one, with its own `lib.*.d.ts` and its own native executable. The runtime dependencies are commander, for the CLI, and fast-check, PGlite and postgres.js: parity checking is part of the product, not a test helper, so `tsql parity` has to work straight after `npm i`. A test asserts that nothing else creeps in.
-- **The package ships TypeScript sources, not a build.** Node has stripped types natively since 22.18, Bun always has, and TypeScript resolves `.ts` as its own types — so `exports` points straight at `src/`, with no build step and no emitted-declarations drift. The constraint this imposes is that every source file must be *erasable*: no enums, no namespaces, no constructor parameter properties, since those generate code rather than only describing types. `erasableSyntaxOnly` in `tsconfig.json` enforces it, and a test runs the CLI under `node` so a Bun-only global cannot slip through type checking.
+- **Code from a build, types from the sources.** Node strips TypeScript types, but refuses to under `node_modules`, where an installed package lives — so the published code is JavaScript, built by `Bun.build`: ESM for Node, no dependency bundled (`typescript` must be the consumer's own, PGlite loads its WebAssembly from beside itself), split so `tsql parity`'s runner loads only for that command, not minified. `exports` maps `types` to `src/*.ts` and `default` to `dist/*.mjs`, so there are no emitted declarations to drift. The sources must stay *erasable* (`erasableSyntaxOnly`), so the repository runs them directly under Node and Bun; a packaging test builds, installs a copy under `node_modules`, and runs the CLI and the library with `node`.
