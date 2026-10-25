@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `tsql` compiles a deliberately restricted subset of pure TypeScript functions to PL/pgSQL, refusing
 anything whose semantics it cannot preserve, and proves the two implementations agree with generated
-parity tests. `README.md` is the design document: it records *why* each restriction and each semantic
-mapping exists. Read the relevant section there before changing behaviour — most of what looks like a
-missing feature is a documented, deliberate rejection.
+parity tests. `docs/design.md` is the design document: it records *why* each restriction and each
+semantic mapping exists. Read the relevant section there before changing behaviour — most of what looks
+like a missing feature is a documented, deliberate rejection. `README.md` is the user's short guide;
+`CONTRIBUTING.md` holds the toolchain, CI and release notes. Keep the README short: reasoning belongs
+in `docs/design.md`.
 
 ## Environment
 
@@ -195,7 +197,7 @@ about the IR.
 the alias the author wrote (`Integer`) survives instead of the `number` it resolves to;
 `mapInferredType` is the checker-driven fallback.
 
-Composites are the subtle part, and the README's "Object types" section carries the full reasoning:
+Composites are the subtle part, and the "Object types" section of `docs/design.md` carries the full reasoning:
 
 - Keyed to the **name**, not the shape — TypeScript is structural, PostgreSQL composites are nominal.
   Anonymous parameter shapes are rejected. Two identical shapes stay two SQL types.
@@ -213,7 +215,7 @@ Composites are the subtle part, and the README's "Object types" section carries 
   self-consistent was considered and rejected — it would make the parity harness go green while
   caller-visible behaviour still differed.
 
-Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters, locals or composite fields (one
+Arrays (`ArrayType`, `docs/design.md` "Arrays") are `readonly T[]` parameters, locals or composite fields (one
 column of array type, not flattened) and return values, never nullable, elements a scalar or a
 non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
 and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
@@ -223,7 +225,7 @@ same reason as field mutation — and requiring it lets `tsc` refuse the mutatio
 `= ANY`, NULL when an element is). Recognised through `checker.isArrayType`, not by name. The parity
 harness builds each array argument as `ARRAY[$1::t, …]::t[]`, so its query depends on the input.
 
-Named closed sets of strings (`NamedText` on a `ScalarType`, README "Named types") stay `sql: "text"`
+Named closed sets of strings (`NamedText` on a `ScalarType`, `docs/design.md` "Named types") stay `sql: "text"`
 so every text rule still applies: a union alias is a **domain** (structural, like the union), an
 `as const` object with its `(typeof X)[keyof typeof X]` alias or a string `enum` is a PostgreSQL
 **enum** (a named vocabulary, which PostGraphile/PostgREST expose). Recognised by provenance and by
@@ -302,6 +304,6 @@ test file. `tests/README.md` explains the three.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional
   literals are emitted as `1.5::double precision` (an unadorned `1.5` is `numeric`); nullable equality
   is `IS [NOT] DISTINCT FROM`; `&&`/`||` require booleans; concatenation requires non-nullable operands.
-  See the README section of the same name before changing any of these.
+  See the section of the same name in `docs/design.md` before changing any of these.
 - **Reject rather than guess.** Silently generating SQL that diverges from the TypeScript is the one
   outcome this project exists to prevent.
