@@ -10,29 +10,9 @@ IF to_regtype('app.content') IS NULL THEN
 
 IF to_regtype('app.crate') IS NULL THEN
   CREATE TYPE app.crate AS (
-    foo_bar text
+    foo app.content
   );
 
-CREATE OR REPLACE FUNCTION app.bar_of(
-  content app.content
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN (content).bar;
-END;
-$$;
+RETURN app.bar_of((crate).foo);
 
-CREATE OR REPLACE FUNCTION app.outer_bar(
-  crate app.crate
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN app.bar_of(ROW((crate).foo_bar)::app.content);
-END;
-$$;
+RETURN app.bar_of(ROW(((crate).foo).bar)::app.content);

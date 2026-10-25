@@ -1,5 +1,4 @@
 import {
-  fieldLabel,
   isArray,
   isScalar,
   namedType,
@@ -162,7 +161,7 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       return `${emitExpr(expr.operand, q, PREC.atom)}::${q.scalar(expr.type)}`;
 
     case "row":
-      // One argument per flattened field, in field order, cast to the named
+      // One argument per field, in field order, cast to the named
       // composite: PostgreSQL composites are nominal, so a bare ROW() will not do.
       return `ROW(${expr.args.map((a) => emitExpr(a, q)).join(", ")})::${q.type(expr.type)}`;
 
@@ -378,14 +377,14 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
   const qualified = typeName(composite, schema);
   const fields = composite.fields.map((f) => `${quoteIdentifier(f.sqlName)} ${typeName(f.type, schema)}`);
   // The guard compares against `format_type`, which writes a type from another
-  // schema qualified or not depending on the search path. A column holding an
-  // array of composites is therefore expected through `format_type` too, so
-  // both sides are written the same way.
+  // schema qualified or not depending on the search path. A column of one of our
+  // own types — a composite, a domain, an enum, or an array of one — is
+  // therefore expected through `format_type` too, so both sides are written the
+  // same way.
   //
   // The names are unquoted, as `pg_attribute.attname` holds them: a field named
   // `limit` is `"limit"` in `CREATE TYPE` but `limit` in the catalogue.
-  const ours = (t: ScalarType | ArrayType): boolean =>
-    isArray(t) ? !isScalar(t.element) || t.element.named !== undefined : t.named !== undefined;
+  const ours = (t: PgType): boolean => (isArray(t) ? ours(t.element) : !isScalar(t) || t.named !== undefined);
   const expected = composite.fields
     .map((f) =>
       ours(f.type)
@@ -398,9 +397,6 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
   if (comments) {
     lines.push(`-- ${composite.module ?? "functions"}: ${composite.tsName}`);
     for (const field of composite.fields) {
-      // A flattened column no longer looks like the shape it came from, so the
-      // path is recorded for whoever reads the schema.
-      if (field.path.length > 1) lines.push(`--   ${field.sqlName}: from ${fieldLabel(field.path)}`);
       const allowed = unenforced(field.type);
       if (allowed) lines.push(allowedNote(isArray(field.type) ? `${field.sqlName}[]` : field.sqlName, allowed));
     }
@@ -533,9 +529,10 @@ export function emitEnum(named: NamedText, options: EmitOptions = {}): string {
 }
 
 /**
- * Composites in name order, except that a type comes after the types its array
- * fields hold: `CREATE TYPE app.purchase AS (lines app.purchase_line[])` needs
- * `app.purchase_line` to exist. Lowering refuses cycles, so this terminates.
+ * Composites in name order, except that a type comes after the composites its
+ * fields hold, directly or as array elements: `CREATE TYPE app.basket AS
+ * (customer app.customer, lines app.basket_line[])` needs both to exist first.
+ * Lowering refuses cycles, so this terminates.
  */
 function dependencyOrder(composites: readonly CompositeType[]): CompositeType[] {
   const ordered: CompositeType[] = [];
@@ -545,9 +542,8 @@ function dependencyOrder(composites: readonly CompositeType[]): CompositeType[] 
     if (placed.has(composite.sqlName)) return;
     placed.add(composite.sqlName);
     for (const field of composite.fields) {
-      if (isArray(field.type) && !isScalar(field.type.element)) {
-        place(byName.get(field.type.element.sqlName) ?? field.type.element);
-      }
+      const held = isArray(field.type) ? field.type.element : field.type;
+      if (!isScalar(held)) place(byName.get(held.sqlName) ?? held);
     }
     ordered.push(composite);
   };

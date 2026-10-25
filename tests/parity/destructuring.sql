@@ -6,8 +6,7 @@
 CREATE TYPE app.purchase AS (
   plan text,
   quantity integer,
-  shipping_country text,
-  shipping_express boolean
+  shipping app.purchase_shipping
 );
 
 CREATE OR REPLACE FUNCTION app.bonus_quantity(
@@ -54,7 +53,22 @@ DECLARE
   express boolean;
 BEGIN
   quantity := (purchase).quantity;
-  express := (purchase).shipping_express;
+  express := ((purchase).shipping).express;
   RETURN CASE WHEN express THEN quantity + 1 ELSE quantity END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.shipping_country(
+  purchase app.purchase
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  shipping app.purchase_shipping;
+BEGIN
+  shipping := (purchase).shipping;
+  RETURN (shipping).country;
 END;
 $$;

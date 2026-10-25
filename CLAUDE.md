@@ -201,24 +201,26 @@ Composites are the subtle part, and the "Object types" section of `docs/design.m
 
 - Keyed to the **name**, not the shape — TypeScript is structural, PostgreSQL composites are nominal.
   Anonymous parameter shapes are rejected. Two identical shapes stay two SQL types.
-- Nested shapes are **flattened** to prefixed columns (`foo.bar` → `foo_bar`, path recorded in a
-  comment), because an intermediate composite can be NULL where TypeScript guarantees a value, and
-  `IS NULL` on a composite is true when every field is NULL — two indistinguishable states. Guards:
-  collision is a build error, >63-byte identifiers are a build error (PostgreSQL truncates silently),
-  recursion is a build error, nesting caps at 4.
-- Field access resolves as *composite-typed base + path* (`resolveAccess`), so a parameter, a local, a
-  nested path and a call result all read the same way.
-- Object literals build `ROW(...)::app.thing` and need a contextual target type; spreads resolve **by
-  field path** with last-one-wins, which is what makes them compose with flattening.
+- Nested as PostgreSQL nests them: a field of a named object type is a column of that type's own
+  composite (`customer app.customer`, read `((basket).customer).tier`). Anonymous nested shapes are
+  refused (a column needs a named type; inventing one would put a type in the schema nobody wrote);
+  a nullable nested object is refused, because `IS NULL` on a composite is also true for a row of
+  NULL fields; a shape containing itself is refused (`TypeCtx.mapping`). Flattening to prefixed
+  columns was the earlier design and was dropped: it only protected the nullable case, which is
+  refused anyway. Column collisions (`fooBar`/`foo_bar`) and >63-byte names are build errors.
+- Field access resolves as *composite-typed base + path* (`resolveAccess`), read one field at a time
+  (`readPath`), so a parameter, a local, a nested field and a call result all read the same way.
+- Object literals build `ROW(...)::app.thing` and need a contextual target type; fields match by name
+  with last-one-wins, and a nested literal takes the field's type, so it becomes a `ROW` inside a `ROW`.
 - Field mutation is rejected because it is *untranslatable*, not unsupported: PL/pgSQL parameters are
   by value, so the effect would silently vanish. Copying the argument into a local to make the SQL
   self-consistent was considered and rejected — it would make the parity harness go green while
   caller-visible behaviour still differed.
 
 Arrays (`ArrayType`, `docs/design.md` "Arrays") are `readonly T[]` parameters, locals or composite fields (one
-column of array type, not flattened) and return values, never nullable, elements a scalar or a
+column of array type) and return values, never nullable, elements a scalar or a
 non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
-and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
+and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`, for nested and array fields alike),
 and a shape recursive through an array is refused (`TypeCtx.mapping`). `readonly` is required because arrays are passed by value — the
 same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
 `cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
@@ -277,7 +279,7 @@ test file. `tests/README.md` explains the three.
   `openDatabase` (the path `tsql parity` takes) on PGlite, and on PostgreSQL when `TSQL_TEST_DB_URL` is
   set (CI sets it, with a `postgres:18` service). `src/parity.ts` derives a fast-check arbitrary per
   parameter from its PostgreSQL type, 200 inputs per function; composite returns are compared field by
-  field via `(result).field`, array fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
+  field via `(result).field`, array and nested-object fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
   mutating function cannot pass. It also applies the migration twice and checks a drifted type is refused.
 - `tests/rejected.test.ts` compiles each case in `tests/rejected/` alone and checks the build fails with
   every `Expected:` fragment, at the marked line if there is one.

@@ -8,9 +8,7 @@
       "sqlName": "subscription",
       "fields": [
         {
-          "path": [
-            "plan"
-          ],
+          "tsName": "plan",
           "sqlName": "plan",
           "type": {
             "kind": "scalar",
@@ -116,9 +114,7 @@
             "sqlName": "subscription",
             "fields": [
               {
-                "path": [
-                  "plan"
-                ],
+                "tsName": "plan",
                 "sqlName": "plan",
                 "type": {
                   "kind": "scalar",

@@ -1,10 +1,13 @@
 /**
  * Rejected: a recursive object type.
  *
- * Nested shapes are flattened into columns, and a type that contains itself would
- * flatten forever. (PostgreSQL also forbids a composite type that contains itself.)
+ * A field of an object type is a column of that type's composite, and a type
+ * that contains itself has no fixed depth. PostgreSQL forbids it too:
  *
- * Expected: makes the shape recursive
+ *     CREATE TYPE app.tree_node AS (label text, child app.tree_node);
+ *     -- ERROR: composite type tree_node cannot be made a member of itself
+ *
+ * Expected: `TreeNode` contains itself
  */
 interface TreeNode {
   label: string;

@@ -61,25 +61,18 @@ export interface CompositeType {
 }
 
 /**
- * One leaf of a (possibly nested) object shape.
+ * One field of an object shape, one column of the composite type.
  *
- * Nested shapes are flattened: `{ foo: { bar: string } }` yields a single field
- * with path `["foo", "bar"]` and SQL name `foo_bar`. Flattening keeps the
- * composite one level deep, which matters because an intermediate composite can
- * be NULL in SQL even where TypeScript guarantees a value — with no intermediate
- * there is nothing to be NULL.
+ * A field of an object type is a column of that type's own composite, as
+ * PostgreSQL nests them: `customer: Customer` is `customer app.customer`, read
+ * as `((basket).customer).tier`. Its type is never nullable — `IS NULL` on a
+ * composite is also true for a row whose fields are all NULL, so a nullable
+ * one would have two absences SQL cannot tell apart.
  */
 export interface CompositeField {
-  /** The TypeScript access path from the object root, e.g. `["foo", "bar"]`. */
-  readonly path: readonly string[];
+  readonly tsName: string;
   readonly sqlName: string;
-  /** A scalar, or an array: an array is a leaf, one column of array type. */
-  readonly type: ScalarType | ArrayType;
-}
-
-/** How a field path reads in a message: `foo.bar`. */
-export function fieldLabel(path: readonly string[]): string {
-  return path.join(".");
+  readonly type: ScalarType | ArrayType | CompositeType;
 }
 
 /**
@@ -223,10 +216,9 @@ export function shapeOf(composite: CompositeType): string {
   return composite.fields.map((f) => `${f.sqlName} ${columnType(f.type)}`).join(", ");
 }
 
-function columnType(type: ScalarType | ArrayType): string {
-  const scalarName = (t: ScalarType) => t.named?.sqlName ?? t.sql;
-  if (!isArray(type)) return scalarName(type);
-  return `${isScalar(type.element) ? scalarName(type.element) : type.element.sqlName}[]`;
+function columnType(type: PgType): string {
+  if (isArray(type)) return `${columnType(type.element)}[]`;
+  return isScalar(type) ? (type.named?.sqlName ?? type.sql) : type.sqlName;
 }
 
 export interface ParamIR {
@@ -360,7 +352,7 @@ export type ExprIR =
   | { readonly kind: "arrayLiteral"; readonly parts: readonly ArrayPart[]; readonly type: ArrayType }
   /** `xs::double precision[]` — an array whose numeric elements widen, element by element. */
   | { readonly kind: "arrayCast"; readonly operand: ExprIR; readonly type: ArrayType }
-  // `ROW(a, b)::app.thing` — one argument per flattened field, in field order.
+  // `ROW(a, b)::app.thing` — one argument per field, in field order; a field of an object type is a `ROW` too.
   | { readonly kind: "row"; readonly args: readonly ExprIR[]; readonly type: CompositeType };
 
 /** One run of an array literal: elements written out, or an array spread into it. */
