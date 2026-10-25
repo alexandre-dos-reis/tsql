@@ -172,6 +172,13 @@ bun run release     # changeset publish
 - **`bin/tsql.mjs` must stay plain JavaScript.** npm puts it on PATH, so it has to start on a runtime
   too old to load the rest in order to say so. It `import()`s `src/cli.ts` directly — no subprocess,
   no bundled runtime, and it runs under whichever of Node or Bun invoked it.
+- **Node does not strip types under `node_modules`** (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING),
+  which is where every installed copy lives. So on Node the launcher registers a load hook
+  (`module.registerHooks`) that strips this package's own `src/*.ts` with `module.stripTypeScriptTypes`,
+  and touches nothing else. A test run from the repository cannot see this — the path has no
+  `node_modules` in it — which is why `tests/packaging.test.ts` installs a copy under one and runs it
+  with `node`. The library entry point (`@adr/tsql`) has no launcher: imported from Node, it needs
+  the same hook; from Bun, nothing.
 - **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global
   type checks and then breaks every consumer on Node. `tests/cli.test.ts` spawns the CLI under `node`
   for that reason.

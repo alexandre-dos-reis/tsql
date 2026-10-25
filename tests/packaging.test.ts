@@ -116,6 +116,34 @@ describe("the published layout is coherent", () => {
     // start in order to report a missing Bun at all.
     const source = await Bun.file(launcher).text();
     expect(source.startsWith("#!/usr/bin/env node")).toBe(true);
-    expect(source).toContain('src", "cli.ts');
+    expect(source).toContain('"cli.ts"');
+  });
+
+  // Node strips types, but not under node_modules — where every installed copy
+  // lives — so a check run from the repository would pass while every `npx tsql`
+  // failed. Install a copy there, its dependencies beside it, and run it under node.
+  test("an installed copy runs under node, from node_modules", async () => {
+    const { cpSync, symlinkSync, rmSync } = await import("node:fs");
+    const root = mkdtempSync(join(tmpdir(), "tsql-installed-"));
+    try {
+      const installed = join(root, "node_modules", ...manifest.name.split("/"));
+      mkdirSync(installed, { recursive: true });
+      for (const entry of ["package.json", ...manifest.files.filter((f) => f === "bin" || f === "src")]) {
+        cpSync(entry, join(installed, entry), { recursive: true });
+      }
+      for (const dependency of ["commander", "typescript"]) {
+        symlinkSync(resolve("node_modules", dependency), join(root, "node_modules", dependency), "dir");
+      }
+      const proc = Bun.spawn(
+        ["node", join(installed, manifest.bin["tsql"]!), "check", "tests/parity/ifElseChain.ts", "--project", "tests/parity/tsconfig.json"],
+        { stdout: "pipe", stderr: "pipe", env: { ...process.env, NO_COLOR: "1" } },
+      );
+      const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      expect(stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+      expect(stdout).toContain("ok");
+      expect(await proc.exited).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
