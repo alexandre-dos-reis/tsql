@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 545" width="900" height="545" role="img" aria-labelledby="t d">
   <title id="t">tsql</title>
-  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM…) and PostgreSQL's world (tables, triggers, RLS policies, indexes…). Where they overlap — pure business rules — tsql makes both give the same answer.</desc>
+  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM…) and PostgreSQL's world (tables, triggers, RLS, indexes…). Where they overlap — pure business rules — tsql makes both give the same answer.</desc>
 
   <!-- One word in TypeScript's blue, with a fine version of the elephant's outline: a black border, a white rim -->
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="108" font-weight="800" letter-spacing="-2" stroke-linejoin="round" text-anchor="middle">
@@ -50,12 +50,12 @@
 <path style="stroke-width:3;" d="M0,60.232"/>
 </g>
   </g>
-  <text x="570" y="490" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">RLS policies</text>
-  <text x="560" y="175" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">transactions</text>
-  <text x="680" y="415" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">triggers</text>
-  <text x="575" y="390" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">indexes</text>
-  <text x="630" y="455" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">tables</text>
-  <text x="545" y="435" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">roles</text>
+  <text x="570" y="490" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">transactions</text>
+  <text x="535" y="175" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">triggers</text>
+  <text x="685" y="415" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">indexes</text>
+  <text x="640" y="190" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">tables</text>
+  <text x="590" y="390" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">roles</text>
+  <text x="545" y="260" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">RLS</text>
 
   <!-- Where they overlap: the rules tsql makes agree -->
   <text x="450.0" y="288" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="2">PURE</text>
