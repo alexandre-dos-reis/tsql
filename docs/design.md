@@ -95,7 +95,7 @@ When every branch only returns a value, as here, the `switch` becomes a single `
 Every rejection is a thing that *looks* fine and would have compiled to subtly wrong SQL:
 
 ```
-functions/billing.ts:2:7 - error: An `if` condition must be a boolean, not `text`.
+functions/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
                        Truthiness is not translated — compare explicitly.
 
     2 |   if (name) {

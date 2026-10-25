@@ -47,10 +47,9 @@ with a savepoint around each query so one raising check does not abort the rest.
 `--project`, `--schema`, `--no-comments`; only `compile` takes `--out`, `--manifest`; only `check`
 takes `--watch`; only `parity` takes `--runs`, `--seed`, `--db-url` — another command's option is refused.
 `check --watch` (`watchCheck`) re-runs the whole compile on any `.ts`/`.json` change under the
-tsconfig's directory, debounced, never exiting on errors. Its framing lines (`tsql: checking…`,
-`… Watching for file changes.`) and the `file:line:col - error: message` head of every diagnostic
-(`CompileError.format`, matching TypeScript's `- error TS…:`) are what the README's VS Code problem
-matcher keys on: change them and the README's task with them. Every command
+tsconfig's directory, debounced, never exiting on errors. Its output is for a person: on a terminal
+each round starts on a cleared screen, names the file that changed, then reads like a plain `check`.
+Editor integration (problem matchers, an LSP) is deliberately not part of it yet. Every command
 **requires file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a

@@ -145,7 +145,7 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 | `--no-comments` | all | comments on |
 | `--out <file>` | `compile` | `generated/0001_functions.sql` |
 | `--manifest <file>` | `compile` | `generated/manifest.json` |
-| `-w, --watch` | `check` | off; checks again on every change |
+| `-w, --watch` | `check` | off; keeps running and checks again on every save |
 | `--runs <n>` | `parity` | `200` |
 | `--seed <n>` | `parity` | random; replays a failure |
 | `--db-url <url>` | `parity` | an in-process PGlite |
@@ -153,40 +153,6 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 Files are always named (a glob is fine); there is no "compile everything" default. `tsql <command>
 --help` lists a command's options. Every command exits non-zero on a refused construct, and `parity`
 also on a divergence.
-
-## In your editor
-
-`tsql check --watch` keeps running and checks again whenever a file of the project changes. Every
-diagnostic starts `file:line:col - error`, like TypeScript's, and every round ends with `Watching for
-file changes.`, so an editor can show the errors in place. In VS Code, add this task to
-`.vscode/tasks.json`; it starts with the folder and fills the Problems panel:
-
-```json
-{
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "tsql",
-      "type": "shell",
-      "command": "npx tsql check functions/*.ts --watch",
-      "options": { "env": { "NO_COLOR": "1" } },
-      "isBackground": true,
-      "runOptions": { "runOn": "folderOpen" },
-      "problemMatcher": {
-        "owner": "tsql",
-        "fileLocation": ["relative", "${workspaceFolder}"],
-        "pattern": {
-          "regexp": "^(.+):(\\d+):(\\d+) - (error)(?: TS\\d+)?: (.*)$",
-          "file": 1, "line": 2, "column": 3, "severity": 4, "message": 5
-        },
-        "background": { "activeBegins": true, "beginsPattern": "tsql: checking", "endsPattern": "Watching for file changes" }
-      }
-    }
-  ]
-}
-```
-
-Other editors read the same line; in Vim, `set errorformat=%f:%l:%c\ -\ error:\ %m,%f:%l:%c\ -\ error\ TS%n:\ %m`.
 
 ## Parity
 

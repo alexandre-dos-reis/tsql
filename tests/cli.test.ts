@@ -280,7 +280,7 @@ describe("a refusal reads like a compiler diagnostic", () => {
       "tests/rejected/tsconfig.json",
     ]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - error: Arrays compare by identity");
+    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - Arrays compare by identity");
     // `a === b` is seven characters, and all seven are underlined.
     expect(stderr).toMatch(/\|   return a === b;.*\n\s+\|\s{10}\^{7}\n/);
     expect(stderr).toContain("1 error(s). No SQL was written.");
@@ -322,7 +322,7 @@ describe("check --watch checks again when a file changes", () => {
     }
   }
 
-  test("each round is framed for an editor, and a saved mistake is reported", async () => {
+  test("each round reads like a plain check, and a saved mistake is reported", async () => {
     const { writeFile, rm } = await import("node:fs/promises");
     const { dir, file } = await project("export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n");
     const proc = Bun.spawn([process.execPath, "src/cli.ts", "check", file, "--project", `${dir}/tsconfig.json`, "--watch"], {
@@ -333,16 +333,21 @@ describe("check --watch checks again when a file changes", () => {
     const stdout = { text: "" };
     const stderr = { text: "" };
     try {
-      await until(proc.stdout, stdout, /Watching for file changes\./, 1);
-      expect(stdout.text).toMatch(/^\[\d\d:\d\d:\d\d\] tsql: checking…$/m);
-      expect(stdout.text).toContain("tsql: ok — 1 function(s) compile. Watching for file changes.");
+      await until(proc.stdout, stdout, /Watching for changes\./, 1);
+      expect(stdout.text).toMatch(/^\[\d\d:\d\d:\d\d\] Checking…$/m);
+      expect(stdout.text).toContain("✓ ok — 1 function(s) compile, nothing written:");
+      expect(stdout.text).toContain("app.limit()");
+      expect(stdout.text).toMatch(/^\[\d\d:\d\d:\d\d\] Watching for changes\. Press Ctrl-C to stop\.$/m);
+      // Not a terminal: no screen clearing, no colour.
+      expect(stdout.text).not.toContain("\u001b[");
 
       // Truthiness is refused: the second round reports it, and keeps watching.
       await writeFile(file, "export function limit(name: string): number {\n  if (name) {\n    return 3;\n  }\n  return 100;\n}\n");
-      await until(proc.stderr, stderr, /- error: /, 1);
-      await until(proc.stdout, stdout, /Watching for file changes\./, 2);
-      expect(stderr.text).toMatch(/limits\.ts:2:7 - error: An `if` condition must be a boolean/);
-      expect(stdout.text).toContain("tsql: 1 error(s). Watching for file changes.");
+      await until(proc.stderr, stderr, /error\(s\)\./, 1);
+      await until(proc.stdout, stdout, /Watching for changes\./, 2);
+      expect(stdout.text).toMatch(/limits\.ts changed, checking again…/);
+      expect(stderr.text).toMatch(/limits\.ts:2:7 - An `if` condition must be a boolean/);
+      expect(stderr.text).toContain("1 error(s).");
       expect(proc.exitCode).toBeNull();
     } finally {
       proc.kill();

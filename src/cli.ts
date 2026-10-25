@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { compileProject, formatResult, type CompileResult } from "./compile.ts";
 import { ProjectNotFoundError } from "./errors.ts";
 import { err, out, painter } from "./style.ts";
@@ -291,11 +291,10 @@ async function compileFiles(command: Command, files: readonly string[], options:
 
 /**
  * `check --watch`: check, then check again whenever a file of the project
- * changes, until interrupted. Each round opens and closes with a timestamped
- * line — `tsql: checking…` and `… Watching for file changes.` — so an editor
- * can tell when a round's diagnostics are complete (a VS Code background task's
- * problem matcher keys on exactly these), and every diagnostic starts with
- * `file:line:col - error`, one regular expression for TypeScript's and ours.
+ * changes, until interrupted, for a person watching a terminal. On a terminal
+ * each round starts on a clear screen, so only the current state shows; each
+ * says what changed and when, ends like a plain `check` — the listing, or the
+ * diagnostics — and then says it is still watching. Errors never stop it.
  *
  * The files are the ones named when it started: a glob is expanded by the shell
  * once, so a file added later needs a restart.
@@ -307,37 +306,44 @@ async function watchCheck(command: Command, files: readonly string[], options: P
     await compileFiles(command, files, options);
     return;
   }
+  const root = dirname(resolve(options.project));
   const stamp = () => out("dim", `[${new Date().toLocaleTimeString("en-GB")}]`);
   let running = false;
-  let again = false;
+  let pending: string | undefined;
 
-  const round = async (): Promise<void> => {
+  const round = async (changed?: string): Promise<void> => {
     if (running) {
-      again = true;
+      pending = changed;
       return;
     }
     running = true;
+    let next: string | undefined = changed;
     do {
-      again = false;
-      say(`${stamp()} tsql: checking…`);
+      pending = undefined;
+      // Clear the screen and the scrollback, as `tsc --watch` does; a pipe or a
+      // log keeps every round instead.
+      if (process.stdout.isTTY) process.stdout.write("\u001b[2J\u001b[3J\u001b[H");
+      say(`${stamp()} ${next ? `${out("bold", relative(process.cwd(), resolve(root, next)))} changed, checking again…` : "Checking…"}\n`);
       const attempt = await attemptCompile(command, files, options);
       if (attempt.ok) {
-        say(`${stamp()} tsql: ${out("green", "ok")} — ${counts(attempt.result)} compile. Watching for file changes.`);
+        say(`${out("green", "✓")} ok — ${counts(attempt.result)} compile, nothing written:`);
+        say(listing(attempt.result));
       } else {
         complain(attempt.report);
-        const failed = attempt.count > 0 ? `${attempt.count} error(s)` : "the project could not be checked";
-        say(`${stamp()} tsql: ${err("red", failed)}. Watching for file changes.`);
+        if (attempt.count > 0) complain(`\n${err(["bold", "red"], `${attempt.count} error(s).`)}`);
       }
-    } while (again);
+      say(`\n${stamp()} ${out("dim", "Watching for changes. Press Ctrl-C to stop.")}`);
+      next = pending;
+    } while (next !== undefined);
     running = false;
   };
 
   // Saving a file is often several writes; wait for them to settle.
   let timer: ReturnType<typeof setTimeout> | undefined;
-  watch(dirname(resolve(options.project)), { recursive: true }, (_event, name) => {
+  watch(root, { recursive: true }, (_event, name) => {
     if (!name || name.split(/[\\/]/).includes("node_modules") || !/\.([cm]?tsx?|json)$/.test(name)) return;
     clearTimeout(timer);
-    timer = setTimeout(() => void round(), 100);
+    timer = setTimeout(() => void round(name), 100);
   });
   await round();
 }
