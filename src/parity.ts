@@ -7,7 +7,7 @@ import { quoteIdentifier } from "./names.ts";
  * Parity checking: run identical inputs through the TypeScript function and the
  * generated database function and require the same answer.
  *
- * Nothing here is written per-rule — the inputs are derived from the manifest
+ * Nothing here is written per function — the inputs are derived from the manifest
  * the compiler emits, so every compiled function is covered automatically.
  */
 
@@ -42,7 +42,7 @@ const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
 /**
  * Arrays are kept short: long enough for empty, single and repeated elements,
- * short enough that a rule looping over them stays fast.
+ * short enough that a function looping over them stays fast.
  */
 const ARRAY_MAX_LENGTH = 10;
 

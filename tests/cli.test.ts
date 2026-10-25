@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
  */
 
 /**
- * The CLI defaults to `rules/tsconfig.json`, which describes a consuming
+ * The CLI defaults to `functions/tsconfig.json`, which describes a consuming
  * project rather than this repo. The tests use the accepted cases in
  * `tests/parity/`, never the user-facing `examples/`.
  */
@@ -70,7 +70,7 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   test("--help shows usage and succeeds", async () => {
     const { stdout, exitCode } = await run(["--help"]);
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("tsql compile rules/*.ts");
+    expect(stdout).toContain("tsql compile functions/*.ts");
   });
 
   test("--version prints the package's version", async () => {
@@ -108,7 +108,7 @@ describe("each command has its own options and its own help", () => {
 });
 
 describe("the CLI compiles the files it is given", () => {
-  test("named files succeed and report only their own rules", async () => {
+  test("named files succeed and report only their own functions", async () => {
     const { stdout, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", ...PROJECT]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("todo_limit");
@@ -121,7 +121,7 @@ describe("the CLI compiles the files it is given", () => {
     const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts"]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("No TypeScript project at");
-    expect(stderr).toContain("rules/tsconfig.json");
+    expect(stderr).toContain("functions/tsconfig.json");
     expect(stderr).toContain("--project");
     expect(stderr).not.toContain("at <anonymous>");
   });
@@ -129,7 +129,7 @@ describe("the CLI compiles the files it is given", () => {
   test("a file the project does not hold fails with advice, not a stack trace", async () => {
     const { stderr, exitCode } = await run(["check", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
+    expect(stderr).toContain("is not a source file in tests/parity/tsconfig.json");
     expect(stderr).toContain("tests/parity/ifElseChain.ts");
     expect(stderr).not.toContain("at <anonymous>");
   });
@@ -211,10 +211,10 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
     }
   });
 
-  test("a rule that does not compile is reported before any test runs", async () => {
+  test("a function that does not compile is reported before any test runs", async () => {
     const { stderr, exitCode } = await run(["parity", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
+    expect(stderr).toContain("is not a source file in tests/parity/tsconfig.json");
   });
 });
 
@@ -246,7 +246,7 @@ describe("the CLI runs on Node, not only Bun", () => {
   test("rejections still read as diagnostics", async () => {
     const { stderr, exitCode } = await runOnNode(["check", "tests/parity/nope.ts", ...PROJECT]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
+    expect(stderr).toContain("is not a source file in tests/parity/tsconfig.json");
     expect(stderr).not.toContain("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX");
   });
 });

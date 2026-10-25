@@ -1,7 +1,7 @@
 import type { Integer } from "../src/pgtypes";
 
 /**
- * Billing rules: what each plan allows. These are the rules the README walks
+ * Billing: what each plan allows. These are the functions the README walks
  * through, compiled for real — `examples/output.sql` is what tsql emits for them.
  */
 
@@ -17,7 +17,7 @@ export function todoLimit(plan: Plan): Integer {
   return 1000;
 }
 
-/** An object type becomes a composite type, and rules can call each other. */
+/** An object type becomes a composite type, and functions can call each other. */
 export type Subscription = { plan: Plan };
 
 export function canCreateTodo(sub: Subscription, count: Integer): boolean {

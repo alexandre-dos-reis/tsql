@@ -8,7 +8,7 @@ import type { Project } from "typescript/unstable/async";
  *
  * Both the reference checker and the type mapper need this: a name resolving
  * into the standard library is a runtime global, and an object type declared
- * there is a built-in like `Date` rather than a business-rule shape. Asking the
+ * there is a built-in like `Date` rather than a shape of the project's own data. Asking the
  * program means neither has to keep a list of known names.
  */
 export type Origin = "default-library" | "external-library" | "project" | "unknown";

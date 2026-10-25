@@ -10,7 +10,7 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * Every case in tests/parity/ is accepted by the compiler and agrees with its
  * TypeScript.
  *
- * This file holds no cases. Each case is a pair: `name.ts`, the rule, and
+ * This file holds no cases. Each case is a pair: `name.ts`, the functions, and
  * `name.sql`, the SQL it must compile to. For each case:
  *
  * 1. compiled alone, its SQL contains each block of `name.sql` (blocks are
@@ -128,7 +128,7 @@ for (const backend of BACKENDS) {
   });
 }
 
-// The type guard must refuse a database whose type no longer matches the rules,
+// The type guard must refuse a database whose type no longer matches the functions,
 // rather than leave functions reading the wrong columns. Needs an empty
 // database with the stale type in it, so a fresh PGlite.
 test.skipIf(!project.ok)("the migration refuses a composite type that has drifted", async () => {
@@ -140,7 +140,7 @@ test.skipIf(!project.ok)("the migration refuses a composite type that has drifte
       (error: Error) => error,
     );
     expect(failure?.message).toContain("app.subscription exists as");
-    expect(failure?.message).toContain("but the rules expect");
+    expect(failure?.message).toContain("but the functions expect");
   } finally {
     await fresh.close();
   }
@@ -169,7 +169,7 @@ test.skipIf(!project.ok)("the migration adds an enum value in its place", async 
   }
 });
 
-test.skipIf(!project.ok)("the migration refuses an enum that has a value the rules removed", async () => {
+test.skipIf(!project.ok)("the migration refuses an enum that has a value the functions removed", async () => {
   const { db, failure } = await applyOver("CREATE TYPE app.area_type AS ENUM ('level-1', 'level-2', 'level-3', 'legacy');");
   try {
     expect(failure?.message).toContain("a value was removed or renamed");

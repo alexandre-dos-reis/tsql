@@ -4,7 +4,7 @@
 
 Rewrite the README around getting started, and add a logo.
 
-The front of the document is now install, a rule, its generated SQL, and a few
+The front of the document is now install, a function, its generated SQL, and a few
 worked examples — every SQL snippet produced by actually compiling the
 TypeScript above it rather than written by hand. The design reasoning that was
 previously interleaved moves below a `Reference` divider, where it still

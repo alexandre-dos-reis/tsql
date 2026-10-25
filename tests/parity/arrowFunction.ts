@@ -1,7 +1,7 @@
 import type { Integer } from "../../src/pgtypes";
 
 /**
- * Exported `const`s bound to arrow functions are rules like `function` declarations. An expression
+ * Exported `const`s bound to arrow functions are compiled like `function` declarations. An expression
  * body means `return` that expression; a block body is a function body. One calls the other.
  */
 export type Grade = "a" | "b" | "c";

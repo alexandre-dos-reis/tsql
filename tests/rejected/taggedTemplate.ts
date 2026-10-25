@@ -2,8 +2,8 @@
  * Rejected: a tagged template.
  *
  * `tag\`…\`` calls `tag` with the literal pieces and the values: a function
- * call, which a compiled rule can only make to another compiled rule — and a
- * rule does not take a template's pieces.
+ * call, which a compiled function can only make to another compiled function — and a
+ * function does not take a template's pieces.
  *
  * Expected: Tagged templates are not supported
  */

@@ -101,13 +101,13 @@ interface State extends TypeCtx {
 /* -------------------------------------------------------------------------- */
 
 /**
- * A rule the compiler translates: an exported `function` declaration, or an
+ * A function the compiler translates: an exported `function` declaration, or an
  * exported `const` bound to an arrow function. Both carry the same parts — a
  * name, typed parameters, a return type, a body — so the rest of lowering does
  * not care which was written. An arrow's body may be a bare expression, which
  * means `return` that expression.
  */
-export interface RuleFunction {
+export interface ExportedFunction {
   readonly name: Identifier;
   readonly fn: FunctionDeclaration | ArrowFunction;
 }
@@ -117,9 +117,9 @@ export interface RuleFunction {
  * project are collected before any body is lowered, so calls between compiled
  * functions can be checked regardless of declaration order.
  */
-export async function lowerSignature(rule: RuleFunction, ctx: TypeCtx): Promise<SignatureIR> {
-  const { fn } = rule;
-  const tsName = rule.name.text;
+export async function lowerSignature(exported: ExportedFunction, ctx: TypeCtx): Promise<SignatureIR> {
+  const { fn } = exported;
+  const tsName = exported.name.text;
 
   if (fn.typeParameters && fn.typeParameters.length > 0) {
     throw CompileError.at(fn.typeParameters[0]!, "Generic functions are not supported.");
@@ -168,7 +168,7 @@ async function lowerParameter(p: ParameterDeclaration, ctx: TypeCtx): Promise<Pa
 
 /** Pass 2: translate the body against the already-known signatures. */
 export async function lowerFunction(
-  rule: RuleFunction,
+  exported: ExportedFunction,
   signature: SignatureIR,
   module: string,
   signatures: ReadonlyMap<string, SignatureIR>,
@@ -184,7 +184,7 @@ export async function lowerFunction(
     targets: [],
   };
 
-  const { fn } = rule;
+  const { fn } = exported;
   // `(…) => expr` is `(…) => { return expr; }`.
   const body =
     fn.body!.kind === SyntaxKind.Block
@@ -1199,7 +1199,7 @@ async function arrayOperand(node: Expression, s: State): Promise<(ExprIR & { rea
   ) {
     return undefined;
   }
-  // A call to anything but a compiled rule is left to `lowerCall`'s own error.
+  // A call to anything but a compiled function is left to `lowerCall`'s own error.
   if (node.kind === SyntaxKind.CallExpression) {
     const callee = (node as CallExpression).expression;
     if (callee.kind !== SyntaxKind.Identifier || !s.signatures.has((callee as Identifier).text)) return undefined;

@@ -1,13 +1,13 @@
 {
   "name": "@adr/tsql",
   "version": "0.1.0",
-  "description": "Compiles a restricted subset of TypeScript business rules to PL/pgSQL, refusing anything whose semantics it cannot preserve",
+  "description": "Compiles a restricted subset of pure TypeScript functions to PL/pgSQL, refusing anything whose semantics it cannot preserve",
   "keywords": [
     "bun",
-    "business-rules",
     "compiler",
     "parity-testing",
     "plpgsql",
+    "pure-functions",
     "postgresql",
     "sql",
     "typescript"

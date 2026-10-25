@@ -4,7 +4,7 @@ import type { Integer } from "../../src/pgtypes";
  * An array field is one column of array type, beside the flattened ones: `Basket` is
  * `(customer_tier text, lines app.basket_line[], tags text[])`, and `app.basket_line` is created
  * first because the column needs it. The field reads as an array anywhere — `for … of`, `.length`,
- * `.includes`, passed on to another rule, held in a local or destructured — and a spread carries it
+ * `.includes`, passed on to another function, held in a local or destructured — and a spread carries it
  * into a new value. Products are reduced with `%` to stay inside int32.
  */
 

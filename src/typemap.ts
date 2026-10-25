@@ -441,7 +441,7 @@ function closedSet(
 }
 
 /**
- * `AreaType.Level1` or `Plan.Free` in a rule: the member's string, typed as its
+ * `AreaType.Level1` or `Plan.Free` in a function: the member's string, typed as its
  * enum. Undefined when `name` is not a member access on one.
  */
 export async function enumMember(
@@ -584,7 +584,7 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
   const declaration = symbol.declarations[0];
 
   // `Date`, `Error`, `Map` and anything from a package are object types too.
-  // Only shapes declared in this project describe business-rule data.
+  // Only shapes declared in this project describe the data the functions work on.
   if (declaration) {
     const origin = await originOfPath(declaration.path, ctx.project);
     if (origin === "default-library") {
@@ -679,7 +679,7 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
 /** PostgreSQL's NAMEDATALEN - 1. Longer identifiers are silently truncated. */
 const MAX_IDENTIFIER_BYTES = 63;
 
-/** Nesting deeper than this is more likely a mistake than a business rule. */
+/** Nesting deeper than this is more likely a mistake than a deliberate data model. */
 const MAX_NESTING = 4;
 
 /**

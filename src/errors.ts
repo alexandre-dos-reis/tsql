@@ -55,7 +55,7 @@ export class CompileError extends Error {
 }
 
 /**
- * The rules project could not be opened.
+ * The functions project could not be opened.
  *
  * Distinct from a plain `Error` so the CLI can add advice about `--project`
  * without the library having to know that a CLI exists — the default path

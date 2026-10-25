@@ -1,5 +1,5 @@
 /**
- * The authoring vocabulary shared by business rules and the compiler.
+ * The authoring vocabulary shared by the pure functions and the compiler.
  *
  * TypeScript's `number` is an IEEE-754 double, while PostgreSQL distinguishes
  * integer, exact decimal and floating point. Rather than guess, the compiler

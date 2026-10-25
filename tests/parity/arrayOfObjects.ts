@@ -3,7 +3,7 @@ import type { Integer } from "../../src/pgtypes";
 /**
  * An array of a named object type is an array of its composite: `readonly TodoItem[]` is
  * `app.todo_item[]`. The loop variable is a local of the composite type, so its fields read like a
- * parameter's — directly or by destructuring — and the array can be passed on to another rule.
+ * parameter's — directly or by destructuring — and the array can be passed on to another function.
  */
 
 export interface TodoItem {

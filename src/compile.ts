@@ -12,11 +12,11 @@ import { CompileError } from "./errors.ts";
 import type { Paint } from "./style.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
-import { isExported, lowerFunction, lowerSignature, type RuleFunction } from "./lower.ts";
+import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
 
 export interface CompileOptions {
-  /** tsconfig of the project holding the business rules. */
+  /** tsconfig of the project holding the pure functions. */
   readonly tsconfig: string;
   /** Restrict compilation to specific files (used by tests). */
   readonly include?: (fileName: string) => boolean;
@@ -25,7 +25,7 @@ export interface CompileOptions {
    *
    * Unlike `include`, every path here must turn out to be a file the project
    * actually holds. A name that matches nothing is an error rather than an
-   * empty build: silently compiling no rules because a path was misspelled is
+   * empty build: silently compiling no functions because a path was misspelled is
    * the sort of quiet wrongness this compiler exists to refuse.
    */
   readonly files?: readonly string[];
@@ -92,15 +92,15 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
     }
 
     const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>() };
-    const files = await rulesFiles(project, projectRoot, options);
+    const files = await sourceFiles(project, projectRoot, options);
 
     // Pass 1: every signature, so call checking does not depend on file order.
     const signatures = new Map<string, SignatureIR>();
-    const pending: { fn: RuleFunction; signature: SignatureIR; module: string }[] = [];
+    const pending: { fn: ExportedFunction; signature: SignatureIR; module: string }[] = [];
     const claimed = new Map<string, string>();
 
     for (const file of files) {
-      for (const fn of exportedRules(file, errors)) {
+      for (const fn of exportedFunctions(file, errors)) {
         try {
           const signature = await lowerSignature(fn, ctx);
           const previous = claimed.get(signature.sqlName);
@@ -199,8 +199,8 @@ function usedTypes(
   };
 }
 
-/** Only files inside the rules project are compiled; imported helpers are not. */
-async function rulesFiles(
+/** Only files inside the functions project are compiled; imported helpers are not. */
+async function sourceFiles(
   project: Awaited<ReturnType<typeof openProject>>["project"],
   projectRoot: string,
   options: CompileOptions,
@@ -227,7 +227,7 @@ async function rulesFiles(
  * The named files, checked against what the project holds.
  *
  * `undefined` means "no selection, compile everything". A name that is not one
- * of the project's own rule files is rejected here, where the reason can still
+ * of the project's own source files is rejected here, where the reason can still
  * be explained — the alternative is a build that reports success having
  * translated nothing.
  */
@@ -245,7 +245,7 @@ function selected(inProject: readonly string[], options: CompileOptions): Set<st
         .sort()
         .join("\n");
       throw new Error(
-        `\`${where}\` is not a rule file in ${relative(process.cwd(), options.tsconfig)}.\n\n` +
+        `\`${where}\` is not a source file in ${relative(process.cwd(), options.tsconfig)}.\n\n` +
           `The project holds:\n\n${known}\n`,
       );
     }
@@ -255,20 +255,20 @@ function selected(inProject: readonly string[], options: CompileOptions): Set<st
 }
 
 /**
- * The rules in a file: exported `function` declarations, and exported `const`s
+ * The functions in a file: exported `function` declarations, and exported `const`s
  * bound to an arrow function. Other exported values (a number, a string) are
- * not rules and are left alone. An exported function written any other way —
+ * not functions and are left alone. An exported function written any other way —
  * a `let` or `var` binding, a `function` expression — would otherwise be
  * skipped without a word, so it is refused instead.
  */
-function exportedRules(file: SourceFile, errors: CompileError[]): RuleFunction[] {
-  const rules: RuleFunction[] = [];
+function exportedFunctions(file: SourceFile, errors: CompileError[]): ExportedFunction[] {
+  const functions: ExportedFunction[] = [];
   for (const statement of file.statements) {
     if (!isExported(statement)) continue;
 
     if (statement.kind === SyntaxKind.FunctionDeclaration) {
       const fn = statement as FunctionDeclaration;
-      if (fn.name) rules.push({ name: fn.name, fn });
+      if (fn.name) functions.push({ name: fn.name, fn });
       else errors.push(CompileError.at(fn, "Anonymous functions cannot be compiled."));
       continue;
     }
@@ -295,7 +295,7 @@ function exportedRules(file: SourceFile, errors: CompileError[]): RuleFunction[]
         errors.push(
           CompileError.at(
             declaration,
-            `Export \`${label}\` with \`const\`: a \`let\` or \`var\` binding can be reassigned, so it is not a fixed rule.`,
+            `Export \`${label}\` with \`const\`: a \`let\` or \`var\` binding can be reassigned, so it is not a fixed function.`,
           ),
         );
         continue;
@@ -304,10 +304,10 @@ function exportedRules(file: SourceFile, errors: CompileError[]): RuleFunction[]
         errors.push(CompileError.at(declaration.name, "Destructuring is not supported."));
         continue;
       }
-      rules.push({ name: declaration.name as Identifier, fn: init as ArrowFunction });
+      functions.push({ name: declaration.name as Identifier, fn: init as ArrowFunction });
     }
   }
-  return rules;
+  return functions;
 }
 
 function asCompileError(error: unknown): CompileError {

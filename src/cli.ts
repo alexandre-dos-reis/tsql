@@ -44,34 +44,34 @@ const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.
   .version;
 
 const ABOUT = `
-Rules are named explicitly, because the migration is written from exactly the
+Files are named explicitly, because the migration is written from exactly the
 files given. Compile a whole project with a glob:
 
-  tsql compile rules/*.ts
+  tsql compile functions/*.ts
 
 A file the project does not hold is an error, not an empty build.
 Run \`tsql <command> --help\` for a command's options.`;
 
-/** Options every command takes: where the rules are, and how the SQL is named. */
-interface RulesOptions {
+/** Options every command takes: where the functions are, and how the SQL is named. */
+interface ProjectOptions {
   readonly project: string;
   readonly schema: string;
   readonly comments: boolean;
 }
 
-interface CompileOptions extends RulesOptions {
+interface CompileOptions extends ProjectOptions {
   readonly out: string;
   readonly manifest: string;
 }
 
-interface ParityOptions extends RulesOptions {
+interface ParityOptions extends ProjectOptions {
   readonly runs?: string;
   readonly seed?: string;
   readonly dbUrl?: string;
 }
 
 const program = new Command("tsql")
-  .description("Compile pure TypeScript business rules to PL/pgSQL, and prove the two agree.")
+  .description("Compile pure TypeScript functions to PL/pgSQL, and prove the two agree.")
   .usage("<command> <files...> [options]")
   .version(VERSION, "-v, --version", "print the version")
   .helpOption("-h, --help", "show this help")
@@ -89,28 +89,28 @@ const program = new Command("tsql")
   })
   .showHelpAfterError("(run `tsql <command> --help` for its options)");
 
-/** A command over rule files, with the options every command shares. */
-function rulesCommand(name: string, summary: string): Command {
+/** A command over source files, with the options every command shares. */
+function projectCommand(name: string, summary: string): Command {
   return program
     .command(name)
     .summary(summary)
     .usage("<files...> [options]")
-    .argument("[files...]", "the rule files to translate; a glob works (rules/*.ts)")
-    .option("--project <tsconfig>", "the tsconfig of the rules project", "rules/tsconfig.json")
+    .argument("[files...]", "the files to translate; a glob works (functions/*.ts)")
+    .option("--project <tsconfig>", "the tsconfig of the functions project", "functions/tsconfig.json")
     .option("--schema <name>", "the schema the generated types and functions go in", "app")
     .option("--no-comments", "omit the provenance comments from the generated SQL")
     .helpOption("-h, --help", "show this help");
 }
 
-rulesCommand("compile", "type check, translate, and write the migration and its manifest")
+projectCommand("compile", "type check, translate, and write the migration and its manifest")
   .description(
-    "Type check the rules, translate them to PL/pgSQL, and write the migration and a manifest of the functions it holds. Point your migration tool at the migration.",
+    "Type check the functions, translate them to PL/pgSQL, and write the migration and a manifest of the functions it holds. Point your migration tool at the migration.",
   )
-  .option("--out <file>", "the migration to write", "generated/0001_rules.sql")
+  .option("--out <file>", "the migration to write", "generated/0001_functions.sql")
   .option("--manifest <file>", "the manifest to write", "generated/manifest.json")
-  .addHelpText("after", "\nExample:\n  tsql compile rules/*.ts --out migrations/0007_rules.sql")
+  .addHelpText("after", "\nExample:\n  tsql compile functions/*.ts --out migrations/0007_functions.sql")
   .action(async (files: string[], options: CompileOptions, command: Command) => {
-    const result = await compileRules(command, files, options);
+    const result = await compileFiles(command, files, options);
     await mkdir(dirname(options.out), { recursive: true });
     await writeFile(options.out, result.sql);
     await mkdir(dirname(options.manifest), { recursive: true });
@@ -120,27 +120,27 @@ rulesCommand("compile", "type check, translate, and write the migration and its 
     say(`${out("green", "✓")} wrote ${out("bold", options.manifest)}`);
   });
 
-rulesCommand("check", "type check and translate, writing nothing")
+projectCommand("check", "type check and translate, writing nothing")
   .description(
-    "Type check the rules and translate them, writing nothing: the build fails on anything outside the subset, with the reason. Put it in CI next to your type checker.",
+    "Type check the functions and translate them, writing nothing: the build fails on anything outside the subset, with the reason. Put it in CI next to your type checker.",
   )
-  .addHelpText("after", "\nExample:\n  tsql check rules/*.ts")
-  .action(async (files: string[], options: RulesOptions, command: Command) => {
-    const result = await compileRules(command, files, options);
+  .addHelpText("after", "\nExample:\n  tsql check functions/*.ts")
+  .action(async (files: string[], options: ProjectOptions, command: Command) => {
+    const result = await compileFiles(command, files, options);
     say(`${out("green", "✓")} ok — ${counts(result)} compile, nothing written:`);
     say(listing(result));
   });
 
-rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothing")
+projectCommand("parity", "prove the SQL agrees with the TypeScript, writing nothing")
   .description(
-    "Translate the rules, load the migration into a database, and check every function against the TypeScript it came from on random inputs (fast-check). Writes nothing. The database is an in-process PGlite unless --db-url names a PostgreSQL, where everything runs in a transaction that is rolled back. It proves translation, not your rules: keep your own domain tests.",
+    "Translate the functions, load the migration into a database, and check every function against the TypeScript it came from on random inputs (fast-check). Writes nothing. The database is an in-process PGlite unless --db-url names a PostgreSQL, where everything runs in a transaction that is rolled back. It proves translation, not your logic: keep your own domain tests.",
   )
   .option("--runs <n>", "random inputs per function (default: 200)")
   .option("--seed <n>", "replay a failure with the seed it reported")
   .option("--db-url <url>", "a postgres:// URL to test against instead of PGlite")
   .addHelpText(
     "after",
-    "\nExamples:\n  tsql parity rules/*.ts\n  tsql parity rules/*.ts --db-url=postgres://localhost/test --runs 1000",
+    "\nExamples:\n  tsql parity functions/*.ts\n  tsql parity functions/*.ts --db-url=postgres://localhost/test --runs 1000",
   )
   .action(async (files: string[], options: ParityOptions, command: Command) => {
     const started = performance.now();
@@ -149,7 +149,7 @@ rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothin
     const dbUrl = options.dbUrl;
     if (dbUrl !== undefined && !/^postgres(ql)?:\/\//.test(dbUrl)) fail("--db-url expects a postgres:// or postgresql:// URL.");
 
-    const result = await compileRules(command, files, options);
+    const result = await compileFiles(command, files, options);
 
     // Loaded only here: PGlite brings a PostgreSQL in WebAssembly, which
     // `check` and `compile` have no use for.
@@ -220,9 +220,9 @@ function listing(result: CompileResult): string {
 
 /**
  * The compile every command starts with. Exits with the diagnostics when the
- * rules do not compile, so a command's action only ever sees a successful build.
+ * functions do not compile, so a command's action only ever sees a successful build.
  */
-async function compileRules(command: Command, files: readonly string[], options: RulesOptions): Promise<CompileResult> {
+async function compileFiles(command: Command, files: readonly string[], options: ProjectOptions): Promise<CompileResult> {
   // No files means nothing to do, and there is no safe default to invent: the
   // migration is written from the files named, so quietly compiling whatever
   // the project happened to contain would overwrite it with more than was asked for.
@@ -243,7 +243,7 @@ async function compileRules(command: Command, files: readonly string[], options:
     if (error instanceof ProjectNotFoundError) {
       complain(
         `${error.message}\n\n` +
-          `Point --project at the tsconfig that holds your rules:\n\n` +
+          `Point --project at the tsconfig that holds your functions:\n\n` +
           `  tsql ${command.name()} ${files.join(" ")} --project path/to/tsconfig.json\n`,
       );
       process.exit(1);

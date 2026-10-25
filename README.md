@@ -2,13 +2,13 @@
 
 <img src="assets/logo.svg" alt="tsql: TypeScript's world (fetch, window, the DOM) and PostgreSQL's world (tables, triggers, RLS) overlap on immutable, pure code, which tsql makes give the same answer on both sides" width="640">
 
-### Write each business rule once, in TypeScript — tsql compiles it to PostgreSQL and proves both give the same answer.
+### Write each pure function once, in TypeScript — tsql compiles it to PostgreSQL and proves both give the same answer.
 
 Not `fetch`, not triggers: the logic in between — limits, prices, permissions — identical on both sides.
 
 </div>
 
-You already write this rule twice.
+You already write this logic twice.
 
 **Once in TypeScript,** so the UI can grey out the button before anyone clicks it:
 
@@ -29,9 +29,9 @@ END;
 $$;
 ```
 
-One rule, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
+One piece of logic, two languages, kept in step by memory. Next sprint the free limit goes from 3 to 5. Someone updates the TypeScript. The database carries on enforcing the old number, the two disagree, and nothing anywhere says so — until a customer finds the gap.
 
-**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL. Then it *proves* the two agree: a parity harness built on [fast-check](https://fast-check.dev) runs every compiled rule on hundreds of random inputs, through your TypeScript and through the generated function in a real PostgreSQL, and `tsql parity` fails — locally or in CI — the moment they disagree.
+**`tsql` deletes the second one.** You write the TypeScript; it generates the PL/pgSQL. Then it *proves* the two agree: a parity harness built on [fast-check](https://fast-check.dev) runs every compiled function on hundreds of random inputs, through your TypeScript and through the generated function in a real PostgreSQL, and `tsql parity` fails — locally or in CI — the moment they disagree.
 
 And when it meets something it cannot translate *faithfully*, it refuses to compile rather than guessing. A build error beats a function that quietly returns the wrong answer at 3am.
 
@@ -43,10 +43,10 @@ bun add -d @adr/tsql        # npm i -D @adr/tsql works too
 
 45 kB of sources, no build step. Three runtime dependencies, all for `tsql parity`: [fast-check](https://fast-check.dev), [PGlite](https://pglite.dev) and [postgres.js](https://github.com/porsager/postgres). Runs on Node 22.18+ or [Bun](https://bun.com) — the sources are TypeScript, and both strip types natively. `typescript@~7.0.2` is a peer dependency, because the type checker has to be the one that agrees with *your* code.
 
-## Write a rule
+## Write a function
 
 ```ts
-// rules/billing.ts
+// functions/billing.ts
 import type { Integer } from "@adr/tsql/pgtypes";
 
 export type Plan = "free" | "pro" | "enterprise";
@@ -66,15 +66,15 @@ Ordinary TypeScript. `Integer` is a plain alias of `number` — it costs nothing
 ## Compile it
 
 ```bash
-tsql compile rules/*.ts
+tsql compile functions/*.ts
 ```
 
 ```sql
--- rules/billing.ts: Plan, a union of strings
+-- functions/billing.ts: Plan, a union of strings
 DO $$ … CREATE DOMAIN app.plan AS text
   CONSTRAINT plan_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro'])); … $$;
 
--- rules/billing.ts: todoLimit()
+-- functions/billing.ts: todoLimit()
 CREATE OR REPLACE FUNCTION app.todo_limit(
   plan app.plan
 )
@@ -97,7 +97,7 @@ Point your migration tool at the emitted file. `tsql check` does the same withou
 
 `compile` also writes a manifest (`generated/manifest.json`) describing every function it emitted, for tooling that wants to know what the migration holds.
 
-> **`check` and `compile` translate; `tsql parity` proves.** Compiling gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree with the TypeScript. `tsql parity rules/*.ts` does that — see [Prove it](#prove-it-parity-tests-with-fast-check).
+> **`check` and `compile` translate; `tsql parity` proves.** Compiling gives you SQL that is *translated* faithfully but not yet *demonstrated* to agree with the TypeScript. `tsql parity functions/*.ts` does that — see [Prove it](#prove-it-parity-tests-with-fast-check).
 
 ## More examples
 
@@ -136,7 +136,7 @@ END IF;
 RETURN coupon_code IS DISTINCT FROM '';
 ```
 
-**Objects become composite types**, and rules can call each other:
+**Objects become composite types**, and functions can call each other:
 
 ```ts
 type Subscription = { plan: Plan };
@@ -189,7 +189,7 @@ When every branch only returns a value, as here, the `switch` becomes a single `
 This is the part worth buying. Every rejection is a thing that *looks* fine and would have compiled to subtly wrong SQL:
 
 ```
-rules/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
+functions/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
                        Truthiness is not translated — compare explicitly.
 
     2 |   if (name) {
@@ -208,14 +208,14 @@ This is the step that turns "the compiler says it's equivalent" into "it was che
 
 ```
 todoLimit("free") diverges: TypeScript gave 3, PostgreSQL gave 4
-  rules/billing.ts vs select app.todo_limit($1::text) as value
+  functions/billing.ts vs select app.todo_limit($1::text) as value
   reproduce with seed -315639818, path 0
 ```
 
 Run it with one command — no test file, no database to set up:
 
 ```bash
-tsql parity rules/*.ts
+tsql parity functions/*.ts
 ```
 
 ```
@@ -226,21 +226,21 @@ tsql parity rules/*.ts
 ok — 3 function(s) agree with their TypeScript on 200 random inputs each.
 ```
 
-`tsql parity` compiles the rules in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first rule that diverges or does not compile, so it belongs in CI right after your type checker. **Every rule you add is covered automatically**: the list comes from the compiler, so there is nothing to write per rule. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
+`tsql parity` compiles the functions in memory, loads the migration into [PGlite](https://pglite.dev) — PostgreSQL 18 compiled to WebAssembly, so a real planner and a real PL/pgSQL, in process, with no server — and checks every compiled function against the TypeScript it came from. It writes nothing and exits non-zero on the first function that diverges or does not compile, so it belongs in CI right after your type checker. **Every function you add is covered automatically**: the list comes from the compiler, so there is nothing to write per function. fast-check, PGlite and the PostgreSQL client ([postgres.js](https://github.com/porsager/postgres)) all ship with `@adr/tsql`.
 
-> **This is not a substitute for testing your rules.** `tsql parity` checks one thing: that the generated SQL gives the *same answer* as your TypeScript, on random inputs. It says nothing about whether that answer is *right*. If `todoLimit("free")` returns 30 where your business wanted 3, both implementations agree on 30 and `tsql parity` passes. Keep writing your own unit tests for the domain — they test the TypeScript, and `tsql parity` carries that guarantee over to the database.
+> **This is not a substitute for testing your logic.** `tsql parity` checks one thing: that the generated SQL gives the *same answer* as your TypeScript, on random inputs. It says nothing about whether that answer is *right*. If `todoLimit("free")` returns 30 where your business wanted 3, both implementations agree on 30 and `tsql parity` passes. Keep writing your own unit tests for the domain — they test the TypeScript, and `tsql parity` carries that guarantee over to the database.
 
 `--runs 1000` raises the inputs per function; `--seed=-315639818` replays a failure with the seed it printed.
 
-**Against your own PostgreSQL.** PGlite is the default, but it is not your server: a different version, no extensions, none of your settings. To check the rules on the PostgreSQL you actually deploy to, give it a URL:
+**Against your own PostgreSQL.** PGlite is the default, but it is not your server: a different version, no extensions, none of your settings. To check the functions on the PostgreSQL you actually deploy to, give it a URL:
 
 ```bash
-tsql parity rules/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
+tsql parity functions/*.ts --db-url=postgres://user:pass@localhost:5432/app_test
 ```
 
 Everything — the migration and every check — runs in one transaction that is rolled back at the end, so nothing is committed and other sessions never see the generated functions. `CREATE OR REPLACE FUNCTION` still locks any same-named function while the run lasts, so point it at a test database, not production. The password is never printed.
 
-The rules are imported as they are, so they have to load under the runtime running `tsql` — on Node, a relative import between rule files needs its `.ts` extension. Type-only imports, such as `@adr/tsql/pgtypes`, are erased and never matter.
+The functions are imported as they are, so they have to load under the runtime running `tsql` — on Node, a relative import between source files needs its `.ts` extension. Type-only imports, such as `@adr/tsql/pgtypes`, are erased and never matter.
 
 ## What's supported
 
@@ -259,18 +259,18 @@ The rules are imported as they are, so they have to load under the runtime runni
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 | `readonly T[]` parameter or object field | `T[]` — of scalars, nullable scalars, or a named object type |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, template literals (as `||`), `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Compiled functions are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, template literals (as `||`), `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled functions.
 
 Not yet: numeric enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
-## Using the rules from SQL
+## Using the functions from SQL
 
-A compiled rule is an ordinary PostgreSQL function, `IMMUTABLE`, so it goes wherever SQL calls one. Three
+A compiled function is an ordinary PostgreSQL function, `IMMUTABLE`, so it goes wherever SQL calls one. Three
 patterns cover most uses, from the most declarative to the most general. All three are in
 [`examples/usage.sql`](examples/usage.sql), which CI runs against PostgreSQL with assertions that raise
 if one stops behaving as described here.
 
-**A rule about one row: a `CHECK` constraint.** No trigger needed — PostgreSQL checks it on every insert
+**A condition on one row: a `CHECK` constraint.** No trigger needed — PostgreSQL checks it on every insert
 and update, and requires exactly what the generated functions are, `IMMUTABLE`:
 
 ```sql
@@ -280,15 +280,15 @@ CREATE TABLE products (
 );
 ```
 
-**A value derived from the row: a generated column.** Computed by the rule on every write, stored with
+**A value derived from the row: a generated column.** Computed by the function on every write, stored with
 the row:
 
 ```sql
 price_cents double precision GENERATED ALWAYS AS (app.price_cents(list_cents, percent_off)) STORED
 ```
 
-**A rule about other rows: a trigger.** The trigger gathers what the rule needs — here the plan and the
-count — and the rule decides. Gathering is a database job, with database concerns the rule cannot see:
+**A condition involving other rows: a trigger.** The trigger gathers what the function needs — here the plan and the
+count — and the function decides. Gathering is a database job, with database concerns the function cannot see:
 
 ```sql
 CREATE FUNCTION enforce_todo_limit() RETURNS trigger
@@ -314,13 +314,13 @@ CREATE TRIGGER todos_enforce_limit
   FOR EACH ROW EXECUTE FUNCTION enforce_todo_limit();
 ```
 
-The rule is the part tsql proves equal to the TypeScript; the trigger around it is yours. That is why
-tsql compiles rules and not triggers: a query, a lock or `FOR UPDATE` has no TypeScript twin to be
+The function is the part tsql proves equal to the TypeScript; the trigger around it is yours. That is why
+tsql compiles pure functions and not triggers: a query, a lock or `FOR UPDATE` has no TypeScript twin to be
 compared with.
 
 **Calling conventions:**
 
-| The rule… | From SQL |
+| The function… | From SQL |
 | --- | --- |
 | takes an object | `ROW(a, b)::app.thing`, one value per flattened field in declaration order — or a variable of that type filled by `SELECT … INTO` |
 | returns an object | `(app.f(…)).field`, or `SELECT (app.f(…)).*` for every field |
@@ -329,18 +329,18 @@ compared with.
 | takes an array | `ARRAY(SELECT ROW(…)::app.thing FROM …)` — not `array_agg`, which is NULL over no rows, and `FOREACH` raises on NULL; or `COALESCE(array_agg(…), '{}')` |
 | takes a `T` that is not `T \| null` | a non-NULL value: the function does not check, as TypeScript would not have let `null` through |
 
-**When a rule changes.** `IMMUTABLE` is a promise that the result depends on the arguments only, forever,
+**When a function changes.** `IMMUTABLE` is a promise that the result depends on the arguments only, forever,
 and PostgreSQL relies on it: it does not re-run the function over stored data when the function is
-replaced. After changing a rule that a table depends on, the stored results are the old rule's:
+replaced. After changing a function that a table depends on, the stored results are the old version's:
 
 - a `CHECK` constraint is not re-checked against existing rows — find them with
-  `SELECT … WHERE NOT app.rule(…)`;
+  `SELECT … WHERE NOT app.f(…)`;
 - a stored generated column keeps its old values until each row is written again — `UPDATE products SET
   list_cents = list_cents` recomputes them;
-- an index on an expression (`CREATE INDEX … ON t (app.rule(…))`) keeps the old keys, and queries using
+- an index on an expression (`CREATE INDEX … ON t (app.f(…))`) keeps the old keys, and queries using
   it return wrong rows until `REINDEX`.
 
-A trigger has none of these problems: it runs the current rule on each write, and stores nothing of its
+A trigger has none of these problems: it runs the current function on each write, and stores nothing of its
 own.
 
 ---
@@ -364,10 +364,10 @@ Each command takes only its own options, and lists them in its help:
 
 | Option | Commands | |
 | --- | --- | --- |
-| `--project <tsconfig>` | all | the rules project (default: `rules/tsconfig.json`) |
+| `--project <tsconfig>` | all | the functions project (default: `functions/tsconfig.json`) |
 | `--schema <name>` | all | the schema the generated types and functions go in (default: `app`) |
 | `--no-comments` | all | omit the provenance comments from the generated SQL |
-| `--out <file>` | `compile` | the migration to write (default: `generated/0001_rules.sql`) |
+| `--out <file>` | `compile` | the migration to write (default: `generated/0001_functions.sql`) |
 | `--manifest <file>` | `compile` | the manifest to write (default: `generated/manifest.json`) |
 | `--runs <n>` | `parity` | random inputs per function (default: 200) |
 | `--seed <n>` | `parity` | replay a failure with the seed it reported |
@@ -381,7 +381,7 @@ An option another command owns is refused rather than ignored — `tsql check �
 not a check that quietly ran no tests. The CLI is built on [commander](https://github.com/tj/commander.js),
 so the help is generated from the same declarations that parse the arguments and cannot drift from them.
 
-Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
+Files are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
 
 A file the project does not hold is an error listing what it does hold, rather than a build that reports success having translated nothing. All three commands exit non-zero on a rejection; `parity` also exits non-zero when any function diverges from its TypeScript.
 
@@ -436,7 +436,7 @@ BEGIN
      WHERE a.attrelid = (SELECT t.typrelid FROM pg_type t WHERE t.oid = to_regtype('app.subscription'))
        AND a.attnum > 0 AND NOT a.attisdropped;
     IF actual IS DISTINCT FROM expected THEN
-      RAISE EXCEPTION 'app.subscription exists as % but the rules expect %', actual, expected;
+      RAISE EXCEPTION 'app.subscription exists as % but the functions expect %', actual, expected;
     END IF;
   END IF;
 END
@@ -468,7 +468,7 @@ return nested.foo.bar;
 ```
 
 ```sql
--- rules/nested.ts: Nested
+-- functions/nested.ts: Nested
 --   foo_bar: from foo.bar
 CREATE TYPE app.nested AS (
   foo_bar text
@@ -579,8 +579,8 @@ Built-in object types are excluded by the same provenance check that catches run
 ## Named types: domains and enums
 
 A closed set of strings with a name becomes a PostgreSQL type, so the database refuses a value the
-rules do not know — `INSERT … VALUES ('gratuit')` fails, where a `text` column would have taken it and
-the rule fallen through to its `else`. Which type depends on how the set is written, and the two
+functions do not know — `INSERT … VALUES ('gratuit')` fails, where a `text` column would have taken it and
+the function fallen through to its `else`. Which type depends on how the set is written, and the two
 choices mirror each other:
 
 | TypeScript | PostgreSQL | Alike in that… |
@@ -638,7 +638,7 @@ a PostgreSQL array of the element type, and the element keeps the alias its auth
 
 The loop variable is a local of the element type, so an object's fields read as they would on a
 parameter (`todo.done` is `(todo).done`), destructuring included. An array can be passed on to another
-compiled rule, and held in a `const` or `let`.
+compiled function, and held in a `const` or `let`.
 
 ```ts
 export interface TodoItem {
@@ -836,7 +836,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 
 This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
 
-Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: the rules project's tsconfig sets `"types": []`, so they are type errors before the translator runs.
+Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: the functions project's tsconfig sets `"types": []`, so they are type errors before the translator runs.
 
 Rejections carry a file, line, column and the offending source line.
 
@@ -844,7 +844,7 @@ Rejections carry a file, line, column and the offending source line.
 
 This section is the *how*; [Prove it](#prove-it-parity-tests-with-fast-check) above is the *what*. `tsql parity` (`src/runParity.ts`) opens the database and reports; the check itself is `src/parity.ts`, which this repo's own `tests/parity.test.ts` also drives. The harness is internal — it is not exported from the package.
 
-`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a rule adds a parity test with no edit to the test file.
+`src/parity.ts` reads the manifest the compiler emits, derives a fast-check generator per parameter from its PostgreSQL type — an object for a composite parameter, which it flattens into `ROW($1::text)::app.subscription` on the SQL side — and runs 200 random inputs per function through both implementations: the TypeScript function imported directly, and the generated function in PGlite. Adding a function adds a parity test with no edit to the test file.
 
 The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it talks to — which is how `tsql parity` swaps PGlite for a real server under `--db-url`.
 
@@ -913,21 +913,21 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 2. `bun run typecheck`
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
 4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
-5. `psql` runs `examples/output.sql` then `examples/usage.sql` on the PostgreSQL service: the [Using the rules from SQL](#using-the-rules-from-sql) patterns, with assertions that raise if one misbehaves
+5. `psql` runs `examples/output.sql` then `examples/usage.sql` on the PostgreSQL service: the [Using the functions from SQL](#using-the-functions-from-sql) patterns, with assertions that raise if one misbehaves
 6. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
 
-`examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few rules, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
+`examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few functions, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
 ### Layout
 
 ```
-examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
-examples/output.sql     what tsql emits for them, checked in beside the rules it came from
+examples/*.ts           a short showcase for users — the functions the README walks through, own tsconfig
+examples/output.sql     what tsql emits for them, checked in beside the functions it came from
 examples/manifest.json  the manifest emitted with it
-examples/usage.sql      hand-written: the rules used from SQL (CHECK, generated column, trigger), run by CI
-tests/parity/           accepted cases: name.ts, the rule, and name.sql, the SQL it must compile to;
+examples/usage.sql      hand-written: the functions used from SQL (CHECK, generated column, trigger), run by CI
+tests/parity/           accepted cases: name.ts, the functions, and name.sql, the SQL it must compile to;
                         each is also proven against its TypeScript on PGlite and PostgreSQL
 tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
 tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them
@@ -947,7 +947,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```
 
-`examples/tsconfig.json` sets `"types": []`, so a business rule cannot reach for a Bun or Node global that the database side has no equivalent for.
+`examples/tsconfig.json` sets `"types": []`, so a pure function cannot reach for a Bun or Node global that the database side has no equivalent for.
 
 ## Publishing
 

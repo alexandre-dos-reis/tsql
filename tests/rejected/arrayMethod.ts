@@ -2,7 +2,7 @@
  * Rejected: array methods other than `includes`.
  *
  * `some`, `map`, `filter`, `reduce` and the rest take a callback, and a
- * PL/pgSQL function has no closures to pass. The same rule is a loop:
+ * PL/pgSQL function has no closures to pass. The same logic is a loop:
  *
  *     for (const amount of amounts) { if (amount > 100) { return true; } }
  *

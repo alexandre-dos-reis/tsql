@@ -2,7 +2,7 @@
  * Rejected: an object type nested more than 4 levels deep.
  *
  * Nested shapes are flattened to prefixed columns (`a.b.c.d.e` → `a_b_c_d_e`).
- * Nesting this deep is more likely a modelling mistake than a business rule,
+ * Nesting this deep is more likely a modelling mistake than a deliberate data model,
  * and the column names grow towards PostgreSQL's 63-byte identifier limit.
  * Flatten the shape in TypeScript.
  *

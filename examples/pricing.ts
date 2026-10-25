@@ -1,6 +1,6 @@
 import type { Float, Integer } from "../src/pgtypes";
 
-/** Pricing rules: where null handling and number types matter. */
+/** Pricing: where null handling and number types matter. */
 
 /** Null means null: `??` becomes `COALESCE`, and an absent discount stays distinct from a zero one. */
 export function priceCents(listCents: Integer, percentOff: Float | null): Float {
