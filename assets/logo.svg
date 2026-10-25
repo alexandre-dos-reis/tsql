@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 545" width="900" height="545" role="img" aria-labelledby="t d">
   <title id="t">tsql</title>
-  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM, npm…) and PostgreSQL's world (tables, triggers, RLS policies, indexes…). Where they overlap — pure business rules — tsql makes both give the same answer.</desc>
+  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM…) and PostgreSQL's world (tables, triggers, RLS policies, indexes…). Where they overlap — pure business rules — tsql makes both give the same answer.</desc>
 
   <text x="450.0" y="92" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="96" font-weight="800" letter-spacing="-2"><tspan fill="#3178C6">ts</tspan><tspan fill="#4C86BE">ql</tspan></text>
 
@@ -23,11 +23,8 @@
   <text x="395" y="480" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">fetch</text>
   <text x="385" y="175" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">window</text>
   <text x="225" y="460" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">DOM</text>
-  <text x="345" y="350" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">npm</text>
-  <text x="275" y="200" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">localStorage</text>
-  <text x="350" y="255" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">React</text>
-  <text x="315" y="430" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">setTimeout</text>
-  <text x="200" y="385" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">useState</text>
+  <text x="310" y="390" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">localStorage</text>
+  <text x="275" y="190" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">setTimeout</text>
 
   <!-- PostgreSQL's own world: the elephant, from the project's own artwork -->
   <g transform="translate(586 234) scale(0.265)">
@@ -54,8 +51,6 @@
   <text x="635" y="185" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">indexes</text>
   <text x="590" y="395" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">transactions</text>
   <text x="595" y="495" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">roles</text>
-  <text x="715" y="395" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">COPY</text>
-  <text x="540" y="440" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">VACUUM</text>
 
   <!-- Where they overlap: the rules tsql makes agree -->
   <text x="450.0" y="293" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2">PURE</text>
