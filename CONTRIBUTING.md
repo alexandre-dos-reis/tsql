@@ -22,24 +22,18 @@ Three things worth knowing about TypeScript 7:
 - **It is `unstable/` on purpose.** The peer range is `~7.0.2` — patches only, because these subpaths may move between 7.x minors.
 - **The checker is a separate 23 MB native executable**, which arrives with the consumer's own `typescript` install. `src/tscPath.ts` locates it and passes it as `tsserverPath`, and insists its `lib.*.d.ts` files sit beside it — handed an executable without them, the native compiler *hangs* rather than erroring.
 
-`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is part of why the example scripts are `ex:check` and `ex:compile`.
+`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is why `typecheck` passes `--no-script`.
 
 ## Commands
 
 ```
-bun run ex:check         # type check + translate the examples, write nothing
-bun run ex:compile       # write examples/output.sql + manifest from examples/*.ts
-bun run ex:parity        # tsql parity on the examples, in PGlite (add --db-url=… for a server)
 bun test                 # parity, SQL-shape and rejection tests on tests/ — PGlite, then PostgreSQL
                          # too when TSQL_TEST_DB_URL is set
-bun run typecheck        # bun check over the compiler and over the examples project
+bun run typecheck        # bun check over the compiler and its tests
 bun run format           # oxfmt, pinned as a dev dependency
 ```
 
-`.oxfmtrc.json` sets `printWidth` to 120 and excludes two things:
-
-- **`examples/tsql-manifest.json`** — the compiler owns that output and guarantees byte-identical re-runs. A formatter rewriting it would produce a diff on every compile, forever.
-- **`**/*.md`** — oxfmt reflows prose and flattens tables.
+`.oxfmtrc.json` sets `printWidth` to 120 and excludes `**/*.md`: oxfmt reflows prose and flattens tables.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
 
@@ -50,11 +44,11 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
-4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
-5. `psql` runs `examples/output.sql` then `examples/usage.sql` on the PostgreSQL service: the [Using the functions from SQL](README.md#using-the-functions-from-sql) patterns, with assertions that raise if one misbehaves
-6. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/tsql-manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+4. `bun scripts/examples.ts link` points every example at this checkout instead of the published package, then each runs as a user would:
+   - `examples/simple`: `check`, `parity` on PGlite and on the service, `compile`;
+   - `examples/with-postgrest`: `check`, `parity`, the generated migration and `db/02_schema.sql` loaded into a fresh database, PostgREST started on it (three todos accepted, the fourth refused by the compiled function in the trigger), and `vite build` for the page.
 
-`examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few functions, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
+`examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
@@ -64,10 +58,9 @@ Formatting is not checked in CI; run `bun run format` before committing.
 README.md               for users: what tsql does and how to use it
 docs/design.md          why: every semantic mapping and every refusal, with its reason
 CONTRIBUTING.md         this file
-examples/*.ts           a short showcase for users — the functions the README walks through, own tsconfig
-examples/output.sql     what tsql emits for them, checked in beside the functions it came from
-examples/tsql-manifest.json  the manifest emitted with it (`compile --manifest`)
-examples/usage.sql      hand-written: the functions used from SQL (CHECK, generated column, trigger), run by CI
+examples/simple/        a project to copy: one type, one function, the tsconfig tsql reads
+examples/with-postgrest/  a project to copy: PostgreSQL + PostgREST (Docker) and a Vite page sharing one rule
+scripts/examples.ts     points the examples at the published version (sync) or at this checkout (link)
 tests/parity/           accepted cases: name.ts, the functions, and name.sql, the SQL it must compile to;
                         each is also proven against its TypeScript on PGlite and PostgreSQL
 tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
@@ -88,7 +81,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```
 
-`examples/tsconfig.json` sets `"types": []`, so a pure function cannot reach for a Bun or Node global that the database side has no equivalent for.
+Each example's `functions/tsconfig.json` sets `"types": []`, so a pure function cannot reach for a Bun or Node global that the database side has no equivalent for.
 
 ## Publishing
 

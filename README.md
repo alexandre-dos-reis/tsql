@@ -213,8 +213,8 @@ The full list, with the reason for each, is in [docs/design.md](docs/design.md#r
 
 ## Using the functions from SQL
 
-A compiled function is an ordinary `IMMUTABLE` PostgreSQL function. Three patterns cover most uses —
-all three run in CI from [`examples/usage.sql`](examples/usage.sql).
+A compiled function is an ordinary `IMMUTABLE` PostgreSQL function. Three patterns cover most uses;
+[`examples/with-postgrest`](examples/with-postgrest) runs the trigger one end to end.
 
 **A condition on one row: a `CHECK` constraint.**
 
@@ -279,7 +279,7 @@ API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and throu
 - [docs/design.md](docs/design.md) — why each mapping and each refusal is what it is: null handling,
   objects, named types, arrays, the parity harness.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — toolchain, tests, CI, releases.
-- [examples/](examples/) — a few functions and the SQL they compile to.
+- [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`with-postgrest`](examples/with-postgrest), PostgreSQL, PostgREST and a Vite page sharing one rule.
 
 ## Licence and trademarks
 

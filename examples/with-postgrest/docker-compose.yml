@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    # Run once, on an empty database: 01_functions.sql (generated), then 02_schema.sql.
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d:ro
+
+  api:
+    image: postgrest/postgrest:v16.5
+    environment:
+      PGRST_DB_URI: postgres://authenticator:secret@db:5432/postgres
+      PGRST_DB_SCHEMAS: api
+      PGRST_DB_ANON_ROLE: web_anon
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db

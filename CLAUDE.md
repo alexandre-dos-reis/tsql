@@ -23,14 +23,11 @@ Bun means new hashes: `nix-prefetch-url` each asset, `nix hash convert --to sri`
 ## Commands
 
 ```
-bun run ex:check                # type check + translate the examples, write nothing
-bun run ex:compile              # write examples/output.sql + manifest from examples/*.ts
-bun run ex:parity               # tsql parity on the examples (PGlite; add --db-url=… for a server)
 bun test                        # unit + rejection + packaging + parity tests (PGlite; PostgreSQL too
                                 #   when TSQL_TEST_DB_URL=postgres://… is set)
 bun test tests/parity.test.ts   # one file
 bun test -t "nested object"     # one test or describe block by name
-bun run typecheck               # bun check over src+tests, and over the examples project
+bun run typecheck               # bun check over src, tests and scripts
 bun run format                  # oxfmt (dev dependency; not checked in CI)
 ```
 
@@ -53,8 +50,8 @@ Editor integration (problem matchers, an LSP) is deliberately not part of it yet
 **requires file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a
-subset writes a migration holding only that subset, which is why the repo's own scripts pass
-`examples/*.ts` rather than a single file.
+subset writes a migration holding only that subset, which is why the examples' scripts pass
+`functions/*.ts` rather than a single file.
 
 Narrowing is validated in `compile.ts#selected`: a named file that is not one of the project's source
 files throws, listing what the project holds, because reporting success having translated nothing is
@@ -66,19 +63,20 @@ that name only, so tooling finds it without being told; without it only the migr
 command reads the manifest back — `check` and `parity` use the one built in memory.
 
 The CLI's `--project` and `--out` defaults describe a
-*consuming* project, not this repo — the demo functions live under `examples/`, so repo scripts and tests
-pass paths explicitly.
+*consuming* project — which is exactly the layout of each `examples/*/` project — not this repo, so the
+tests pass paths explicitly.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
 `typecheck` script, never the compiler API the translator depends on. A script named `check` would
-shadow the built-in subcommand, which is part of why the example scripts are `ex:check`/`ex:compile`;
-`--no-script` stays in `typecheck` so the built-in wins even if a `check` script reappears.
+shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
-After any change that alters generated SQL for the examples, re-run `bun run ex:compile` and commit the result:
-`examples/output.sql` and `examples/tsql-manifest.json`, which sit beside the `examples/*.ts` they
-are emitted from. The compiler owns both files and guarantees byte-identical re-runs, which is why
-`examples/tsql-manifest.json` is excluded from oxfmt — reformatting it would produce a diff on every
-compile, forever.
+`examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
+`^<version>`: `simple` (one type, one function, `functions/tsconfig.json`) and `with-postgrest`
+(PostgreSQL + PostgREST via Docker, a trigger calling the compiled function, a Vite page importing
+the same TypeScript). Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
+package's version and runs inside `bun run version`; `link` points them at this checkout
+(`file:../..`), which CI does before running each example as a user would. Generated SQL is not
+checked in there (`.gitignore`).
 
 ## TypeScript 7 compiler API
 
@@ -255,14 +253,14 @@ Only composites, domains and enums a successfully-lowered function mentions are 
 has no `IF NOT EXISTS`, so it is wrapped in a `DO` block that also compares the existing shape and
 raises on drift. The compiler creates types; it never rewrites them.
 
-## Four tsconfigs, deliberately
+## Several tsconfigs, deliberately
 
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`. It excludes `tests/parity` and
   `tests/rejected`: those are projects of functions to compile, type checked through their own tsconfig by the compiler in
   the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a case's `enum`.
-- `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
-  `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
-  costs no compiler code.
+- `examples/*/functions/tsconfig.json` — each example's functions project, `types: []`. This is
+  load-bearing: `process`, `Bun` and `require` become *type errors* before the translator ever runs, so
+  one class of rejection costs no compiler code.
 - `tests/parity/tsconfig.json` — **accepted cases**, one per pair: `name.ts`, the functions, and `name.sql`, the
   types and functions it must compile to (blocks matched in order, indentation aside; not runnable on its
   own). Isolated the same way (`types: []`). They share one SQL namespace, so function and
@@ -273,11 +271,9 @@ raises on drift. The compiler creates types; it never rewrites them.
   `Expected:` lines with the message the compiler must give; `// ← rejected here` marks the line it must
   point at, where that matters.
 
-**No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
-them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,
-`ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL, and `psql` running
-`examples/output.sql` then the hand-written `examples/usage.sql` — the README's "Using the functions from
-SQL" patterns, with assertions that raise). Coverage belongs in
+**No test reads `examples/`.** Examples are projects to copy, not coverage; editing them must never
+break a compiler test. CI runs each one through the user's own commands, linked to this checkout
+(see `.github/workflows/ci.yml`). Coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
 **Test files hold no cases**: they run what the folders contain, so adding a case never means editing a
