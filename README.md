@@ -323,6 +323,7 @@ compared with.
 | takes an object | `ROW(a, b)::app.thing`, one value per flattened field in declaration order — or a variable of that type filled by `SELECT … INTO` |
 | returns an object | `(app.f(…)).field`, or `SELECT (app.f(…)).*` for every field |
 | takes an `Integer` | an `integer`: cast a `count(*)`, which is a `bigint` |
+| takes a named union or an enum | a column of that type (`plan app.plan`), so the database refuses an unknown value on insert; a `text` value is accepted by a domain and checked, and needs `::app.area_type` for an enum |
 | takes an array | `ARRAY(SELECT ROW(…)::app.thing FROM …)` — not `array_agg`, which is NULL over no rows, and `FOREACH` raises on NULL; or `COALESCE(array_agg(…), '{}')` |
 | takes a `T` that is not `T \| null` | a non-NULL value: the function does not check, as TypeScript would not have let `null` through |
 
@@ -378,7 +379,7 @@ A file the project does not hold is an error listing what it does hold, rather t
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
 - **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
-- **Template literals** are concatenation: `` `${plan}-${region}` `` is `plan || '-' || region`. Their substitutions follow the same rule — never nullable — and only types written the same way by `String(value)` and `::text` are accepted: text, `Integer` and `boolean` (`42::text` is `'42'`, `true::text` is `'true'`). Fractional numbers are refused, because the two languages print them differently: `String(0.1 + 0.2)` is `0.30000000000000004`, and a `numeric` keeps its trailing zeros (`1.10`).
+- **Template literals** are concatenation: `` `${plan}-${region}` `` is `plan || '-' || region` (an enum is cast `::text` first, which writes its label). Their substitutions follow the same rule — never nullable — and only types written the same way by `String(value)` and `::text` are accepted: text, `Integer` and `boolean` (`42::text` is `'42'`, `true::text` is `'true'`). Fractional numbers are refused, because the two languages print them differently: `String(0.1 + 0.2)` is `0.30000000000000004`, and a `numeric` keeps its trailing zeros (`1.10`).
 - **Named closed sets of strings are enforced by the database.** A union alias is a domain; an `as const` object or a string `enum` is an enum — see [Named types](#named-types-domains-and-enums). An anonymous union written in a signature stays `text`, with its values recorded in a comment, since there is no name to give a type.
 - **Identifiers** are mapped to `snake_case`, and quoted when they collide with a reserved word — `const limit` becomes `"limit"`.
 

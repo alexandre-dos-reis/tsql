@@ -1016,7 +1016,8 @@ async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR
       );
     }
     if (isExactly(value.type, "text")) {
-      pieces.push(value);
+      // An enum is written as its label, like `String(value)`, once cast to text.
+      pieces.push(textOf(value));
     } else if (isExactly(value.type, "integer") || isExactly(value.type, "boolean")) {
       pieces.push({ kind: "cast", operand: value, to: "text", type: text });
     } else {

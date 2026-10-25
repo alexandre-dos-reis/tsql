@@ -37,6 +37,8 @@ RETURN area::text || '/' || zone;
 
 RETURN app.shout(area::text);
 
+RETURN area::text || CASE WHEN area = 'level-1'::app.area_type THEN '!' ELSE '' END || ':' || zone;
+
 RETURN CASE WHEN area = 'level-3'::app.area_type THEN 'level-3'::app.area_type ELSE CASE WHEN area = 'level-2'::app.area_type THEN 'level-3'::app.area_type ELSE 'level-2'::app.area_type END END;
 
 RETURN app.area_depth('level-2'::app.area_type) + bonus;

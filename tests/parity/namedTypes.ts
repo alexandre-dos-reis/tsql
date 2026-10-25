@@ -54,6 +54,10 @@ export function areaLabel(area: AreaType, zone: Zone): string {
   return area + "/" + zone;
 }
 
+export function areaTag(area: AreaType, zone: Zone): string {
+  return `${area}${area === AreaType.Level1 ? "!" : ""}:${zone}`;
+}
+
 export function shout(message: string): string {
   return message + "!";
 }
