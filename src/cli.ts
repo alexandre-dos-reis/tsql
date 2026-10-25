@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { compileProject, formatResult, type CompileResult } from "./compile.ts";
 import { ProjectNotFoundError } from "./errors.ts";
 import { err, out, painter } from "./style.ts";
@@ -65,8 +65,11 @@ interface CheckOptions extends ProjectOptions {
 
 interface CompileOptions extends ProjectOptions {
   readonly out: string;
-  readonly manifest: string;
+  readonly manifest?: boolean;
 }
+
+/** Written beside the migration with `--manifest`, under this name only: tooling finds it without being told. */
+const MANIFEST = "tsql-manifest.json";
 
 interface ParityOptions extends ProjectOptions {
   readonly runs?: string;
@@ -106,22 +109,24 @@ function projectCommand(name: string, summary: string): Command {
     .helpOption("-h, --help", "show this help");
 }
 
-projectCommand("compile", "type check, translate, and write the migration and its manifest")
+projectCommand("compile", "type check, translate, and write the migration")
   .description(
-    "Type check the functions, translate them to PL/pgSQL, and write the migration and a manifest of the functions it holds. Point your migration tool at the migration.",
+    "Type check the functions, translate them to PL/pgSQL, and write the migration. Point your migration tool at it. With --manifest, also write tsql-manifest.json beside it: the functions and types it holds, for tooling.",
   )
   .option("--out <file>", "the migration to write", "generated/0001_functions.sql")
-  .option("--manifest <file>", "the manifest to write", "generated/manifest.json")
+  .option("--manifest", `also write ${MANIFEST} beside the migration, describing what it holds`)
   .addHelpText("after", "\nExample:\n  tsql compile functions/*.ts --out migrations/0007_functions.sql")
   .action(async (files: string[], options: CompileOptions, command: Command) => {
     const result = await compileFiles(command, files, options);
     await mkdir(dirname(options.out), { recursive: true });
     await writeFile(options.out, result.sql);
-    await mkdir(dirname(options.manifest), { recursive: true });
-    await writeFile(options.manifest, `${JSON.stringify(result.manifest, null, 2)}\n`);
     say(`${out("green", "✓")} wrote ${out("bold", options.out)} — ${counts(result)}:`);
     say(listing(result));
-    say(`${out("green", "✓")} wrote ${out("bold", options.manifest)}`);
+    if (options.manifest) {
+      const manifest = join(dirname(options.out), MANIFEST);
+      await writeFile(manifest, `${JSON.stringify(result.manifest, null, 2)}\n`);
+      say(`${out("green", "✓")} wrote ${out("bold", manifest)}`);
+    }
   });
 
 projectCommand("check", "type check and translate, writing nothing")

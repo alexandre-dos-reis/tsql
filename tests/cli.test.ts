@@ -3,9 +3,9 @@ import { describe, expect, test } from "bun:test";
 /**
  * The CLI's own contract, which the library tests cannot see: which
  * invocations are refused, what is printed, and the exit codes. The CLI is
- * spawned as a user would run it, under Bun and under Node. `check` and
- * `parity` are used, never `compile`: it writes, and a test suite has no
- * business rewriting checked-in output.
+ * spawned as a user would run it, under Bun and under Node. `compile` only
+ * ever writes into a throwaway directory: a test suite has no business
+ * rewriting checked-in output.
  */
 
 /**
@@ -360,5 +360,50 @@ describe("check --watch checks again when a file changes", () => {
     const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", ...PROJECT, "--watch"]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("--watch");
+  });
+});
+
+describe("compile writes the migration, and the manifest only when asked", () => {
+  // Into a throwaway directory: this suite never rewrites anything checked in.
+  async function compileInto(extra: readonly string[]): Promise<{ dir: string; stdout: string; exitCode: number }> {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "tsql-compile-"));
+    const { stdout, exitCode } = await run([
+      "compile",
+      "tests/parity/ifElseChain.ts",
+      ...PROJECT,
+      "--out",
+      join(dir, "0001_functions.sql"),
+      ...extra,
+    ]);
+    return { dir, stdout, exitCode };
+  }
+
+  test("without --manifest, only the migration is written", async () => {
+    const { readdir, rm } = await import("node:fs/promises");
+    const { dir, exitCode } = await compileInto([]);
+    try {
+      expect(exitCode).toBe(0);
+      expect(await readdir(dir)).toEqual(["0001_functions.sql"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--manifest writes tsql-manifest.json beside the migration", async () => {
+    const { readdir, readFile, rm } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { dir, stdout, exitCode } = await compileInto(["--manifest"]);
+    try {
+      expect(exitCode).toBe(0);
+      expect((await readdir(dir)).sort()).toEqual(["0001_functions.sql", "tsql-manifest.json"]);
+      const manifest = JSON.parse(await readFile(join(dir, "tsql-manifest.json"), "utf8"));
+      expect(manifest.generatedBy).toBe("tsql");
+      expect(stdout).toContain("tsql-manifest.json");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
