@@ -36,10 +36,11 @@
   <rect x="233" y="273" width="104" height="104" rx="21" fill="#3178C6" />
   <text x="285" y="342" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="-1.5">TS</text>
   <text x="300" y="209" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">setTimeout</text>
-  <text x="218" y="255" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
-  <text x="182" y="332" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
-  <text x="210" y="411" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
-  <text x="292" y="457" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
+  <text x="228" y="252" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
+  <text x="182" y="305" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
+  <text x="180" y="359" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">JSON</text>
+  <text x="216" y="419" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
+  <text x="288" y="459" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
 
   <!-- PostgreSQL's own world: the elephant, from the project's own artwork -->
   <g transform="translate(565 268) scale(0.235)">
