@@ -29,7 +29,8 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   test("no arguments at all shows usage and fails", async () => {
     const { stdout, exitCode } = await run([]);
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("tsql compile <files...>");
+    expect(stdout).toContain("Usage: tsql <command> <files...> [options]");
+    expect(stdout).toContain("compile <files...> [options]");
   });
 
   test("a command with no files says so, and shows usage", async () => {
@@ -61,6 +62,39 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
     const { stdout, exitCode } = await run(["--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("tsql compile rules/*.ts");
+  });
+
+  test("--version prints the package's version", async () => {
+    const { version } = (await Bun.file("package.json").json()) as { version: string };
+    const { stdout, exitCode } = await run(["--version"]);
+    expect(exitCode).toBe(0);
+    expect(stdout.trim()).toBe(version);
+  });
+});
+
+describe("each command has its own options and its own help", () => {
+  test("`parity --help` lists the parity options, and not compile's", async () => {
+    const { stdout, exitCode } = await run(["parity", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Usage: tsql parity <files...> [options]");
+    for (const option of ["--runs <n>", "--seed <n>", "--db-url <url>", "--project <tsconfig>"]) {
+      expect(stdout).toContain(option);
+    }
+    expect(stdout).not.toContain("--out");
+  });
+
+  test("`help <command>` is the same help", async () => {
+    const { stdout, exitCode } = await run(["help", "compile"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Usage: tsql compile <files...> [options]");
+    expect(stdout).toContain("--out <file>");
+  });
+
+  test("an option another command owns is refused, not ignored", async () => {
+    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--runs", "5", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown option '--runs'");
+    expect(stderr).toContain("tsql <command> --help");
   });
 });
 
@@ -103,10 +137,19 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
     expect(stdout).toContain("1 function(s) agree with their TypeScript on 10 random inputs each");
   });
 
-  test("it writes nothing", async () => {
+  test("it writes nothing, and takes no --out", async () => {
     const out = "generated/should-not-exist.sql";
-    await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown option '--out'");
     expect(await Bun.file(out).exists()).toBe(false);
+  });
+
+  test("a negative --seed needs no `=`", async () => {
+    const { stdout, stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "3", "--seed", "-5", ...PROJECT]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
   });
 
   test("a malformed --runs is named rather than turned into NaN", async () => {

@@ -32,12 +32,15 @@ bun run typecheck               # bun check over src+tests, and over the example
 bun run format                  # oxfmt (dev dependency; not checked in CI)
 ```
 
-`src/cli.ts` has three commands — `compile` (writes), `check` (writes nothing) and `parity` (writes
-nothing, then runs the parity harness via `src/runParity.ts`, imported lazily so `check`/`compile`
-never load a database). `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
+`src/cli.ts` has three commands, declared with commander so each has its own options and its own
+`--help` — `compile` (writes), `check` (writes nothing) and `parity` (writes nothing, then runs the
+parity harness via `src/runParity.ts`, imported lazily so `check`/`compile` never load a database).
+What commander does not decide stays in `cli.ts`: no default file set, and named messages for the
+likely slips (a file where the command goes, a malformed `--runs`). `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
 then it runs on one reserved postgres.js connection inside a transaction that is always rolled back,
-with a savepoint around each query so one raising check does not abort the rest. The CLI takes
-`--project`, `--out`, `--manifest`, `--schema`, `--no-comments`, `--runs`, `--seed`, `--db-url`, and
+with a savepoint around each query so one raising check does not abort the rest. Every command takes
+`--project`, `--schema`, `--no-comments`; only `compile` takes `--out`, `--manifest`; only `parity`
+takes `--runs`, `--seed`, `--db-url` — another command's option is refused. Every command
 **requires file positionals** — no files prints usage and exits 1. There is deliberately no "compile everything"
 default: the migration is written from exactly the files named, so a default would let `tsql compile`
 write more than was asked for over whatever was there before. The flip side is that narrowing to a
@@ -144,8 +147,9 @@ bun run release     # changeset publish
   that agrees with the consumer's own code; a copy resolved under this package would be a different
   one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
   `unstable/` subpaths may move between 7.x minors. Its only runtime
-  dependencies are `fast-check`, `@electric-sql/pglite` and `postgres`, for the parity harness and
-  `tsql parity`, which `tests/packaging.test.ts` asserts.
+  dependencies are `commander` (the CLI, itself dependency-free) and `fast-check`,
+  `@electric-sql/pglite` and `postgres`, for the parity harness and `tsql parity`, which
+  `tests/packaging.test.ts` asserts.
 - **`exports` points at `src/*.ts`.** Node has stripped types natively since 22.18, Bun always has,
   and TypeScript resolves `.ts` as its own types — so there is no build step and no
   emitted-declaration drift. **The price is that every file in `src/` must be erasable**: no enums,
@@ -279,13 +283,14 @@ test file. `tests/README.md` explains the three.
   test suite has no business rewriting checked-in output.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
-  has no runtime dependencies but `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
+  has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
 
 ## Constraints to preserve
 
-- **Three runtime dependencies, `fast-check`, `@electric-sql/pglite` and `postgres`; `typescript` is a
-  peer.** The compiler is Bun plus the TypeScript API; the emitter is string building. Parity testing is
+- **Four runtime dependencies, `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`;
+  `typescript` is a peer.** The compiler is
+  Bun plus the TypeScript API; the emitter is string building. Parity testing is
   a product feature: `tsql parity` runs the fast-check harness (`src/parity.ts`) against PGlite or, with
   `--db-url`, a real server through postgres.js. The harness is internal, not exported: its `RowQuery`
   callback is what lets `src/runParity.ts` swap one database for the other.

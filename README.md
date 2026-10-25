@@ -351,20 +351,29 @@ mapping. You don't need it to use `tsql`, but you will want it before changing h
 ## CLI
 
 ```
-tsql compile <files...> [options]   Type check, translate and write SQL
-tsql check   <files...> [options]   Type check and translate, writing nothing
-tsql parity  <files...> [options]   Type check, translate, and run the parity tests in PGlite, writing nothing
-
-  --project <tsconfig>   Rules project          (default: rules/tsconfig.json)
-  --out <file>           Migration to write     (default: generated/0001_rules.sql)
-  --manifest <file>      Manifest to write      (default: generated/manifest.json)
-  --schema <name>        Schema to qualify with (default: app)
-  --no-comments          Omit provenance comments from the generated SQL
-  --runs <n>             parity: random inputs per function (default: 200)
-  --seed <n>             parity: replay a failure; a negative seed needs `--seed=-123`
-  --db-url <url>         parity: run against this PostgreSQL instead of an in-process PGlite,
-                         inside a transaction that is rolled back (default: PGlite)
+tsql compile <files...> [options]   type check, translate, and write the migration and its manifest
+tsql check   <files...> [options]   type check and translate, writing nothing
+tsql parity  <files...> [options]   prove the SQL agrees with the TypeScript, writing nothing
+tsql help [command]                 a command's help; `tsql <command> --help` is the same
+tsql --version
 ```
+
+Each command takes only its own options, and lists them in its help:
+
+| Option | Commands | |
+| --- | --- | --- |
+| `--project <tsconfig>` | all | the rules project (default: `rules/tsconfig.json`) |
+| `--schema <name>` | all | the schema the generated types and functions go in (default: `app`) |
+| `--no-comments` | all | omit the provenance comments from the generated SQL |
+| `--out <file>` | `compile` | the migration to write (default: `generated/0001_rules.sql`) |
+| `--manifest <file>` | `compile` | the manifest to write (default: `generated/manifest.json`) |
+| `--runs <n>` | `parity` | random inputs per function (default: 200) |
+| `--seed <n>` | `parity` | replay a failure with the seed it reported |
+| `--db-url <url>` | `parity` | test against this PostgreSQL instead of an in-process PGlite, in a transaction that is rolled back |
+
+An option another command owns is refused rather than ignored — `tsql check … --runs 5` is an error,
+not a check that quietly ran no tests. The CLI is built on [commander](https://github.com/tj/commander.js),
+so the help is generated from the same declarations that parse the arguments and cannot drift from them.
 
 Rules are named explicitly, and an invocation with no files prints usage and exits non-zero. There is no "compile everything" default on purpose: the migration is written from exactly the files given, so a default would let `tsql compile` quietly write more than was asked for over whatever was there before. By the same token, narrowing to a subset writes a migration holding only that subset — pass the glob when you mean the whole project.
 
