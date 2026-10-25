@@ -20,11 +20,47 @@
               "enterprise",
               "free",
               "pro"
-            ]
+            ],
+            "named": {
+              "kind": "domain",
+              "tsName": "Plan",
+              "sqlName": "plan",
+              "values": [
+                "enterprise",
+                "free",
+                "pro"
+              ],
+              "module": "examples/billing.ts"
+            }
           }
         }
       ],
       "nullable": false,
+      "module": "examples/billing.ts"
+    }
+  ],
+  "named": [
+    {
+      "kind": "domain",
+      "tsName": "Plan",
+      "sqlName": "plan",
+      "values": [
+        "enterprise",
+        "free",
+        "pro"
+      ],
+      "module": "examples/billing.ts"
+    },
+    {
+      "kind": "domain",
+      "tsName": "Tier",
+      "sqlName": "tier",
+      "values": [
+        "enterprise",
+        "free",
+        "pro",
+        "starter"
+      ],
       "module": "examples/billing.ts"
     }
   ],
@@ -45,7 +81,18 @@
               "enterprise",
               "free",
               "pro"
-            ]
+            ],
+            "named": {
+              "kind": "domain",
+              "tsName": "Plan",
+              "sqlName": "plan",
+              "values": [
+                "enterprise",
+                "free",
+                "pro"
+              ],
+              "module": "examples/billing.ts"
+            }
           }
         }
       ],
@@ -81,7 +128,18 @@
                     "enterprise",
                     "free",
                     "pro"
-                  ]
+                  ],
+                  "named": {
+                    "kind": "domain",
+                    "tsName": "Plan",
+                    "sqlName": "plan",
+                    "values": [
+                      "enterprise",
+                      "free",
+                      "pro"
+                    ],
+                    "module": "examples/billing.ts"
+                  }
                 }
               }
             ],
@@ -122,7 +180,19 @@
               "free",
               "pro",
               "starter"
-            ]
+            ],
+            "named": {
+              "kind": "domain",
+              "tsName": "Tier",
+              "sqlName": "tier",
+              "values": [
+                "enterprise",
+                "free",
+                "pro",
+                "starter"
+              ],
+              "module": "examples/billing.ts"
+            }
           }
         },
         {

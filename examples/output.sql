@@ -3,16 +3,61 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
--- examples/billing.ts: Subscription
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
+-- examples/billing.ts: Plan, a union of strings
 DO $$
 DECLARE
-  expected text[] := ARRAY['plan text'];
+  expected text := 'CHECK ((VALUE = ANY (ARRAY[''enterprise''::text, ''free''::text, ''pro''::text])))';
+  actual text;
+BEGIN
+  IF to_regtype('app.plan') IS NULL THEN
+    CREATE DOMAIN app.plan AS text CONSTRAINT plan_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro']));
+  ELSE
+    IF (SELECT t.typtype <> 'd' OR t.typbasetype <> 'text'::regtype FROM pg_type t WHERE t.oid = to_regtype('app.plan')) THEN
+      RAISE EXCEPTION '% exists but is not a domain over text', 'app.plan';
+    END IF;
+    SELECT pg_get_constraintdef(c.oid) INTO actual
+      FROM pg_constraint c
+     WHERE c.contypid = to_regtype('app.plan') AND c.conname = 'plan_values';
+    IF actual IS DISTINCT FROM expected THEN
+      ALTER DOMAIN app.plan DROP CONSTRAINT IF EXISTS plan_values;
+      ALTER DOMAIN app.plan ADD CONSTRAINT plan_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro']));
+    END IF;
+  END IF;
+END
+$$;
+
+-- examples/billing.ts: Tier, a union of strings
+DO $$
+DECLARE
+  expected text := 'CHECK ((VALUE = ANY (ARRAY[''enterprise''::text, ''free''::text, ''pro''::text, ''starter''::text])))';
+  actual text;
+BEGIN
+  IF to_regtype('app.tier') IS NULL THEN
+    CREATE DOMAIN app.tier AS text CONSTRAINT tier_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro', 'starter']));
+  ELSE
+    IF (SELECT t.typtype <> 'd' OR t.typbasetype <> 'text'::regtype FROM pg_type t WHERE t.oid = to_regtype('app.tier')) THEN
+      RAISE EXCEPTION '% exists but is not a domain over text', 'app.tier';
+    END IF;
+    SELECT pg_get_constraintdef(c.oid) INTO actual
+      FROM pg_constraint c
+     WHERE c.contypid = to_regtype('app.tier') AND c.conname = 'tier_values';
+    IF actual IS DISTINCT FROM expected THEN
+      ALTER DOMAIN app.tier DROP CONSTRAINT IF EXISTS tier_values;
+      ALTER DOMAIN app.tier ADD CONSTRAINT tier_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro', 'starter']));
+    END IF;
+  END IF;
+END
+$$;
+
+-- examples/billing.ts: Subscription
+DO $$
+DECLARE
+  expected text[] := ARRAY['plan ' || format_type(to_regtype('app.plan'), NULL)];
   actual text[];
 BEGIN
   IF to_regtype('app.subscription') IS NULL THEN
     CREATE TYPE app.subscription AS (
-      plan text
+      plan app.plan
     );
   ELSE
     SELECT array_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod) ORDER BY a.attnum)
@@ -78,9 +123,8 @@ END;
 $$;
 
 -- examples/billing.ts: seatLimit()
---   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
 CREATE OR REPLACE FUNCTION app.seat_limit(
-  tier text,
+  tier app.tier,
   extra_seats integer
 )
 RETURNS integer
@@ -98,9 +142,8 @@ END;
 $$;
 
 -- examples/billing.ts: todoLimit()
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.todo_limit(
-  plan text
+  plan app.plan
 )
 RETURNS integer
 LANGUAGE plpgsql
