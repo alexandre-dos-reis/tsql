@@ -1,7 +1,7 @@
 /**
  * Rejected: an arrow function without an explicit return type.
  *
- * Arrow functions follow the same rule as `function` declarations: the return
+ * Arrow functions follow the same requirement as `function` declarations: the return
  * type is part of the contract between TypeScript and SQL — it decides
  * `RETURNS boolean` versus `RETURNS text` — so it has to be written down.
  *

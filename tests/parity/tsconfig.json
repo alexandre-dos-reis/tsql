@@ -1,5 +1,5 @@
 {
-  "comment": "Accepted cases, one per pair: name.ts, the rule, and name.sql, the types and functions it must compile to. tests/parity.test.ts checks that SQL, then checks every function for parity with its TypeScript on PGlite and PostgreSQL. Isolated like a consuming project: no Bun/Node globals.",
+  "comment": "Accepted cases, one per pair: name.ts, the functions, and name.sql, the types and functions it must compile to. tests/parity.test.ts checks that SQL, then checks every function for parity with its TypeScript on PGlite and PostgreSQL. Isolated like a consuming project: no Bun/Node globals.",
   "compilerOptions": {
     "lib": [
       "ESNext"

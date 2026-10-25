@@ -1,18 +1,18 @@
--- Using the compiled rules from SQL: a CHECK constraint, a generated column and a trigger.
+-- Using the compiled functions from SQL: a CHECK constraint, a generated column and a trigger.
 --
 -- Hand-written, not generated: this is the application's side, which tsql leaves to you. CI runs it
 -- against PostgreSQL after examples/output.sql, and every assertion below raises if it fails:
 --
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 --single-transaction -f examples/output.sql -f examples/usage.sql
 
--- 1. A CHECK constraint: a rule about one row. The generated functions are IMMUTABLE, which is what
+-- 1. A CHECK constraint: a condition on one row. The generated functions are IMMUTABLE, which is what
 --    PostgreSQL requires of a function in a constraint, a generated column or an index expression.
 
 CREATE TABLE products (
   sku text PRIMARY KEY CHECK (app.is_not_empty(sku)),
   list_cents integer NOT NULL,
   percent_off double precision,
-  -- 2. A generated column: computed by the rule on every write, stored with the row.
+  -- 2. A generated column: computed by the function on every write, stored with the row.
   price_cents double precision GENERATED ALWAYS AS (app.price_cents(list_cents, percent_off)) STORED
 );
 
@@ -38,11 +38,11 @@ EXCEPTION WHEN check_violation THEN
 END
 $$;
 
--- 3. A trigger: a rule about other rows. The trigger gathers the data — the plan, the count — and
---    the compiled rule decides. Concurrency is the trigger's job, not the rule's.
+-- 3. A trigger: a condition involving other rows. The trigger gathers the data — the plan, the count — and
+--    the compiled function decides. Concurrency is the trigger's job, not the function's.
 
--- The plan column has the rules' own type: `type Plan = "free" | "pro" | "enterprise"` is the domain
--- app.plan, so a plan the rules do not know is refused on the way in.
+-- The plan column has the functions' own type: `type Plan = "free" | "pro" | "enterprise"` is the domain
+-- app.plan, so a plan the functions do not know is refused on the way in.
 CREATE TABLE users (
   id bigint PRIMARY KEY,
   plan app.plan NOT NULL
@@ -63,7 +63,7 @@ BEGIN
   -- Lock the user: two concurrent inserts must not both count 2 todos and both pass a limit of 3.
   SELECT plan INTO sub FROM users WHERE id = NEW.user_id FOR UPDATE;
 
-  -- count(*) is a bigint; the rule takes an integer.
+  -- count(*) is a bigint; the function takes an integer.
   SELECT count(*)::integer INTO current_count FROM todos WHERE user_id = NEW.user_id;
 
   IF NOT app.can_create_todo(sub, current_count) THEN
@@ -83,7 +83,7 @@ INSERT INTO users (id, plan) VALUES (1, 'free'), (2, 'pro');
 DO $$
 BEGIN
   INSERT INTO users (id, plan) VALUES (3, 'gratuit');
-  RAISE EXCEPTION 'a plan the rules do not know should have been refused by the app.plan domain';
+  RAISE EXCEPTION 'a plan the functions do not know should have been refused by the app.plan domain';
 EXCEPTION WHEN check_violation THEN
   NULL;
 END
@@ -102,7 +102,7 @@ $$;
 -- The pro plan allows more, so the same insert passes for user 2.
 INSERT INTO todos (user_id, title) VALUES (2, 'two'), (2, 'three'), (2, 'four');
 
--- A rule taking an object is called with ROW(…)::type, its fields in declaration order; one
+-- A function taking an object is called with ROW(…)::type, its fields in declaration order; one
 -- returning an object is read with (fn(…)).field. Here, straight from a query, row by row:
 DO $$
 BEGIN

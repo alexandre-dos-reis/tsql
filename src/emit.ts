@@ -396,7 +396,7 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
 
   const lines: string[] = [];
   if (comments) {
-    lines.push(`-- ${composite.module ?? "rules"}: ${composite.tsName}`);
+    lines.push(`-- ${composite.module ?? "functions"}: ${composite.tsName}`);
     for (const field of composite.fields) {
       // A flattened column no longer looks like the shape it came from, so the
       // path is recorded for whoever reads the schema.
@@ -422,7 +422,7 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
     `     WHERE a.attrelid = (SELECT t.typrelid FROM pg_type t WHERE t.oid = to_regtype('${qualified}'))`,
     "       AND a.attnum > 0 AND NOT a.attisdropped;",
     "    IF actual IS DISTINCT FROM expected THEN",
-    `      RAISE EXCEPTION '${qualified} exists as % but the rules expect %', actual, expected;`,
+    `      RAISE EXCEPTION '${qualified} exists as % but the functions expect %', actual, expected;`,
     "    END IF;",
     "  END IF;",
     "END",
@@ -449,7 +449,7 @@ export function emitDomain(named: NamedText, options: EmitOptions = {}): string 
   // How PostgreSQL prints that constraint back.
   const printed = `CHECK ((VALUE = ANY (ARRAY[${named.values.map((v) => `${quoteLiteral(v)}::text`).join(", ")}])))`;
   const lines: string[] = [];
-  if (comments) lines.push(`-- ${named.module ?? "rules"}: ${named.tsName}, a union of strings`);
+  if (comments) lines.push(`-- ${named.module ?? "functions"}: ${named.tsName}, a union of strings`);
   lines.push(
     "DO $$",
     "DECLARE",
@@ -492,7 +492,7 @@ export function emitEnum(named: NamedText, options: EmitOptions = {}): string {
   const name = quoteLiteral(qualified);
   const values = named.values.map(quoteLiteral).join(", ");
   const lines: string[] = [];
-  if (comments) lines.push(`-- ${named.module ?? "rules"}: ${named.tsName}, an enum`);
+  if (comments) lines.push(`-- ${named.module ?? "functions"}: ${named.tsName}, an enum`);
   lines.push(
     "DO $$",
     "DECLARE",
@@ -510,10 +510,10 @@ export function emitEnum(named: NamedText, options: EmitOptions = {}): string {
     "  SELECT array_agg(e.enumlabel::text ORDER BY e.enumsortorder) INTO actual",
     `    FROM pg_enum e WHERE e.enumtypid = to_regtype(${name});`,
     "  IF EXISTS (SELECT 1 FROM unnest(actual) AS a(v) WHERE v <> ALL (expected)) THEN",
-    `    RAISE EXCEPTION '% has % but the rules expect %: a value was removed or renamed. Rename it with ALTER TYPE % RENAME VALUE, or migrate the rows and recreate the type.', ${name}, actual, expected, ${name};`,
+    `    RAISE EXCEPTION '% has % but the functions expect %: a value was removed or renamed. Rename it with ALTER TYPE % RENAME VALUE, or migrate the rows and recreate the type.', ${name}, actual, expected, ${name};`,
     "  END IF;",
     "  IF actual IS DISTINCT FROM ARRAY(SELECT v FROM unnest(expected) WITH ORDINALITY AS u(v, n) WHERE v = ANY (actual) ORDER BY n) THEN",
-    `    RAISE EXCEPTION '% has % but the rules expect %: the values were reordered', ${name}, actual, expected;`,
+    `    RAISE EXCEPTION '% has % but the functions expect %: the values were reordered', ${name}, actual, expected;`,
     "  END IF;",
     "  FOR i IN REVERSE cardinality(expected) .. 1 LOOP",
     "    CONTINUE WHEN expected[i] = ANY (actual);",

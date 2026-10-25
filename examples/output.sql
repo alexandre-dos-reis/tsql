@@ -66,7 +66,7 @@ BEGIN
      WHERE a.attrelid = (SELECT t.typrelid FROM pg_type t WHERE t.oid = to_regtype('app.subscription'))
        AND a.attnum > 0 AND NOT a.attisdropped;
     IF actual IS DISTINCT FROM expected THEN
-      RAISE EXCEPTION 'app.subscription exists as % but the rules expect %', actual, expected;
+      RAISE EXCEPTION 'app.subscription exists as % but the functions expect %', actual, expected;
     END IF;
   END IF;
 END

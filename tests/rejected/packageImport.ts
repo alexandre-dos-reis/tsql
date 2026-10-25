@@ -2,7 +2,7 @@
  * Rejected: calling a function imported from a package.
  *
  * Package code is JavaScript that cannot run inside PostgreSQL. Only the exported
- * functions of the rules project itself are compiled and callable.
+ * functions of the project itself are compiled and callable.
  *
  * Expected: comes from a package (`fast-check`)
  */

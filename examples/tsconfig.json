@@ -1,5 +1,5 @@
 {
-  "comment": "The project the compiler reads. Deliberately isolated: no Bun/Node globals, so business rules cannot reach for anything the database side has no equivalent for.",
+  "comment": "The project the compiler reads. Deliberately isolated: no Bun/Node globals, so the pure functions cannot reach for anything the database side has no equivalent for.",
   "compilerOptions": {
     "lib": ["ESNext"],
     "target": "ESNext",

@@ -1,7 +1,7 @@
 import type { Integer } from "../../src/pgtypes";
 
 /**
- * One compiled rule calling another — schema-qualified — through a local named after a reserved word,
+ * One compiled function calling another — schema-qualified — through a local named after a reserved word,
  * which is quoted.
  */
 export type Plan = "free" | "pro" | "enterprise";

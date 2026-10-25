@@ -2,11 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`tsql` compiles a deliberately restricted subset of TypeScript business rules to PL/pgSQL, refusing
+`tsql` compiles a deliberately restricted subset of pure TypeScript functions to PL/pgSQL, refusing
 anything whose semantics it cannot preserve, and proves the two implementations agree with generated
-parity tests. `README.md` is the design document: it records *why* each restriction and each semantic
-mapping exists. Read the relevant section there before changing behaviour — most of what looks like a
-missing feature is a documented, deliberate rejection.
+parity tests. `docs/design.md` is the design document: it records *why* each restriction and each
+semantic mapping exists. Read the relevant section there before changing behaviour — most of what looks
+like a missing feature is a documented, deliberate rejection. `README.md` is the user's short guide;
+`CONTRIBUTING.md` holds the toolchain, CI and release notes. Keep the README short: reasoning belongs
+in `docs/design.md`.
 
 ## Environment
 
@@ -50,13 +52,13 @@ write more than was asked for over whatever was there before. The flip side is t
 subset writes a migration holding only that subset, which is why the repo's own scripts pass
 `examples/*.ts` rather than a single file.
 
-Narrowing is validated in `compile.ts#selected`: a named file that is not one of the project's rule
+Narrowing is validated in `compile.ts#selected`: a named file that is not one of the project's source
 files throws, listing what the project holds, because reporting success having translated nothing is
 the same class of quiet wrongness the translator refuses. `CompileOptions.include` is the unvalidated
 predicate form, used by the tests.
 
-The CLI's `--project` default (`rules/tsconfig.json`) and `--out`/`--manifest` defaults describe a
-*consuming* project, not this repo — the demo rules live under `examples/`, so repo scripts and tests
+The CLI's `--project` default (`functions/tsconfig.json`) and `--out`/`--manifest` defaults describe a
+*consuming* project, not this repo — the demo functions live under `examples/`, so repo scripts and tests
 pass paths explicitly.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
@@ -100,11 +102,11 @@ properties of that resolver are load-bearing:
 
 `src/compile.ts#compileProject` is the whole build, in order:
 
-1. `openProject` (`src/program.ts`) opens the rules tsconfig.
+1. `openProject` (`src/program.ts`) opens the functions project's tsconfig.
 2. `typeCheck` runs TypeScript's own diagnostics first. Any error aborts before translation — so a
    construct can be blocked by *tsconfig* rather than by the translator (see isolation below).
-3. **Pass 1**: `lowerSignature` for every exported rule in the project — a `function` declaration or a
-   `const` bound to an arrow function (`RuleFunction`; an arrow's expression body means `return` it) — collected into a map, so a
+3. **Pass 1**: `lowerSignature` for every exported function in the project — a `function` declaration or a
+   `const` bound to an arrow function (`ExportedFunction`; an arrow's expression body means `return` it) — collected into a map, so a
    call between compiled functions type-checks regardless of declaration order. SQL-name collisions
    are detected here.
 4. **Pass 2**: `lowerFunction` for each body, against those signatures.
@@ -112,7 +114,7 @@ properties of that resolver are load-bearing:
    functions.
 
 Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, message)` and collected
-per function so one bad rule does not hide the rest. They carry file, line, column and the offending
+per function so one bad function does not hide the rest. They carry file, line, column and the offending
 source line.
 
 ## The central invariant
@@ -195,7 +197,7 @@ about the IR.
 the alias the author wrote (`Integer`) survives instead of the `number` it resolves to;
 `mapInferredType` is the checker-driven fallback.
 
-Composites are the subtle part, and the README's "Object types" section carries the full reasoning:
+Composites are the subtle part, and the "Object types" section of `docs/design.md` carries the full reasoning:
 
 - Keyed to the **name**, not the shape — TypeScript is structural, PostgreSQL composites are nominal.
   Anonymous parameter shapes are rejected. Two identical shapes stay two SQL types.
@@ -213,7 +215,7 @@ Composites are the subtle part, and the README's "Object types" section carries 
   self-consistent was considered and rejected — it would make the parity harness go green while
   caller-visible behaviour still differed.
 
-Arrays (`ArrayType`, README "Arrays") are `readonly T[]` parameters, locals or composite fields (one
+Arrays (`ArrayType`, `docs/design.md` "Arrays") are `readonly T[]` parameters, locals or composite fields (one
 column of array type, not flattened) and return values, never nullable, elements a scalar or a
 non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
 and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`),
@@ -223,7 +225,7 @@ same reason as field mutation — and requiring it lets `tsc` refuse the mutatio
 `= ANY`, NULL when an element is). Recognised through `checker.isArrayType`, not by name. The parity
 harness builds each array argument as `ARRAY[$1::t, …]::t[]`, so its query depends on the input.
 
-Named closed sets of strings (`NamedText` on a `ScalarType`, README "Named types") stay `sql: "text"`
+Named closed sets of strings (`NamedText` on a `ScalarType`, `docs/design.md` "Named types") stay `sql: "text"`
 so every text rule still applies: a union alias is a **domain** (structural, like the union), an
 `as const` object with its `(typeof X)[keyof typeof X]` alias or a string `enum` is a PostgreSQL
 **enum** (a named vocabulary, which PostGraphile/PostgREST expose). Recognised by provenance and by
@@ -240,12 +242,12 @@ raises on drift. The compiler creates types; it never rewrites them.
 ## Four tsconfigs, deliberately
 
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`. It excludes `tests/parity` and
-  `tests/rejected`: those are rule projects, type checked through their own tsconfig by the compiler in
-  the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a rule's `enum`.
+  `tests/rejected`: those are projects of functions to compile, type checked through their own tsconfig by the compiler in
+  the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a case's `enum`.
 - `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
   `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
   costs no compiler code.
-- `tests/parity/tsconfig.json` — **accepted cases**, one per pair: `name.ts`, the rule, and `name.sql`, the
+- `tests/parity/tsconfig.json` — **accepted cases**, one per pair: `name.ts`, the functions, and `name.sql`, the
   types and functions it must compile to (blocks matched in order, indentation aside; not runnable on its
   own). Isolated the same way (`types: []`). They share one SQL namespace, so function and
   type names must stay unique across the folder.
@@ -258,7 +260,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 **No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
 them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,
 `ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL, and `psql` running
-`examples/output.sql` then the hand-written `examples/usage.sql` — the README's "Using the rules from
+`examples/output.sql` then the hand-written `examples/usage.sql` — the README's "Using the functions from
 SQL" patterns, with assertions that raise). Coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
@@ -297,11 +299,11 @@ test file. `tests/README.md` explains the three.
   a product feature: `tsql parity` runs the fast-check harness (`src/parity.ts`) against PGlite or, with
   `--db-url`, a real server through postgres.js. The harness is internal, not exported: its `RowQuery`
   callback is what lets `src/runParity.ts` swap one database for the other.
-- **Compile pure business rules only** — no database operations. A rule is portable; obtaining the
+- **Compile pure functions only** — no database operations. A pure function is portable; obtaining the
   trusted plan and counting rows belongs in PostgreSQL.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional
   literals are emitted as `1.5::double precision` (an unadorned `1.5` is `numeric`); nullable equality
   is `IS [NOT] DISTINCT FROM`; `&&`/`||` require booleans; concatenation requires non-nullable operands.
-  See the README section of the same name before changing any of these.
+  See the section of the same name in `docs/design.md` before changing any of these.
 - **Reject rather than guess.** Silently generating SQL that diverges from the TypeScript is the one
   outcome this project exists to prevent.

@@ -63,7 +63,7 @@ function viaResolver(): string | undefined {
 }
 
 export interface TscPathOptions {
-  /** The rules tsconfig, so the search can start next to the project being compiled. */
+  /** The functions project's tsconfig, so the search can start next to the project being compiled. */
   readonly near?: string;
 }
 
@@ -87,7 +87,7 @@ function candidates(options: TscPathOptions): string[] {
   add(viaResolver());
 
   // The project being compiled, then the working directory. A monorepo may
-  // hoist `node_modules` to the root, or keep it beside the rules package.
+  // hoist `node_modules` to the root, or keep it beside the functions package.
   if (options.near) for (const path of walkUp(dirname(resolve(options.near)))) add(path);
   for (const path of walkUp(process.cwd())) add(path);
 
