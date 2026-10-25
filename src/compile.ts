@@ -9,6 +9,7 @@ import {
 } from "typescript/unstable/ast";
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
+import type { Paint } from "./style.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature, type RuleFunction } from "./lower.ts";
@@ -314,9 +315,9 @@ function asCompileError(error: unknown): CompileError {
   throw error;
 }
 
-export function formatResult(result: CompileResult, root = process.cwd()): string {
+export function formatResult(result: CompileResult, root = process.cwd(), paint?: Paint): string {
   const lines: string[] = [];
   for (const diagnostic of result.diagnostics) lines.push(diagnostic);
-  for (const error of result.errors) lines.push(error.format(root));
+  for (const error of result.errors) lines.push(error.format(root, paint));
   return lines.join("\n");
 }

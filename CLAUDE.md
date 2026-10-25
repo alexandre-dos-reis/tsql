@@ -36,7 +36,10 @@ bun run format                  # oxfmt (dev dependency; not checked in CI)
 `--help` — `compile` (writes), `check` (writes nothing) and `parity` (writes nothing, then runs the
 parity harness via `src/runParity.ts`, imported lazily so `check`/`compile` never load a database).
 What commander does not decide stays in `cli.ts`: no default file set, and named messages for the
-likely slips (a file where the command goes, a malformed `--runs`). `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
+likely slips (a file where the command goes, a malformed `--runs`). Colour comes from `src/style.ts`
+(hand-written ANSI, no dependency): only on a terminal, `NO_COLOR` off, `FORCE_COLOR` on, `NO_COLOR`
+winning; the CLI writes to `process.stdout`/`stderr` directly because Bun's `console.error` adds its own
+colour. Anything a test or a script reads is therefore plain. `parity` uses an in-process PGlite unless `--db-url` names a real PostgreSQL;
 then it runs on one reserved postgres.js connection inside a transaction that is always rolled back,
 with a savepoint around each query so one raising check does not abort the rest. Every command takes
 `--project`, `--schema`, `--no-comments`; only `compile` takes `--out`, `--manifest`; only `parity`

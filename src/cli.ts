@@ -4,6 +4,28 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { compileProject, formatResult, type CompileResult } from "./compile.ts";
 import { ProjectNotFoundError } from "./errors.ts";
+import { err, out, painter } from "./style.ts";
+
+/**
+ * Help is styled unconditionally: commander strips the colour itself when the
+ * stream it writes to cannot show it (a pipe, NO_COLOR), just as `out` and
+ * `err` decide for everything else this file prints.
+ */
+const helpStyle = painter(true);
+
+/**
+ * Lines to stdout and stderr, written directly rather than through `console`:
+ * Bun's `console.error` colours the whole line red on its own when FORCE_COLOR
+ * is set, whatever NO_COLOR says, so colour would no longer follow the rule in
+ * `style.ts`.
+ */
+function say(text: string): void {
+  process.stdout.write(`${text}\n`);
+}
+
+function complain(text: string): void {
+  process.stderr.write(`${text}\n`);
+}
 
 /**
  * The `tsql` command line: three commands over the same compile, each with its
@@ -59,6 +81,11 @@ const program = new Command("tsql")
   .configureHelp({
     subcommandTerm: (command) =>
       COMMANDS.includes(command.name()) ? `${command.name()} <files...> [options]` : `${command.name()} [command]`,
+    styleTitle: (title) => helpStyle("bold", title),
+    styleCommandText: (text) => helpStyle("bold", text),
+    styleSubcommandTerm: (term) => helpStyle("cyan", term),
+    styleOptionTerm: (term) => helpStyle("cyan", term),
+    styleArgumentTerm: (term) => helpStyle("cyan", term),
   })
   .showHelpAfterError("(run `tsql <command> --help` for its options)");
 
@@ -84,13 +111,13 @@ rulesCommand("compile", "type check, translate, and write the migration and its 
   .addHelpText("after", "\nExample:\n  tsql compile rules/*.ts --out migrations/0007_rules.sql")
   .action(async (files: string[], options: CompileOptions, command: Command) => {
     const result = await compileRules(command, files, options);
-    const names = functionNames(result);
     await mkdir(dirname(options.out), { recursive: true });
     await writeFile(options.out, result.sql);
     await mkdir(dirname(options.manifest), { recursive: true });
     await writeFile(options.manifest, `${JSON.stringify(result.manifest, null, 2)}\n`);
-    console.log(`wrote ${options.out} (${names.length} function(s): ${names.join(", ")})`);
-    console.log(`wrote ${options.manifest}`);
+    say(`${out("green", "✓")} wrote ${out("bold", options.out)} — ${counts(result)}:`);
+    say(listing(result));
+    say(`${out("green", "✓")} wrote ${out("bold", options.manifest)}`);
   });
 
 rulesCommand("check", "type check and translate, writing nothing")
@@ -99,8 +126,9 @@ rulesCommand("check", "type check and translate, writing nothing")
   )
   .addHelpText("after", "\nExample:\n  tsql check rules/*.ts")
   .action(async (files: string[], options: RulesOptions, command: Command) => {
-    const names = functionNames(await compileRules(command, files, options));
-    console.log(`ok — ${names.length} function(s) compile: ${names.join(", ")}`);
+    const result = await compileRules(command, files, options);
+    say(`${out("green", "✓")} ok — ${counts(result)} compile, nothing written:`);
+    say(listing(result));
   });
 
 rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothing")
@@ -115,6 +143,7 @@ rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothin
     "\nExamples:\n  tsql parity rules/*.ts\n  tsql parity rules/*.ts --db-url=postgres://localhost/test --runs 1000",
   )
   .action(async (files: string[], options: ParityOptions, command: Command) => {
+    const started = performance.now();
     const runs = integerOption("runs", options.runs, 1);
     const seed = integerOption("seed", options.seed);
     const dbUrl = options.dbUrl;
@@ -126,7 +155,7 @@ rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothin
     // `check` and `compile` have no use for.
     const { redact, runParity } = await import("./runParity.ts");
     const schema = result.manifest.schema;
-    if (dbUrl) console.log(`Testing against ${redact(dbUrl)}, in a transaction that is rolled back.\n`);
+    if (dbUrl) say(out("dim", `Testing against ${redact(dbUrl)}, in a transaction that is rolled back.\n`));
     const outcomes = await runParity(result, {
       ...(runs === undefined ? {} : { runs }),
       ...(seed === undefined ? {} : { seed }),
@@ -134,9 +163,9 @@ rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothin
       onOutcome: ({ fn, error }) => {
         const sqlName = schema ? `${schema}.${fn.sqlName}` : fn.sqlName;
         if (error) {
-          console.error(`✗ ${fn.tsName}() vs ${sqlName}()\n${error.replace(/^/gm, "    ")}`);
+          complain(`${err("red", "✗")} ${err("bold", `${fn.tsName}()`)} vs ${err("bold", `${sqlName}()`)}\n${error.replace(/^/gm, "    ")}`);
         } else {
-          console.log(`✓ ${fn.tsName}() agrees with ${sqlName}()`);
+          say(`${out("green", "✓")} ${fn.tsName}() agrees with ${sqlName}()`);
         }
       },
     }).catch((error: unknown) =>
@@ -145,15 +174,18 @@ rulesCommand("parity", "prove the SQL agrees with the TypeScript, writing nothin
       fail(error instanceof Error ? error.message : String(error)),
     );
     const failed = outcomes.filter((o) => o.error !== undefined).length;
+    const took = out("dim", `(${((performance.now() - started) / 1000).toFixed(1)}s)`);
     if (failed > 0) {
-      console.error(`\n${failed} of ${outcomes.length} function(s) diverge from their TypeScript.`);
+      complain(`\n${err(["bold", "red"], `${failed} of ${outcomes.length} function(s) diverge from their TypeScript.`)} ${took}`);
       process.exit(1);
     }
-    console.log(`\nok — ${outcomes.length} function(s) agree with their TypeScript on ${runs ?? 200} random inputs each.`);
+    say(
+      `\n${out(["bold", "green"], "ok")} — ${outcomes.length} function(s) agree with their TypeScript on ${runs ?? 200} random inputs each. ${took}`,
+    );
   });
 
 function fail(message: string): never {
-  console.error(`tsql: ${message}`);
+  complain(`${err(["bold", "red"], "tsql:")} ${message}`);
   process.exit(1);
 }
 
@@ -167,8 +199,23 @@ function integerOption(name: string, raw: string | undefined, min?: number): num
   return value;
 }
 
-function functionNames(result: CompileResult): string[] {
-  return result.functions.map((fn) => fn.sqlName).sort();
+/** `3 function(s) and 2 type(s)`. */
+function counts(result: CompileResult): string {
+  const types = result.composites.length + result.named.length;
+  return `${result.functions.length} function(s)${types > 0 ? ` and ${types} type(s)` : ""}`;
+}
+
+/** What a build holds, one per line: functions, then the types they need, with their kind. */
+function listing(result: CompileResult): string {
+  const schema = result.manifest.schema;
+  const qualify = (name: string) => out("cyan", schema ? `${schema}.${name}` : name);
+  const lines = result.functions.map((fn) => fn.sqlName).sort().map((name) => `    ${qualify(name)}()`);
+  const types = [
+    ...result.named.map((t) => ({ name: t.sqlName, kind: t.kind })),
+    ...result.composites.map((t) => ({ name: t.sqlName, kind: "composite" })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  for (const type of types) lines.push(`    ${qualify(type.name)} ${out("dim", type.kind)}`);
+  return lines.join("\n");
 }
 
 /**
@@ -180,7 +227,7 @@ async function compileRules(command: Command, files: readonly string[], options:
   // migration is written from the files named, so quietly compiling whatever
   // the project happened to contain would overwrite it with more than was asked for.
   if (files.length === 0) {
-    console.error(`tsql: \`${command.name()}\` needs at least one file.\n\n${command.helpInformation()}`);
+    complain(`${err(["bold", "red"], "tsql:")} \`${command.name()}\` needs at least one file.\n\n${command.helpInformation({ error: true })}`);
     process.exit(1);
   }
 
@@ -194,21 +241,21 @@ async function compileRules(command: Command, files: readonly string[], options:
     // The default `--project` describes a consuming project, not whatever
     // directory tsql happens to be run from, so this is what a first run hits.
     if (error instanceof ProjectNotFoundError) {
-      console.error(
+      complain(
         `${error.message}\n\n` +
           `Point --project at the tsconfig that holds your rules:\n\n` +
           `  tsql ${command.name()} ${files.join(" ")} --project path/to/tsconfig.json\n`,
       );
       process.exit(1);
     }
-    console.error(error instanceof Error ? error.message : String(error));
+    complain(error instanceof Error ? error.message : String(error));
     process.exit(1);
   });
 
   if (!result.ok) {
-    console.error(formatResult(result));
+    complain(formatResult(result, process.cwd(), err));
     const total = result.errors.length + result.diagnostics.length;
-    console.error(`\n${total} error(s). No SQL was written.`);
+    complain(`\n${err(["bold", "red"], `${total} error(s).`)} No SQL was written.`);
     process.exit(1);
   }
   return result;
@@ -227,10 +274,10 @@ if (args.length === 0) {
 const first = args[0]!;
 if (!first.startsWith("-") && first !== "help" && !COMMANDS.includes(first)) {
   const looksLikeAFile = /\.[cm]?tsx?$/.test(first) || existsSync(first);
-  console.error(
+  complain(
     looksLikeAFile
-      ? `tsql: expected a command, got \`${first}\`.\n\n  Did you mean:  tsql compile ${args.join(" ")}\n`
-      : `tsql: unknown command \`${first}\`. Expected compile, check or parity.\n\n${program.helpInformation()}`,
+      ? `${err(["bold", "red"], "tsql:")} expected a command, got \`${first}\`.\n\n  Did you mean:  ${err("bold", `tsql compile ${args.join(" ")}`)}\n`
+      : `${err(["bold", "red"], "tsql:")} unknown command \`${first}\`. Expected compile, check or parity.\n\n${program.helpInformation({ error: true })}`,
   );
   process.exit(1);
 }

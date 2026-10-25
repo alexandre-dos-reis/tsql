@@ -16,8 +16,17 @@ import { describe, expect, test } from "bun:test";
 const PROJECT = ["--project", "tests/parity/tsconfig.json"];
 
 /** Run the CLI as a user would, and capture both streams and the exit code. */
-async function run(args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([process.execPath, "src/cli.ts", ...args], { stdout: "pipe", stderr: "pipe" });
+async function run(
+  args: readonly string[],
+  env: Record<string, string | undefined> = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  // NO_COLOR and FORCE_COLOR are cleared unless a test sets them, so the
+  // environment the suite runs in cannot change what it observes.
+  const proc = Bun.spawn([process.execPath, "src/cli.ts", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: undefined, ...env },
+  });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { stdout, stderr, exitCode: await proc.exited };
 }
@@ -239,5 +248,41 @@ describe("the CLI runs on Node, not only Bun", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
     expect(stderr).not.toContain("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX");
+  });
+});
+
+describe("colour follows the terminal, and NO_COLOR / FORCE_COLOR", () => {
+  const ESC = "\u001b[";
+
+  test("output that is not a terminal has no escape codes", async () => {
+    for (const args of [["--help"], ["parity", "--help"], ["check"], ["parity", "x.ts", "--runs", "lots"]]) {
+      const { stdout, stderr } = await run(args);
+      expect(stdout + stderr).not.toContain(ESC);
+    }
+  });
+
+  test("FORCE_COLOR colours it, and NO_COLOR wins over FORCE_COLOR", async () => {
+    const forced = await run(["parity", "x.ts", "--runs", "lots"], { FORCE_COLOR: "1" });
+    expect(forced.stderr).toContain(ESC);
+    expect(forced.stderr).toContain("--runs expects an integer of at least 1");
+
+    const refused = await run(["parity", "x.ts", "--runs", "lots"], { FORCE_COLOR: "1", NO_COLOR: "1" });
+    expect(refused.stderr).not.toContain(ESC);
+  });
+});
+
+describe("a refusal reads like a compiler diagnostic", () => {
+  test("it names the position and underlines the whole construct", async () => {
+    const { stderr, exitCode } = await run([
+      "check",
+      "tests/rejected/arrayEquality.ts",
+      "--project",
+      "tests/rejected/tsconfig.json",
+    ]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - Arrays compare by identity");
+    // `a === b` is seven characters, and all seven are underlined.
+    expect(stderr).toMatch(/\|   return a === b;.*\n\s+\|\s{10}\^{7}\n/);
+    expect(stderr).toContain("1 error(s). No SQL was written.");
   });
 });

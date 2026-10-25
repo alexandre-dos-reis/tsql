@@ -371,6 +371,10 @@ Each command takes only its own options, and lists them in its help:
 | `--seed <n>` | `parity` | replay a failure with the seed it reported |
 | `--db-url <url>` | `parity` | test against this PostgreSQL instead of an in-process PGlite, in a transaction that is rolled back |
 
+Output is coloured on a terminal — diagnostics like the compiler's, with the refused construct
+underlined, `✓`/`✗` per function in `parity` — and plain everywhere else: a pipe, a file, a CI log.
+`NO_COLOR` turns colour off and `FORCE_COLOR` on; `NO_COLOR` wins.
+
 An option another command owns is refused rather than ignored — `tsql check … --runs 5` is an error,
 not a check that quietly ran no tests. The CLI is built on [commander](https://github.com/tj/commander.js),
 so the help is generated from the same declarations that parse the arguments and cannot drift from them.
