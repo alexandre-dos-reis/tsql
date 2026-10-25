@@ -8,13 +8,13 @@
   <!-- A horizontal line has no height, so the gradient is in user space, not the line's bounding box. -->
   <!-- Underlined by the direction of travel: from TypeScript, on the left, to PostgreSQL, on the right -->
   <defs>
-    <linearGradient id="travel" gradientUnits="userSpaceOnUse" x1="310.0" y1="0" x2="592.0" y2="0">
+    <linearGradient id="travel" gradientUnits="userSpaceOnUse" x1="345.0" y1="0" x2="565.0" y2="0">
       <stop offset="0" stop-color="#3178C6" />
       <stop offset="1" stop-color="#336791" />
     </linearGradient>
   </defs>
-  <path d="M 310.0 134 H 578.0" stroke="url(#travel)" stroke-width="4" stroke-linecap="round" fill="none" />
-  <path d="M 574.0 125 L 592.0 134 L 574.0 143 Z" fill="#336791" />
+  <path d="M 345.0 134 H 545.0" stroke="url(#travel)" stroke-width="4" stroke-linecap="round" fill="none" />
+  <path d="M 539.0 122 L 565.0 134 L 539.0 146 Z" fill="#336791" />
 
   <g transform="translate(0 34)">
   <circle cx="330" cy="325" r="195" fill="#3178C6" fill-opacity="0.10" stroke="#3178C6" stroke-opacity="0.55" stroke-width="2.5" />
