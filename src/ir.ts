@@ -13,6 +13,33 @@ export interface ScalarType {
   readonly nullable: boolean;
   /** Allowed values, when the TypeScript side was a union of string literals. */
   readonly allowed?: readonly string[];
+  /**
+   * The named PostgreSQL type a closed set of strings maps to. `sql` stays
+   * `text`: a domain is text with a CHECK, and an enum is compared, matched and
+   * written like text once lowering has inserted the `::text` casts it needs.
+   */
+  readonly named?: NamedText;
+}
+
+/**
+ * A named, closed set of strings, created as its own PostgreSQL type.
+ *
+ * - `type Plan = "free" | "pro"` is a **domain** over `text` with a CHECK: a
+ *   TypeScript union is structural — any matching string literal is one — and a
+ *   domain is too: any text that passes the CHECK is one, with no cast.
+ * - `const AreaType = { … } as const` with `type AreaType = (typeof AreaType)[keyof
+ *   typeof AreaType]`, or a string `enum`, is a PostgreSQL **enum**: a named
+ *   vocabulary, which PostGraphile exposes as a GraphQL enum and PostgREST
+ *   orders by declaration.
+ */
+export interface NamedText {
+  readonly kind: "domain" | "enum";
+  readonly tsName: string;
+  readonly sqlName: string;
+  /** In declaration order for an enum (its order is part of the type); sorted for a domain. */
+  readonly values: readonly string[];
+  /** Source module, for the provenance comment. */
+  readonly module?: string;
 }
 
 /**
@@ -73,8 +100,36 @@ export interface ArrayType {
 
 export type PgType = ScalarType | CompositeType | ArrayType;
 
-export function scalarType(sql: PgScalar, nullable = false, allowed?: readonly string[]): ScalarType {
-  return allowed ? { kind: "scalar", sql, nullable, allowed } : { kind: "scalar", sql, nullable };
+export function scalarType(
+  sql: PgScalar,
+  nullable = false,
+  allowed?: readonly string[],
+  named?: NamedText,
+): ScalarType {
+  return {
+    kind: "scalar",
+    sql,
+    nullable,
+    ...(allowed ? { allowed } : {}),
+    ...(named ? { named } : {}),
+  };
+}
+
+/** The named type a closed set of strings maps to: `text` and a domain or an enum. */
+export function namedType(named: NamedText, nullable = false): ScalarType {
+  return scalarType("text", nullable, named.values, named);
+}
+
+/** An enum value needs `::text` wherever text is expected; a domain is text already. */
+export function isEnum(type: PgType): boolean {
+  return isScalar(type) && type.named?.kind === "enum";
+}
+
+/** Do two types name the same domain or enum (or are both plain)? */
+export function sameNamed(a: PgType, b: PgType): boolean {
+  const left = isScalar(a) ? a.named?.sqlName : undefined;
+  const right = isScalar(b) ? b.named?.sqlName : undefined;
+  return left === right;
 }
 
 export function compositeType(
@@ -116,6 +171,7 @@ export function isNumeric(type: PgType): boolean {
 
 /** How the type is named in an error message: the SQL type, or the TypeScript name. */
 export function describe(type: PgType): string {
+  if (isScalar(type) && type.named) return type.named.tsName;
   if (isArray(type)) {
     const element = describe(type.element);
     return type.element.nullable ? `(${element} | null)[]` : `${element}[]`;
@@ -128,7 +184,7 @@ export function withNullable(type: PgType, nullable: boolean): PgType {
   // An array is never nullable: the type mapping refuses `readonly T[] | null`.
   if (isArray(type)) return type;
   return isScalar(type)
-    ? scalarType(type.sql, nullable, type.allowed)
+    ? scalarType(type.sql, nullable, type.allowed, type.named)
     : compositeType(type.tsName, type.sqlName, type.fields, nullable, type.module);
 }
 
@@ -168,8 +224,9 @@ export function shapeOf(composite: CompositeType): string {
 }
 
 function columnType(type: ScalarType | ArrayType): string {
-  if (!isArray(type)) return type.sql;
-  return `${isScalar(type.element) ? type.element.sql : type.element.sqlName}[]`;
+  const scalarName = (t: ScalarType) => t.named?.sqlName ?? t.sql;
+  if (!isArray(type)) return scalarName(type);
+  return `${isScalar(type.element) ? scalarName(type.element) : type.element.sqlName}[]`;
 }
 
 export interface ParamIR {

@@ -3,9 +3,10 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
---   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
+CREATE DOMAIN app.tier AS text CONSTRAINT tier_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro', 'starter']));
+
 CREATE OR REPLACE FUNCTION app.seat_limit(
-  tier text
+  tier app.tier
 )
 RETURNS integer
 LANGUAGE plpgsql

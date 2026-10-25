@@ -12,13 +12,13 @@ IF to_regtype('app.basket_line') IS NULL THEN
 
 -- The column holding composites is expected through format_type, like the catalogue's side.
 
-expected text[] := ARRAY['customer_tier text', 'lines ' || format_type(to_regtype('app.basket_line[]'), NULL), 'tags text[]'];
+expected text[] := ARRAY['customer_tier text', 'lines ' || format_type(to_regtype('app.basket_line[]'), NULL), 'tags ' || format_type(to_regtype('app.tag[]'), NULL)];
 
 IF to_regtype('app.basket') IS NULL THEN
   CREATE TYPE app.basket AS (
     customer_tier text,
     lines app.basket_line[],
-    tags text[]
+    tags app.tag[]
   );
 
 RETURN app.lines_total_cents((basket).lines);

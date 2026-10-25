@@ -2,7 +2,10 @@ import {
   fieldLabel,
   isArray,
   isScalar,
+  namedType,
   type ArrayType,
+  type NamedText,
+  type ScalarType,
   type BinOp,
   type CompositeType,
   type ExprIR,
@@ -77,11 +80,13 @@ function precedenceOf(expr: ExprIR): number {
 
 /**
  * Renders SQL names, schema-qualified when a schema is in use: `q(name)` for a
- * function, `q.type(composite)` for a composite type.
+ * function, `q.type(composite)` for a composite type, `q.scalar(type)` for a
+ * scalar — its domain or enum when it has one.
  */
 interface Qualifier {
   (sqlName: string): string;
   type(composite: CompositeType): string;
+  scalar(type: ScalarType): string;
 }
 
 function emitExpr(expr: ExprIR, q: Qualifier, minPrecedence = 0): string {
@@ -98,7 +103,13 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "lit":
       if (expr.value === null) return "NULL";
       if (typeof expr.value === "boolean") return expr.value ? "true" : "false";
-      if (typeof expr.value === "string") return quoteLiteral(expr.value);
+      // An enum's literal names its type: an untyped literal resolves to text in
+      // a CASE or a COALESCE, which an enum is not.
+      if (typeof expr.value === "string") {
+        return expr.type.named?.kind === "enum"
+          ? `${quoteLiteral(expr.value)}::${q.scalar(expr.type)}`
+          : quoteLiteral(expr.value);
+      }
       // An unadorned `1.5` is `numeric` in PostgreSQL — exact decimal, not the
       // IEEE double TypeScript computed with — so fractional literals are cast.
       // Whole numbers are already `integer` and widen implicitly.
@@ -148,7 +159,7 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       return `(${emitExpr(expr.operand, q)}).${quoteIdentifier(expr.sqlName)}`;
 
     case "cast":
-      return `${emitExpr(expr.operand, q, PREC.atom)}::${expr.to}`;
+      return `${emitExpr(expr.operand, q, PREC.atom)}::${q.scalar(expr.type)}`;
 
     case "row":
       // One argument per flattened field, in field order, cast to the named
@@ -183,7 +194,7 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 }
 
 function arrayTypeName(type: ArrayType, q: Qualifier): string {
-  return `${isScalar(type.element) ? type.element.sql : q.type(type.element)}[]`;
+  return `${isScalar(type.element) ? q.scalar(type.element) : q.type(type.element)}[]`;
 }
 
 function numberLiteral(value: number): string {
@@ -295,27 +306,39 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
 /** How a type is written in SQL: a scalar name, a (possibly qualified) composite, or an array of either. */
 function typeName(type: PgType, schema: string | undefined): string {
   if (isArray(type)) return `${typeName(type.element, schema)}[]`;
-  if (isScalar(type)) return type.sql;
-  return schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(type.sqlName)}` : quoteIdentifier(type.sqlName);
+  if (isScalar(type) && !type.named) return type.sql;
+  const sqlName = isScalar(type) ? type.named!.sqlName : type.sqlName;
+  return schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(sqlName)}` : quoteIdentifier(sqlName);
+}
+
+/** A domain or an enum enforces its values itself; only plain text gets the comment. */
+function unenforced(type: PgType): readonly string[] | undefined {
+  if (isArray(type)) return isScalar(type.element) && !type.element.named ? type.element.allowed : undefined;
+  return isScalar(type) && !type.named ? type.allowed : undefined;
+}
+
+function qualifier(schema: string | undefined): Qualifier {
+  const qualify = ((sqlName: string) =>
+    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(sqlName)}` : quoteIdentifier(sqlName)) as Qualifier;
+  qualify.type = (composite) => typeName(composite, schema);
+  qualify.scalar = (type) => typeName(type, schema);
+  return qualify;
 }
 
 export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string {
   const { schema, orReplace, comments } = { ...DEFAULTS, ...options };
-  const qualify = ((sqlName: string) =>
-    schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(sqlName)}` : quoteIdentifier(sqlName)) as Qualifier;
-  qualify.type = (composite) => typeName(composite, schema);
+  const qualify = qualifier(schema);
   const qualified = qualify(fn.sqlName);
 
   const lines: string[] = [];
   if (comments) {
     lines.push(`-- ${fn.module}: ${fn.tsName}()`);
     for (const param of fn.params) {
-      if (isScalar(param.type) && param.type.allowed) lines.push(allowedNote(param.sqlName, param.type.allowed));
-      if (isArray(param.type) && isScalar(param.type.element) && param.type.element.allowed) {
-        lines.push(allowedNote(`${param.sqlName}[]`, param.type.element.allowed));
-      }
+      const allowed = unenforced(param.type);
+      if (allowed) lines.push(allowedNote(isArray(param.type) ? `${param.sqlName}[]` : param.sqlName, allowed));
     }
-    if (isScalar(fn.returns) && fn.returns.allowed) lines.push(allowedNote("returns", fn.returns.allowed));
+    const returned = unenforced(fn.returns);
+    if (returned) lines.push(allowedNote(isArray(fn.returns) ? "returns[]" : "returns", returned));
   }
 
   const params = fn.params.map((p) => `  ${quoteIdentifier(p.sqlName)} ${typeName(p.type, schema)}`);
@@ -361,9 +384,11 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
   //
   // The names are unquoted, as `pg_attribute.attname` holds them: a field named
   // `limit` is `"limit"` in `CREATE TYPE` but `limit` in the catalogue.
+  const ours = (t: ScalarType | ArrayType): boolean =>
+    isArray(t) ? !isScalar(t.element) || t.element.named !== undefined : t.named !== undefined;
   const expected = composite.fields
     .map((f) =>
-      isArray(f.type) && !isScalar(f.type.element)
+      ours(f.type)
         ? `${quoteLiteral(`${f.sqlName} `)} || format_type(to_regtype(${quoteLiteral(typeName(f.type, schema))}), NULL)`
         : quoteLiteral(`${f.sqlName} ${typeName(f.type, schema)}`),
     )
@@ -376,10 +401,8 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
       // A flattened column no longer looks like the shape it came from, so the
       // path is recorded for whoever reads the schema.
       if (field.path.length > 1) lines.push(`--   ${field.sqlName}: from ${fieldLabel(field.path)}`);
-      if (isScalar(field.type) && field.type.allowed) lines.push(allowedNote(field.sqlName, field.type.allowed));
-      if (isArray(field.type) && isScalar(field.type.element) && field.type.element.allowed) {
-        lines.push(allowedNote(`${field.sqlName}[]`, field.type.element.allowed));
-      }
+      const allowed = unenforced(field.type);
+      if (allowed) lines.push(allowedNote(isArray(field.type) ? `${field.sqlName}[]` : field.sqlName, allowed));
     }
   }
   lines.push(
@@ -402,6 +425,107 @@ export function emitCompositeType(composite: CompositeType, options: EmitOptions
     `      RAISE EXCEPTION '${qualified} exists as % but the rules expect %', actual, expected;`,
     "    END IF;",
     "  END IF;",
+    "END",
+    "$$;",
+  );
+  return lines.join("\n");
+}
+
+/**
+ * A union of string literals: a domain over `text` whose CHECK names the values.
+ *
+ * `CREATE DOMAIN` has no `IF NOT EXISTS`, so it is guarded. The CHECK is a named
+ * constraint the compiler owns: when the union changes, it is dropped and added
+ * again, and adding it re-checks every column of the domain — so a value still
+ * in use cannot be removed silently; the migration fails on the offending rows.
+ * The definition is compared through `pg_get_constraintdef`, so an unchanged
+ * union touches nothing.
+ */
+export function emitDomain(named: NamedText, options: EmitOptions = {}): string {
+  const { schema, comments } = { ...DEFAULTS, ...options };
+  const qualified = typeName(namedType(named), schema);
+  const constraint = `${named.sqlName}_values`;
+  const check = `CHECK (VALUE = ANY (ARRAY[${named.values.map(quoteLiteral).join(", ")}]))`;
+  // How PostgreSQL prints that constraint back.
+  const printed = `CHECK ((VALUE = ANY (ARRAY[${named.values.map((v) => `${quoteLiteral(v)}::text`).join(", ")}])))`;
+  const lines: string[] = [];
+  if (comments) lines.push(`-- ${named.module ?? "rules"}: ${named.tsName}, a union of strings`);
+  lines.push(
+    "DO $$",
+    "DECLARE",
+    `  expected text := ${quoteLiteral(printed)};`,
+    "  actual text;",
+    "BEGIN",
+    `  IF to_regtype(${quoteLiteral(qualified)}) IS NULL THEN`,
+    `    CREATE DOMAIN ${qualified} AS text CONSTRAINT ${quoteIdentifier(constraint)} ${check};`,
+    "  ELSE",
+    `    IF (SELECT t.typtype <> 'd' OR t.typbasetype <> 'text'::regtype FROM pg_type t WHERE t.oid = to_regtype(${quoteLiteral(qualified)})) THEN`,
+    `      RAISE EXCEPTION '% exists but is not a domain over text', ${quoteLiteral(qualified)};`,
+    "    END IF;",
+    "    SELECT pg_get_constraintdef(c.oid) INTO actual",
+    "      FROM pg_constraint c",
+    `     WHERE c.contypid = to_regtype(${quoteLiteral(qualified)}) AND c.conname = ${quoteLiteral(constraint)};`,
+    "    IF actual IS DISTINCT FROM expected THEN",
+    `      ALTER DOMAIN ${qualified} DROP CONSTRAINT IF EXISTS ${quoteIdentifier(constraint)};`,
+    `      ALTER DOMAIN ${qualified} ADD CONSTRAINT ${quoteIdentifier(constraint)} ${check};`,
+    "    END IF;",
+    "  END IF;",
+    "END",
+    "$$;",
+  );
+  return lines.join("\n");
+}
+
+/**
+ * A string `enum` or an `as const` object: a PostgreSQL enum, in the order written.
+ *
+ * Guarded like every type, and convergent: a value added in TypeScript is added
+ * in place (`ADD VALUE … BEFORE` the next existing one), so the database order
+ * stays the source order, which PostgREST sorts and filters by. A value removed
+ * or reordered is never acted on — enum values cannot be dropped — and the
+ * migration fails saying what to do. Adding a value is allowed in a transaction,
+ * but the new value cannot be used until it commits.
+ */
+export function emitEnum(named: NamedText, options: EmitOptions = {}): string {
+  const { schema, comments } = { ...DEFAULTS, ...options };
+  const qualified = typeName(namedType(named), schema);
+  const name = quoteLiteral(qualified);
+  const values = named.values.map(quoteLiteral).join(", ");
+  const lines: string[] = [];
+  if (comments) lines.push(`-- ${named.module ?? "rules"}: ${named.tsName}, an enum`);
+  lines.push(
+    "DO $$",
+    "DECLARE",
+    `  expected text[] := ARRAY[${values}];`,
+    "  actual text[];",
+    "  next_existing text;",
+    "BEGIN",
+    `  IF to_regtype(${name}) IS NULL THEN`,
+    `    CREATE TYPE ${qualified} AS ENUM (${values});`,
+    "    RETURN;",
+    "  END IF;",
+    `  IF (SELECT t.typtype FROM pg_type t WHERE t.oid = to_regtype(${name})) <> 'e' THEN`,
+    `    RAISE EXCEPTION '% exists but is not an enum', ${name};`,
+    "  END IF;",
+    "  SELECT array_agg(e.enumlabel::text ORDER BY e.enumsortorder) INTO actual",
+    `    FROM pg_enum e WHERE e.enumtypid = to_regtype(${name});`,
+    "  IF EXISTS (SELECT 1 FROM unnest(actual) AS a(v) WHERE v <> ALL (expected)) THEN",
+    `    RAISE EXCEPTION '% has % but the rules expect %: a value was removed or renamed. Rename it with ALTER TYPE % RENAME VALUE, or migrate the rows and recreate the type.', ${name}, actual, expected, ${name};`,
+    "  END IF;",
+    "  IF actual IS DISTINCT FROM ARRAY(SELECT v FROM unnest(expected) WITH ORDINALITY AS u(v, n) WHERE v = ANY (actual) ORDER BY n) THEN",
+    `    RAISE EXCEPTION '% has % but the rules expect %: the values were reordered', ${name}, actual, expected;`,
+    "  END IF;",
+    "  FOR i IN REVERSE cardinality(expected) .. 1 LOOP",
+    "    CONTINUE WHEN expected[i] = ANY (actual);",
+    "    SELECT v INTO next_existing FROM unnest(expected[i + 1:]) WITH ORDINALITY AS u(v, n)",
+    "     WHERE v = ANY (actual) ORDER BY n LIMIT 1;",
+    "    IF next_existing IS NULL THEN",
+    `      EXECUTE format(${quoteLiteral(`ALTER TYPE ${qualified} ADD VALUE IF NOT EXISTS %L`)}, expected[i]);`,
+    "    ELSE",
+    `      EXECUTE format(${quoteLiteral(`ALTER TYPE ${qualified} ADD VALUE IF NOT EXISTS %L BEFORE %L`)}, expected[i], next_existing);`,
+    "    END IF;",
+    "    actual := actual || expected[i];",
+    "  END LOOP;",
     "END",
     "$$;",
   );
@@ -439,6 +563,7 @@ export function emitMigration(
   functions: readonly FunctionIR[],
   composites: readonly CompositeType[] = [],
   options: EmitOptions = {},
+  named: readonly NamedText[] = [],
 ): string {
   const { schema, comments } = { ...DEFAULTS, ...options };
   const sortedFunctions = [...functions].sort((a, b) => a.sqlName.localeCompare(b.sqlName));
@@ -454,7 +579,11 @@ export function emitMigration(
     );
   }
   if (schema) parts.push(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)};`);
-  // Types first: the function signatures below refer to them.
+  // Types first: the function signatures below refer to them, and a composite's
+  // fields may be domains or enums.
+  for (const set of [...named].sort((a, b) => a.sqlName.localeCompare(b.sqlName))) {
+    parts.push(set.kind === "domain" ? emitDomain(set, options) : emitEnum(set, options));
+  }
   for (const composite of sortedComposites) parts.push(emitCompositeType(composite, options));
   for (const fn of sortedFunctions) parts.push(emitFunction(fn, options));
   return `${parts.join("\n\n")}\n`;

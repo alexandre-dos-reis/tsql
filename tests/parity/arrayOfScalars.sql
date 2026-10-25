@@ -82,11 +82,9 @@ BEGIN
 END;
 $$;
 
---   plans[]: one of 'free', 'pro', 'team' (not enforced here)
---   plan: one of 'free', 'pro', 'team' (not enforced here)
 CREATE OR REPLACE FUNCTION app.offers_plan(
-  plans text[],
-  plan text
+  plans app.offer[],
+  plan app.offer
 )
 RETURNS boolean
 LANGUAGE plpgsql

@@ -45,10 +45,13 @@ import {
   arrayType,
   isArray,
   isComposite,
+  isEnum,
   isExactly,
   isNumeric,
   isScalar,
+  namedType,
   sameFamily,
+  sameNamed,
   scalarType,
   widenNumeric,
   withNullable,
@@ -68,7 +71,7 @@ import {
 } from "./ir.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
-import { mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
+import { enumMember, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
 
 interface Binding {
   readonly sqlName: string;
@@ -407,15 +410,22 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   const elseValue = returnedValue(orElse);
   const allReturn = elseValue !== undefined && groups.every((g) => returnedValue(g.body) !== undefined);
 
+  // A label compared to an enum subject as text makes every comparison text.
+  let subjectExpr = subject;
+  if (simple && groups.some((g) => g.labels.some((l) => l.value!.kind !== "lit" && !sameNamed(subject.type, l.value!.type)))) {
+    subjectExpr = textOf(subject);
+    for (const g of groups) for (const l of g.labels) l.value = textOf(l.value!);
+  }
+
   if (simple && allReturn) {
     const whens = groups.flatMap((g) => g.labels.map((l) => ({ value: l.value!, result: returnedValue(g.body)! })));
-    return [{ kind: "return", expr: { kind: "simpleCaseExpr", subject, whens, orElse: elseValue, type: s.returns } }];
+    return [{ kind: "return", expr: { kind: "simpleCaseExpr", subject: subjectExpr, whens, orElse: elseValue, type: s.returns } }];
   }
   if (simple) {
     return [
       {
         kind: "simpleCase",
-        subject,
+        subject: subjectExpr,
         whens: groups.map((g) => ({ values: g.labels.map((l) => l.value!), body: g.body })),
         orElse,
       },
@@ -1308,6 +1318,19 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
     throw CompileError.at(node, `\`${node.getText()}\` is not supported. ${ARRAY_SUBSET}`);
   }
 
+  // `AreaType.Level1`, `Plan.Free`: a member of an enum is its string, typed as the enum.
+  if (node.kind === SyntaxKind.PropertyAccessExpression) {
+    const access = node as PropertyAccessExpression;
+    if (
+      access.expression.kind === SyntaxKind.Identifier &&
+      !s.scope.has((access.expression as Identifier).text) &&
+      access.name.kind === SyntaxKind.Identifier
+    ) {
+      const member = await enumMember(access.expression, (access.name as Identifier).text, s);
+      if (member) return { kind: "lit", value: member.value, type: namedType(member.named) };
+    }
+  }
+
   const resolved = await resolveAccess(node, s);
   if (resolved && isComposite(resolved.base.type) && resolved.path.length > 0) {
     return fieldOf(resolved, node);
@@ -1577,9 +1600,30 @@ function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void {
   requireComparable(left.type, right.type, at);
 }
 
+/**
+ * Two operands made comparable in SQL. An enum is a type of its own: equal to
+ * itself or to a literal, which takes its type, but compared as `text` with
+ * anything else — a plain string, a domain, another enum. TypeScript compares
+ * the strings either way, so comparing the text is the faithful translation.
+ */
+function comparable(left: ExprIR, right: ExprIR): [ExprIR, ExprIR] {
+  // A plain string literal is untyped in SQL, so it takes the other side's type.
+  const untyped = (e: ExprIR) => e.kind === "lit" && !isEnum(e.type);
+  if (sameNamed(left.type, right.type) || untyped(left) || untyped(right)) return [left, right];
+  return [textOf(left), textOf(right)];
+}
+
+/** An enum value as `text`; anything else as it is (a domain is text already). */
+function textOf(expr: ExprIR): ExprIR {
+  if (!isEnum(expr.type)) return expr;
+  const type = scalarType("text", expr.type.nullable);
+  return expr.kind === "lit" ? { ...expr, type } : { kind: "cast", operand: expr, to: "text", type };
+}
+
 /** `===` / `!==` between two lowered operands; also how a searched `switch` label matches. */
-function strictEquality(left: ExprIR, right: ExprIR, negated: boolean, at: Node): ExprIR {
-  checkStrictEquality(left, right, at);
+function strictEquality(leftOperand: ExprIR, rightOperand: ExprIR, negated: boolean, at: Node): ExprIR {
+  checkStrictEquality(leftOperand, rightOperand, at);
+  const [left, right] = comparable(leftOperand, rightOperand);
   // TypeScript's equality is total; SQL's `=` is three-valued. When either
   // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
   const nullable = left.type.nullable || right.type.nullable;
@@ -1675,7 +1719,7 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
             'Concatenating a nullable text value would yield NULL in SQL but "null" in TypeScript; narrow the operands first.',
           );
         }
-        return { kind: "binary", op: "||", left, right, type: scalarType("text") };
+        return { kind: "binary", op: "||", left: textOf(left), right: textOf(right), type: scalarType("text") };
       }
       return arithmetic("+", left, right, node);
     }
@@ -1731,7 +1775,12 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
 
     case SyntaxKind.QuestionQuestionToken: {
       const type = unify(withNullable(left.type, false), right.type, node, "operands of `??`");
-      return { kind: "coalesce", left, right: coerce(right, type), type: withNullable(type, right.type.nullable) };
+      return {
+        kind: "coalesce",
+        left: coerce(left, withNullable(type, left.type.nullable)),
+        right: coerce(right, type),
+        type: withNullable(type, right.type.nullable),
+      };
     }
 
     default:
@@ -1816,6 +1865,8 @@ function unify(a: PgType, b: PgType, at: Node, what: string): PgType {
   if (!isScalar(a) || !isScalar(b)) return withNullable(a, a.nullable || b.nullable);
 
   const scalar: PgScalar = isNumeric(a) && isNumeric(b) ? widenNumeric(a.sql, b.sql) : a.sql;
+  // Two of the same domain or enum stay that type; anything else meets as plain text.
+  if (a.named && sameNamed(a, b)) return namedType(a.named, a.nullable || b.nullable);
   const allowed = a.allowed && b.allowed ? [...new Set([...a.allowed, ...b.allowed])] : undefined;
   return scalarType(scalar, a.nullable || b.nullable, allowed);
 }
@@ -1824,13 +1875,23 @@ function unify(a: PgType, b: PgType, at: Node, what: string): PgType {
 function coerce(expr: ExprIR, to: PgType): ExprIR {
   if (isArray(expr.type) && isArray(to)) {
     const [from, into] = [expr.type.element, to.element];
-    if (!isScalar(from) || !isScalar(into) || from.sql === into.sql) return expr;
+    if (!isScalar(from) || !isScalar(into) || (from.sql === into.sql && sameNamed(from, into))) return expr;
     // `[]` and `[1, 2]` were already built with the target's element type; a
     // literal reaching here can be retyped rather than cast.
     if (expr.kind === "arrayLiteral" && expr.parts.length === 0) return { ...expr, type: to };
     return { kind: "arrayCast", operand: expr, type: to };
   }
   if (!isScalar(expr.type) || !isScalar(to)) return expr;
+  // Text into a domain or an enum, or out of one. TypeScript has already proven
+  // the value is one of the set when the target names one, so the cast cannot
+  // fail; an enum leaving for plain text is cast to text, which always succeeds.
+  if (expr.type.sql === "text" && to.sql === "text" && !sameNamed(expr.type, to)) {
+    const target = scalarType("text", expr.type.nullable, to.allowed, to.named);
+    // An untyped literal takes the type of wherever it is put.
+    if (expr.kind === "lit") return { ...expr, type: target };
+    if (to.named) return { kind: "cast", operand: textOf(expr), to: "text", type: target };
+    return textOf(expr);
+  }
   if (expr.type.sql === to.sql) return expr;
   if (!isNumeric(expr.type) || !isNumeric(to)) return expr;
   // A whole-number literal needs no cast: PostgreSQL widens `integer` on its own.

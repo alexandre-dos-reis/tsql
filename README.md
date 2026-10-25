@@ -68,10 +68,13 @@ tsql compile rules/*.ts
 ```
 
 ```sql
+-- rules/billing.ts: Plan, a union of strings
+DO $$ … CREATE DOMAIN app.plan AS text
+  CONSTRAINT plan_values CHECK (VALUE = ANY (ARRAY['enterprise', 'free', 'pro'])); … $$;
+
 -- rules/billing.ts: todoLimit()
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.todo_limit(
-  plan text
+  plan app.plan
 )
 RETURNS integer
 LANGUAGE plpgsql
@@ -245,7 +248,9 @@ The rules are imported as they are, so they have to load under the runtime runni
 | `boolean` | `boolean` |
 | `number` | `double precision` |
 | `Integer` / `Numeric` / `Float` | `integer` / `numeric` / `double precision` |
-| `"free" \| "pro"` | `text`, permitted values recorded as a comment |
+| `type Plan = "free" \| "pro"` | a domain, `app.plan`: `text` with a `CHECK` on the values |
+| `const Area = { … } as const` with `type Area = (typeof Area)[keyof typeof Area]`, or a string `enum` | an enum, `app.area`, in the order written |
+| `"free" \| "pro"` written in a signature | `text`, permitted values recorded as a comment (no name to give a type) |
 | `T \| null` | nullable, with null checks translated |
 | type alias | resolved at build time |
 | `interface` / `type` object shape | a composite type, one `CREATE TYPE` per named shape |
@@ -254,7 +259,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 
 Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, template literals (as `||`), `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
-Not yet: enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
+Not yet: numeric enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
 ## Using the rules from SQL
 
@@ -368,13 +373,13 @@ A file the project does not hold is an error listing what it does hold, rather t
 
 - **Equality against nullable values** compiles to `IS [NOT] DISTINCT FROM`, not `=` / `<>`. TypeScript's `===` is total; SQL's `=` is three-valued, and `x = NULL` is `NULL`. Non-nullable operands still get plain `=` / `<>`.
 - **`x === null`** becomes `IS NULL` rather than a comparison.
-- **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, but PostgreSQL holds `plan` as `text` and does not enforce the permitted values. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
+- **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, and even when `Plan` is a domain or an enum that PostgreSQL enforces, a `CASE` over it is still checked by the database at runtime, not at compile time. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
 - **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
 - **Template literals** are concatenation: `` `${plan}-${region}` `` is `plan || '-' || region`. Their substitutions follow the same rule — never nullable — and only types written the same way by `String(value)` and `::text` are accepted: text, `Integer` and `boolean` (`42::text` is `'42'`, `true::text` is `'true'`). Fractional numbers are refused, because the two languages print them differently: `String(0.1 + 0.2)` is `0.30000000000000004`, and a `numeric` keeps its trailing zeros (`1.10`).
-- **String-literal unions** stay `text`. The permitted values are recorded in a comment; enforcing them is a separate concern (an enum, a domain, or a `CHECK`).
+- **Named closed sets of strings are enforced by the database.** A union alias is a domain; an `as const` object or a string `enum` is an enum — see [Named types](#named-types-domains-and-enums). An anonymous union written in a signature stays `text`, with its values recorded in a comment, since there is no name to give a type.
 - **Identifiers** are mapped to `snake_case`, and quoted when they collide with a reserved word — `const limit` becomes `"limit"`.
 
 ### Known divergence
@@ -554,6 +559,54 @@ Four more decisions worth stating:
 - **`===` on an object is rejected.** TypeScript compares objects by identity, SQL compares composites by value — there is no faithful translation, so compare the fields you care about.
 
 Built-in object types are excluded by the same provenance check that catches runtime globals: `Date` and `Error` are interfaces with properties, but they are declared in the standard library, so they are rejected as built-ins rather than turned into composite types.
+
+## Named types: domains and enums
+
+A closed set of strings with a name becomes a PostgreSQL type, so the database refuses a value the
+rules do not know — `INSERT … VALUES ('gratuit')` fails, where a `text` column would have taken it and
+the rule fallen through to its `else`. Which type depends on how the set is written, and the two
+choices mirror each other:
+
+| TypeScript | PostgreSQL | Alike in that… |
+| --- | --- | --- |
+| `type Plan = "free" \| "pro"` | `CREATE DOMAIN app.plan AS text CHECK (…)` | both are **structural**: any matching string is one, with no conversion — `"free"` is a `Plan`, `'free'` is an `app.plan` |
+| `const AreaType = { Level1: "level-1", … } as const` and `type AreaType = (typeof AreaType)[keyof typeof AreaType]` | `CREATE TYPE app.area_type AS ENUM ('level-1', …)` | both are a **named vocabulary**, read through its members (`AreaType.Level1`); PostGraphile exposes the enum as a GraphQL enum, PostgREST sorts and filters it in declaration order |
+| `enum Visibility { Private = "private", … }` | `CREATE TYPE app.visibility AS ENUM ('private', …)` | the same; prefer the `as const` form, which is erasable — Node's type stripping refuses `enum` |
+
+**Use a union for internal values that change, the enum form for a public vocabulary.** A domain's
+values change in one transaction; an enum's order is part of the API, its values can be added but
+never removed, and a value added in a transaction cannot be used until it commits.
+
+**What the compiler does at the boundaries.** A domain *is* text, so it meets text anywhere with no
+cast. An enum is a type of its own, so wherever TypeScript would use it as a plain string — a
+concatenation, a template literal, a `string` parameter, a comparison with a string that is not a
+literal — it is cast `::text`, which always succeeds. Going the other way, a value is only ever cast
+*to* a domain or an enum where TypeScript has already proven it is one of the set (`"level-2"` passed
+as an `AreaType`, a `SmallSize` passed as a `Size`), so that cast cannot fail either. An enum literal
+carries its type, `'level-1'::app.area_type`, so it never depends on PostgreSQL guessing one.
+
+**Recognised as written.** The enum form must be exactly `const X = { Name: "value", … } as const`
+beside `type X = (typeof X)[keyof typeof X]`, so a reader can see which aliases become enums; a key
+that looks like an integer is refused, because JavaScript reorders it in `Object.values`. A numeric
+`enum` is refused: at runtime its values are numbers, and TypeScript accepts any number as one. Two sets
+that would share a SQL name — even across files — are a build error rather than one silently checking
+the other's values.
+
+**Migrations converge, and never destroy.** Neither `CREATE DOMAIN` nor `CREATE TYPE … AS ENUM` has
+`IF NOT EXISTS`, so both are guarded:
+
+- **a domain**'s `CHECK` is a constraint the compiler owns, `<name>_values`. When the union changes it
+  is dropped and added again — and adding it re-checks every column of the domain, so a value still
+  stored somewhere cannot be removed: the migration fails on those rows. An unchanged union touches
+  nothing (`pg_get_constraintdef` is compared first).
+- **an enum** gains a value added in TypeScript *in its place* (`ADD VALUE … BEFORE` the next existing
+  one), so the database order stays the source order. A value removed or the order changed fails the
+  migration with what to do: enum values cannot be dropped, and a rename looks the same as a removal
+  plus an addition, so `ALTER TYPE … RENAME VALUE` is suggested, never run.
+
+Types are created before everything that uses them: domains and enums, then composites — whose fields
+may be either — then functions. A composite's guard compares such a field through `format_type`, like
+the catalogue's side, so it does not depend on the search path.
 
 ## Arrays
 
@@ -741,6 +794,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | a nullable array, arrays of arrays, tuples, a shape recursive through an array, holes, an untyped `[]` | see [Arrays](#arrays) |
 | `export let f = () => …`, `function` expressions | a `let` binding can be reassigned; write a `function` declaration or a `const` arrow function |
 | `==` / `!=` | no SQL equivalent for loose equality |
+| a numeric `enum`; the enum form without `as const` or with an integer-like key; two named sets with one SQL name | see [Named types](#named-types-domains-and-enums) |
 | generics, `Date` | outside the subset whose semantics can be preserved |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
 | `note?: string` on an object | a composite field is always present — write `T \| null` |

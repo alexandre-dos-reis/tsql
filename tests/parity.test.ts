@@ -145,3 +145,59 @@ test.skipIf(!project.ok)("the migration refuses a composite type that has drifte
     await fresh.close();
   }
 });
+
+// Domains and enums converge on the TypeScript, never destructively. Each needs
+// the type already there in some other shape, so a fresh PGlite each time.
+async function applyOver(setup: string): Promise<{ db: PGlite; failure: Error | undefined }> {
+  const db = await PGlite.create();
+  await db.exec(`CREATE SCHEMA app; ${setup}`);
+  const failure = await db.exec(project.sql).then(
+    () => undefined,
+    (error: Error) => error,
+  );
+  return { db, failure };
+}
+
+test.skipIf(!project.ok)("the migration adds an enum value in its place", async () => {
+  const { db, failure } = await applyOver("CREATE TYPE app.area_type AS ENUM ('level-1', 'level-3');");
+  try {
+    expect(failure).toBeUndefined();
+    const { rows } = await db.query<{ labels: string }>("SELECT enum_range(NULL::app.area_type)::text AS labels");
+    expect(rows[0]!.labels).toBe("{level-1,level-2,level-3}");
+  } finally {
+    await db.close();
+  }
+});
+
+test.skipIf(!project.ok)("the migration refuses an enum that has a value the rules removed", async () => {
+  const { db, failure } = await applyOver("CREATE TYPE app.area_type AS ENUM ('level-1', 'level-2', 'level-3', 'legacy');");
+  try {
+    expect(failure?.message).toContain("a value was removed or renamed");
+  } finally {
+    await db.close();
+  }
+});
+
+test.skipIf(!project.ok)("the migration narrows a domain, and refuses while rows use a removed value", async () => {
+  const wider = "CREATE DOMAIN app.zone AS text CONSTRAINT zone_values CHECK (VALUE = ANY (ARRAY['east', 'north', 'south']));";
+
+  const unused = await applyOver(wider);
+  try {
+    expect(unused.failure).toBeUndefined();
+    const refused = await unused.db.query("SELECT 'east'::app.zone").then(
+      () => undefined,
+      (error: Error) => error,
+    );
+    expect(refused?.message).toContain("zone_values");
+  } finally {
+    await unused.db.close();
+  }
+
+  const used = await applyOver(`${wider} CREATE TABLE places (zone app.zone); INSERT INTO places VALUES ('east');`);
+  try {
+    // ALTER DOMAIN … ADD CONSTRAINT re-checks every column of the domain.
+    expect(used.failure?.message).toContain("violate the new constraint");
+  } finally {
+    await used.db.close();
+  }
+});
