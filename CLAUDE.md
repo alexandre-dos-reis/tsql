@@ -102,7 +102,8 @@ properties of that resolver are load-bearing:
    call between compiled functions type-checks regardless of declaration order. SQL-name collisions
    are detected here.
 4. **Pass 2**: `lowerFunction` for each body, against those signatures.
-5. `emitMigration` (`src/emit.ts`) emits used composite types first, then functions.
+5. `emitMigration` (`src/emit.ts`) emits used domains and enums first, then composite types, then
+   functions.
 
 Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, message)` and collected
 per function so one bad rule does not hide the rest. They carry file, line, column and the offending
@@ -215,13 +216,25 @@ same reason as field mutation — and requiring it lets `tsc` refuse the mutatio
 `= ANY`, NULL when an element is). Recognised through `checker.isArrayType`, not by name. The parity
 harness builds each array argument as `ARRAY[$1::t, …]::t[]`, so its query depends on the input.
 
-Only composites a successfully-lowered function mentions are emitted (`usedComposites`). `CREATE TYPE`
+Named closed sets of strings (`NamedText` on a `ScalarType`, README "Named types") stay `sql: "text"`
+so every text rule still applies: a union alias is a **domain** (structural, like the union), an
+`as const` object with its `(typeof X)[keyof typeof X]` alias or a string `enum` is a PostgreSQL
+**enum** (a named vocabulary, which PostGraphile/PostgREST expose). Recognised by provenance and by
+that exact syntactic form (`namedFromSymbol` in `typemap.ts`). Lowering casts an enum `::text` where
+TypeScript uses it as a string (`textOf`, `comparable`, `coerce`) and casts *to* a named type only
+where TypeScript has proven membership; enum literals are emitted typed. The domain guard owns a
+`<name>_values` constraint and re-adds it when the union changes (re-validating columns); the enum
+guard adds new values in place and refuses removals or reorders.
+
+Only composites, domains and enums a successfully-lowered function mentions are emitted (`usedTypes`). `CREATE TYPE`
 has no `IF NOT EXISTS`, so it is wrapped in a `DO` block that also compares the existing shape and
 raises on drift. The compiler creates types; it never rewrites them.
 
 ## Four tsconfigs, deliberately
 
-- `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`.
+- `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`. It excludes `tests/parity` and
+  `tests/rejected`: those are rule projects, type checked through their own tsconfig by the compiler in
+  the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a rule's `enum`.
 - `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
   `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
   costs no compiler code.

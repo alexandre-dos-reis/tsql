@@ -1,11 +1,11 @@
 /**
  * Returning a composite unchanged: PL/pgSQL passes it straight back.
  */
-interface Plan {
+interface PlanRecord {
   name: string;
   seats: number;
 }
 
-export function echoPlan(plan: Plan): Plan {
+export function echoPlan(plan: PlanRecord): PlanRecord {
   return plan;
 }

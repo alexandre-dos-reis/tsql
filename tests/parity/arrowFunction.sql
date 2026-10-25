@@ -3,9 +3,8 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
---   grade: one of 'a', 'b', 'c' (not enforced here)
 CREATE OR REPLACE FUNCTION app.grade_points(
-  grade text
+  grade app.grade
 )
 RETURNS integer
 LANGUAGE plpgsql
@@ -16,9 +15,8 @@ BEGIN
 END;
 $$;
 
---   grade: one of 'a', 'b', 'c' (not enforced here)
 CREATE OR REPLACE FUNCTION app.passes(
-  grade text,
+  grade app.grade,
   bonus integer
 )
 RETURNS boolean

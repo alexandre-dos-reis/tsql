@@ -10,7 +10,7 @@ import {
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
-import type { CompositeType, FunctionIR, PgType, SignatureIR } from "./ir.ts";
+import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature, type RuleFunction } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
 
@@ -43,6 +43,8 @@ export interface Manifest {
   readonly generatedBy: "tsql";
   readonly schema: string | null;
   readonly types: readonly CompositeType[];
+  /** The domains and enums the functions use. */
+  readonly named: readonly NamedText[];
   readonly functions: readonly ManifestFunction[];
 }
 
@@ -50,6 +52,7 @@ export interface CompileResult {
   readonly ok: boolean;
   readonly functions: readonly FunctionIR[];
   readonly composites: readonly CompositeType[];
+  readonly named: readonly NamedText[];
   readonly sql: string;
   readonly manifest: Manifest;
   /** Constructs this compiler refuses to translate. */
@@ -79,6 +82,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
         ok: false,
         functions: [],
         composites: [],
+        named: [],
         sql: "",
         manifest: emptyManifest(options),
         errors: [],
@@ -86,7 +90,7 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       };
     }
 
-    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>() };
+    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>() };
     const files = await rulesFiles(project, projectRoot, options);
 
     // Pass 1: every signature, so call checking does not depend on file order.
@@ -128,16 +132,18 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
     }
 
     const ok = errors.length === 0;
-    const used = usedComposites(functions, composites);
+    const { composites: used, named } = usedTypes(functions, composites);
     return {
       ok,
       functions,
       composites: used,
-      sql: ok ? emitMigration(functions, used, options.emit) : "",
+      named,
+      sql: ok ? emitMigration(functions, used, options.emit, named) : "",
       manifest: {
         generatedBy: "tsql",
         schema: options.emit?.schema ?? null,
         types: used,
+        named,
         functions: functions.map((fn) => ({
           tsName: fn.tsName,
           sqlName: fn.sqlName,
@@ -155,32 +161,41 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
 }
 
 function emptyManifest(options: CompileOptions): Manifest {
-  return { generatedBy: "tsql", schema: options.emit?.schema ?? null, types: [], functions: [] };
+  return { generatedBy: "tsql", schema: options.emit?.schema ?? null, types: [], named: [], functions: [] };
 }
 
 /**
  * Only emit types that a compiled function actually mentions: a signature that
  * failed to lower should not leave a `CREATE TYPE` behind.
  */
-function usedComposites(
+function usedTypes(
   functions: readonly FunctionIR[],
   discovered: ReadonlyMap<string, CompositeType>,
-): CompositeType[] {
+): { composites: CompositeType[]; named: NamedText[] } {
   const names = new Set<string>();
-  // A composite's array fields bring their element types with them.
+  const named = new Map<string, NamedText>();
+  // A composite's fields bring their own types with them: the elements of an
+  // array field, a field that is a domain or an enum.
   const collect = (type: PgType): void => {
     if (type.kind === "array") return collect(type.element);
-    if (type.kind !== "composite" || names.has(type.sqlName)) return;
+    if (type.kind === "scalar") {
+      if (type.named) named.set(type.named.sqlName, type.named);
+      return;
+    }
+    if (names.has(type.sqlName)) return;
     names.add(type.sqlName);
     for (const field of type.fields) collect(field.type);
   };
   for (const fn of functions) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) collect(type);
   }
-  return [...names].sort().flatMap((name) => {
-    const composite = discovered.get(name);
-    return composite ? [composite] : [];
-  });
+  return {
+    composites: [...names].sort().flatMap((name) => {
+      const composite = discovered.get(name);
+      return composite ? [composite] : [];
+    }),
+    named: [...named.values()].sort((a, b) => a.sqlName.localeCompare(b.sqlName)),
+  };
 }
 
 /** Only files inside the rules project are compiled; imported helpers are not. */

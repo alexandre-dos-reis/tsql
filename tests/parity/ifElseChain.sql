@@ -3,9 +3,8 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
---   plan: one of 'enterprise', 'free', 'pro' (not enforced here)
 CREATE OR REPLACE FUNCTION app.todo_limit(
-  plan text
+  plan app.plan
 )
 RETURNS integer
 LANGUAGE plpgsql

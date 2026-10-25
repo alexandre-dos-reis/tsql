@@ -41,9 +41,11 @@ $$;
 -- 3. A trigger: a rule about other rows. The trigger gathers the data — the plan, the count — and
 --    the compiled rule decides. Concurrency is the trigger's job, not the rule's.
 
+-- The plan column has the rules' own type: `type Plan = "free" | "pro" | "enterprise"` is the domain
+-- app.plan, so a plan the rules do not know is refused on the way in.
 CREATE TABLE users (
   id bigint PRIMARY KEY,
-  plan text NOT NULL
+  plan app.plan NOT NULL
 );
 
 CREATE TABLE todos (
@@ -77,6 +79,15 @@ CREATE TRIGGER todos_enforce_limit
   FOR EACH ROW EXECUTE FUNCTION enforce_todo_limit();
 
 INSERT INTO users (id, plan) VALUES (1, 'free'), (2, 'pro');
+
+DO $$
+BEGIN
+  INSERT INTO users (id, plan) VALUES (3, 'gratuit');
+  RAISE EXCEPTION 'a plan the rules do not know should have been refused by the app.plan domain';
+EXCEPTION WHEN check_violation THEN
+  NULL;
+END
+$$;
 INSERT INTO todos (user_id, title) VALUES (1, 'one'), (1, 'two'), (1, 'three'), (2, 'one');
 
 DO $$

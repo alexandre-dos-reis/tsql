@@ -127,14 +127,16 @@ export interface PreparedCall {
 export function prepareCall(fn: ManifestFunction, schema: string | null, args: readonly unknown[]): PreparedCall {
   const qualify = (name: string) =>
     schema ? `${quoteIdentifier(schema)}.${quoteIdentifier(name)}` : quoteIdentifier(name);
+  // A domain or an enum is cast to its own type, so the database checks the value as a caller's would be.
+  const scalarName = (type: ScalarType) => (type.named ? qualify(type.named.sqlName) : type.sql);
   const arrayType = (type: ArrayType) =>
-    `${isScalar(type.element) ? type.element.sql : qualify(type.element.sqlName)}[]`;
+    `${isScalar(type.element) ? scalarName(type.element) : qualify(type.element.sqlName)}[]`;
 
   const params: unknown[] = [];
   const value = (type: PgType, input: unknown): string => {
     if (isScalar(type)) {
       params.push(input);
-      return `$${params.length}::${type.sql}`;
+      return `$${params.length}::${scalarName(type)}`;
     }
     if (isArray(type)) {
       if (input === null || input === undefined) return `NULL::${arrayType(type)}`;

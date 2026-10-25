@@ -8,7 +8,7 @@ import type { Integer } from "../../src/pgtypes";
  * a NULL as `includes(null)` does, and widens the value to the elements' type rather than narrowing.
  */
 
-type Plan = "free" | "pro" | "team";
+type Offer = "free" | "pro" | "team";
 type Quantities = readonly Integer[];
 
 export function itemCount(items: readonly Integer[]): Integer {
@@ -39,7 +39,7 @@ export function largestQuantity(quantities: Quantities): Integer {
   return largest;
 }
 
-export function offersPlan(plans: readonly Plan[], plan: Plan): boolean {
+export function offersPlan(plans: readonly Offer[], plan: Offer): boolean {
   return plans.includes(plan);
 }
 

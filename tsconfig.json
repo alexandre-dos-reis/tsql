@@ -17,5 +17,10 @@
     "types": ["bun"],
     "erasableSyntaxOnly": true
   },
-  "include": ["src", "tests", "scripts"]
+  "include": ["src", "tests", "scripts"],
+  // tests/parity and tests/rejected are rule projects with their own tsconfig, type checked by the
+  // compiler itself in the tests, as a consumer's rules would be. They are not this package's code, so
+  // erasableSyntaxOnly — which keeps src/ loadable by Node — must not apply to them: a rule may use an
+  // `enum`, which the compiler maps to a PostgreSQL enum.
+  "exclude": ["tests/parity", "tests/rejected"]
 }

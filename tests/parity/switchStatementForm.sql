@@ -3,9 +3,8 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
---   tier: one of 'enterprise', 'free', 'pro', 'starter' (not enforced here)
 CREATE OR REPLACE FUNCTION app.discounted(
-  tier text,
+  tier app.tier,
   amount integer
 )
 RETURNS integer
@@ -25,9 +24,8 @@ BEGIN
 END;
 $$;
 
---   region: one of 'apac', 'eu', 'us' (not enforced here)
 CREATE OR REPLACE FUNCTION app.shipping_cents(
-  region text,
+  region app.region,
   weight_grams integer
 )
 RETURNS integer
