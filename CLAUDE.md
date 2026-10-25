@@ -232,7 +232,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 ## Four tsconfigs, deliberately
 
-- `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`.
+- `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`. It excludes `tests/parity` and
+  `tests/rejected`: those are rule projects, type checked through their own tsconfig by the compiler in
+  the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a rule's `enum`.
 - `examples/tsconfig.json` — the user-facing **showcase**, `types: []`. This is load-bearing: `process`,
   `Bun` and `require` become *type errors* before the translator ever runs, so one class of rejection
   costs no compiler code.
