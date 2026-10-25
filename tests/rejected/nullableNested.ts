@@ -1,14 +1,20 @@
 /**
- * Rejected: a nested object that may be null.
+ * Rejected: a field of an object type that may be null.
  *
- * Nested shapes are flattened into the parent's columns. A flattened group has no
- * way to be "absent": `foo: null` and `foo: { bar: null }` would both be stored as
- * `foo_bar = NULL`, two TypeScript values that SQL cannot tell apart.
+ * The field would be a column of a composite type, and `IS NULL` on a composite
+ * is also true for a row whose fields are all NULL:
  *
- * Expected: is an object that may be absent
+ *     SELECT (ROW(NULL)::app.inner_value) IS NULL;  -- true
+ *
+ * so `foo: null` and `foo: { bar: null }` would be two TypeScript values SQL
+ * cannot tell apart. Make the field non-nullable, or the nested fields `T | null`.
+ *
+ * Expected: `MaybeInner.foo` is an object that may be null
  */
+type InnerValue = { bar: string | null };
+
 type MaybeInner = {
-  foo: { bar: string } | null;
+  foo: InnerValue | null;
 };
 
 export function hasFoo(maybe: MaybeInner): boolean {

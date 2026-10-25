@@ -7,7 +7,7 @@
  *     CREATE TYPE app.category AS (name text, children app.category[]);
  *     -- ERROR: type "app.category[]" does not exist
  *
- * Expected: `Category` contains itself through an array
+ * Expected: `Category` contains itself
  */
 interface Category {
   readonly name: string;

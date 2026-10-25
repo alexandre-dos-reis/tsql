@@ -179,50 +179,41 @@ BEGIN
   ...
 ```
 
-Nested shapes are **flattened into prefixed columns** rather than nested composite types:
+A field of an object type is a **column of that type's own composite**, exactly as PostgreSQL nests them:
 
 ```ts
-type Nested = { foo: { bar: string } };
-return nested.foo.bar;
+interface Customer {
+  tier: "standard" | "gold";
+}
+
+interface Basket {
+  customer: Customer;
+  total: Integer;
+}
+
+return basket.customer.tier;
 ```
 
 ```sql
--- functions/nested.ts: Nested
---   foo_bar: from foo.bar
-CREATE TYPE app.nested AS (
-  foo_bar text
-);
+CREATE TYPE app.customer AS (tier text);
+CREATE TYPE app.basket AS (customer app.customer, total integer);
 
-RETURN (nested).foo_bar;
+RETURN ((basket).customer).tier;
 ```
 
-The inner shape needs no name of its own — only the column does — so an anonymous `{ bar: string }` is fine *inside* a named type even though an anonymous parameter type is not.
+`app.customer` is created first, because `app.basket` needs it. `basket.customer` is a value like any other — passed to a function, returned, held in a local, destructured — and from SQL, PostgREST and PostGraphile it looks like the type the author wrote.
 
-The reason is a NULL hazard that flattening removes structurally. With nested composites, the intermediate value can be NULL where TypeScript guarantees one is present:
+Three rules make this faithful:
 
-```
-((ROW(NULL::app.foo)::app.nested).foo).bar  ->  NULL
-```
-
-and the two NULL states are indistinguishable, because `IS NULL` on a composite is true when *every* field is NULL:
-
-```
-(ROW(NULL::app.foo)::app.nested).foo IS NULL             -> true   (no inner row)
-(ROW(ROW(NULL::text)::app.foo)::app.nested).foo IS NULL  -> true   (inner row, NULL field)
-```
-
-With no intermediate value there is nothing to be NULL. Flattening also keeps construction flat (`ROW('x')::app.nested`, not `ROW(ROW('x')::app.foo)::app.nested`) and emits one SQL type per named shape instead of one per level.
-
-What it costs, and what guards those costs:
-
-| Risk | Guard |
+| Refused | Why |
 | --- | --- |
-| a flattened column no longer shows its origin | the path is recorded as a comment (`foo_bar: from foo.bar`) |
-| `{ foo: { bar } }` and `{ fooBar }` both want `foo_bar` | collision is a build error naming both fields |
-| PostgreSQL truncates identifiers at 63 bytes **silently** | anything longer is a build error, never truncated |
-| a recursive shape has no fixed column set | `interface A { child: A }` is a build error |
-| arbitrarily deep nesting | capped at 4 levels |
-| a nested shape that may be absent | `{ foo: { bar: string } \| null }` is rejected: no single column can carry "this group is missing" |
+| an anonymous nested shape, `customer: { tier: string }` | a composite column needs a named type, and inventing one (`app.basket_customer`) would put a type in the schema that nobody wrote — give the shape a name |
+| a nullable nested object, `customer: Customer \| null` | `IS NULL` on a composite is also true for a row whose fields are all NULL, so `customer: null` and `customer: { tier: null }` would be indistinguishable — make the field non-nullable, or the nested fields `T \| null` |
+| a shape that contains itself, `interface Node { child: Node }` | no fixed depth; PostgreSQL refuses a composite that is a member of itself |
+
+A non-nullable nested object has the same contract as a non-nullable parameter: the caller does not pass NULL, and the function does not check. Field names are mapped to `snake_case`, so `fooBar` and `foo_bar` would be one column: that is a build error, as is a name longer than PostgreSQL's 63-byte limit, which it would otherwise truncate silently.
+
+These were once flattened into prefixed columns (`customer.tier` → `customer_tier`), to avoid the NULL hazard above. But that hazard only bites a *nullable* nested object, which is refused either way, while flattening produced a type nobody wrote, needed collision and depth guards, and made `barOf(outer.foo)` impossible. Nesting as PostgreSQL does is simpler and more honest.
 
 ### Object literals and spread
 
@@ -246,7 +237,7 @@ RETURNS app.seat
   RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
 ```
 
-Spreads resolve **by field path**, so they compose with flattening and with each other, last-one-wins exactly as in JavaScript:
+Fields are matched by name, in source order, so spreads compose with each other, last-one-wins exactly as in JavaScript — and a nested object is rebuilt with a nested literal, a `ROW` inside a `ROW`:
 
 ```ts
 const next: Mutable = { ...nested, foo: { ...nested.foo, bar: "some" } };
@@ -254,26 +245,26 @@ return next.foo.bar;
 ```
 
 ```sql
-next := ROW('some')::app.mutable;
-RETURN (next).foo_bar;
+next := ROW(ROW('some')::app.mutable_leaf)::app.mutable;
+RETURN ((next).foo).bar;
 ```
 
-The nested spread supplies `foo_bar`, then `bar: "some"` overrides it — so the generated row carries the literal, with no intermediate copy to assign into.
+The inner spread supplies `bar`, then `bar: "some"` overrides it — so the generated row carries the literal, with no intermediate copy to assign into.
 
 Three consequences:
 
 - **A literal needs a named target type.** `ROW(...)` has to be cast to a nominal composite, so the type comes from the contextual type: an annotation, the function's return type, or the parameter being passed to. An unannotated `const x = { ... }` is rejected with that advice.
 - **Composite returns work.** PL/pgSQL always returned them fine; the gap was that nothing in the subset could build one. `RETURNS app.seat` compiles, and a field can be read straight off the call: `RETURN (app.grant_seat(seat)).count;`
-- **A nested group can be passed by rebuilding it.** `barOf(outer.foo)` is rejected, because the flattened composite has no column for the group — but `barOf({ ...outer.foo })` compiles to `app.bar_of(ROW((outer).foo_bar)::app.inner)`.
+- **A nested object is a value.** `barOf(outer.foo)` compiles to `app.bar_of((outer).foo)`, and `barOf({ ...outer.foo })` to `app.bar_of(ROW(((outer).foo).bar)::app.content)`.
 
 Field access is resolved as *a composite-typed base plus a path*, not as "a property of a variable", so all four of these read the same way:
 
 | Written | Generated |
 | --- | --- |
 | `sub.plan` (parameter) | `(sub).plan` |
-| `next.foo.bar` (local, nested) | `(next).foo_bar` |
+| `next.foo.bar` (local, nested) | `((next).foo).bar` |
 | `grantSeat(seat).count` (call result) | `(app.grant_seat(seat)).count` |
-| `{ ...nested.foo }` (group, in a literal) | `ROW((nested).foo_bar)::app.inner` |
+| `{ ...nested.foo }` (nested, in a literal) | `ROW(((nested).foo).bar)::app.leaf` |
 
 Mutating a field is rejected for a sharper reason than the rest: it is not unsupported syntax, it is untranslatable. The same assignment is perfectly legal PL/pgSQL, but parameters there are passed **by value**, so the change never reaches the caller:
 
@@ -429,7 +420,7 @@ null` is `RETURN NULL`, and `[null]` in a `readonly (string | null)[]` is `ARRAY
 
 ### Arrays in object types
 
-An array field is not flattened: it is one column of array type, beside the flattened ones.
+An array field is one column of array type, like any other field.
 
 ```ts
 export interface BasketLine {
@@ -437,25 +428,30 @@ export interface BasketLine {
   readonly quantity: Integer;
 }
 
+export interface Customer {
+  readonly tier: "standard" | "gold";
+}
+
 export interface Basket {
-  readonly customer: { readonly tier: "standard" | "gold" };
+  readonly customer: Customer;
   readonly lines: readonly BasketLine[];
 }
 ```
 
 ```sql
 CREATE TYPE app.basket_line AS (sku text, quantity integer);
-CREATE TYPE app.basket AS (customer_tier text, lines app.basket_line[]);
+CREATE TYPE app.customer AS (tier text);
+CREATE TYPE app.basket AS (customer app.customer, lines app.basket_line[]);
 ```
 
 `basket.lines` reads as an array wherever one is expected — `for (const line of basket.lines)` is
 `FOREACH line IN ARRAY (basket).lines` — and a spread carries it into a new value:
-`{ ...basket, customer: { tier: "gold" } }` is `ROW('gold', (basket).lines)::app.basket`.
+`{ ...basket, customer: { tier: "gold" } }` is `ROW(ROW('gold')::app.customer, (basket).lines)::app.basket`.
 
 Two consequences for the migration:
 
 - **Types are created in dependency order**, not only by name: `app.basket` needs `app.basket_line`
-  to exist first. A shape that contains itself through an array (`Category { children: readonly
+  and `app.customer` to exist first. A shape that contains itself through an array (`Category { children: readonly
   Category[] }`) is refused: PostgreSQL cannot declare a composite holding an array of itself.
 - **The type guard compares that column through `format_type`.** The catalogue writes a type from
   another schema qualified or not depending on the search path, so the expected side is computed the
@@ -465,7 +461,7 @@ From SQL, a basket is built with a nested `ARRAY(SELECT …)`:
 
 ```sql
 SELECT app.basket_total(ROW(
-  c.tier,
+  ROW(c.tier)::app.customer,
   ARRAY(SELECT ROW(l.sku, l.quantity)::app.basket_line FROM basket_lines l WHERE l.basket_id = b.id)
 )::app.basket)
 FROM baskets b JOIN customers c ON c.id = b.customer_id;
@@ -533,10 +529,10 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | generics, `Date` | outside the subset whose semantics can be preserved |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
 | `note?: string` on an object | a composite field is always present — write `T \| null` |
-| an object field that may be absent | no single column can carry "this group is missing" |
-| a recursive shape, or nesting past 4 levels | no fixed set of columns |
-| two fields that flatten to the same column | `{ foo: { bar } }` and `{ fooBar }` collide |
-| referencing a nested group, not a leaf | the group has no column; rebuild it with `{ ...outer.foo }` |
+| an anonymous nested shape, `{ foo: { bar: string } }` | a composite column needs a named type: give the shape a name |
+| a nested object that may be null | `IS NULL` cannot tell a NULL composite from a row of NULL fields |
+| a shape that contains itself | no fixed depth; PostgreSQL refuses it too |
+| two fields that are the same column | `fooBar` and `foo_bar` are both `foo_bar` |
 | `nested.foo.bar = "x"` | TypeScript mutates the caller's object; PL/pgSQL mutates a copy |
 | `===` on two objects | identity in TypeScript, value in SQL |
 | an unannotated object literal | `ROW()` must be cast to a nominal type, so a target type is required |
@@ -571,7 +567,7 @@ The harness takes a `RowQuery` callback, so it does not care which PostgreSQL it
 
 Two further checks:
 
-- **Composite returns** are compared field by field, selecting `(result).field` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings. An array field is selected as `to_jsonb(…)` for the same reason: an array of composites in text form is quoting nested inside quoting.
+- **Composite returns** are compared field by field, selecting `(result).field` so each field arrives as a typed column. That avoids parsing PostgreSQL's composite text format, where `""`, NULL and the literal string `"null"` are three different values with three confusingly similar encodings. An array or nested-object field is selected as `to_jsonb(…)` for the same reason: a composite inside a composite, in text form, is quoting nested inside quoting.
 - **Arguments are snapshotted** before the TypeScript function runs and compared afterwards. A function that mutates what it was given has an effect its SQL twin cannot reproduce, and comparing return values alone would never notice.
 
 ## Keeping `Integer` honest once installed

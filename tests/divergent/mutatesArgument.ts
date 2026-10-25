@@ -23,8 +23,8 @@ const seatType = {
   tsName: "DivergentSeat",
   sqlName: "divergent_seat",
   fields: [
-    { path: ["plan"], sqlName: "plan", type: { kind: "scalar", sql: "text", nullable: false, allowed: ["free", "pro"] } },
-    { path: ["count"], sqlName: "count", type: { kind: "scalar", sql: "double precision", nullable: false } },
+    { tsName: "plan", sqlName: "plan", type: { kind: "scalar", sql: "text", nullable: false, allowed: ["free", "pro"] } },
+    { tsName: "count", sqlName: "count", type: { kind: "scalar", sql: "double precision", nullable: false } },
   ],
   nullable: false,
 } as const;

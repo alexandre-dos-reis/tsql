@@ -35,7 +35,6 @@ import {
   arrayType,
   compositeType,
   describe,
-  fieldLabel,
   isArray,
   isScalar,
   namedType,
@@ -625,24 +624,24 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
   if (ctx.mapping.has(sqlName)) {
     throw CompileError.at(
       at,
-      `\`${tsName}\` contains itself through an array. PostgreSQL cannot create a composite type holding an array of itself, and the shape has no fixed depth.`,
+      `\`${tsName}\` contains itself. PostgreSQL cannot create a composite type that holds itself, directly or through an array, and the shape has no fixed depth.`,
     );
   }
   ctx.mapping.add(sqlName);
-  let fields: CompositeField[];
+  const fields: CompositeField[] = [];
   try {
-    fields = await flattenFields(type, tsName, [], [type.id], at, ctx);
+    for (const property of properties) fields.push(await mapField(property, tsName, at, ctx));
   } finally {
     ctx.mapping.delete(sqlName);
   }
 
-  const seen = new Map<string, readonly string[]>();
+  const seen = new Map<string, string>();
   for (const field of fields) {
     const clash = seen.get(field.sqlName);
     if (clash) {
       throw CompileError.at(
         at,
-        `\`${tsName}.${fieldLabel(field.path)}\` and \`${tsName}.${fieldLabel(clash)}\` both flatten to the column \`${field.sqlName}\`. Rename one of them.`,
+        `\`${tsName}.${field.tsName}\` and \`${tsName}.${clash}\` are both the column \`${field.sqlName}\`. Rename one of them.`,
       );
     }
     // PostgreSQL truncates identifiers at 63 bytes silently, which could make
@@ -650,10 +649,10 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
     if (Buffer.byteLength(field.sqlName, "utf8") > MAX_IDENTIFIER_BYTES) {
       throw CompileError.at(
         at,
-        `\`${tsName}.${fieldLabel(field.path)}\` flattens to \`${field.sqlName}\`, which is longer than PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte identifier limit. Shorten the names.`,
+        `\`${tsName}.${field.tsName}\` is the column \`${field.sqlName}\`, which is longer than PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte identifier limit. Shorten the name.`,
       );
     }
-    seen.set(field.sqlName, field.path);
+    seen.set(field.sqlName, field.tsName);
   }
 
   const module = declaration ? relativize(declaration.path) : undefined;
@@ -679,49 +678,14 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
 /** PostgreSQL's NAMEDATALEN - 1. Longer identifiers are silently truncated. */
 const MAX_IDENTIFIER_BYTES = 63;
 
-/** Nesting deeper than this is more likely a mistake than a deliberate data model. */
-const MAX_NESTING = 4;
-
 /**
- * Walk an object shape to its scalar leaves, prefixing nested field names.
- *
- * `{ foo: { bar: string } }` becomes one field: path `["foo", "bar"]`, column
- * `foo_bar`. The inner shape needs no name of its own, which is why an
- * anonymous nested object is fine here even though an anonymous *parameter*
- * type is not.
+ * One field, one column. A field of an object type is a column of that type's
+ * own composite, as PostgreSQL nests them — so the type must have a name, and
+ * may not be nullable: `IS NULL` on a composite is also true for a row whose
+ * fields are all NULL, two absences SQL cannot tell apart.
  */
-async function flattenFields(
-  type: Type,
-  owner: string,
-  prefix: readonly string[],
-  ancestors: readonly number[],
-  at: Node,
-  ctx: TypeCtx,
-): Promise<CompositeField[]> {
-  if (prefix.length >= MAX_NESTING) {
-    throw CompileError.at(
-      at,
-      `\`${owner}.${fieldLabel(prefix)}\` nests more than ${MAX_NESTING} levels deep. Flatten the shape instead.`,
-    );
-  }
-
-  const fields: CompositeField[] = [];
-  for (const property of await ctx.checker.getPropertiesOfType(type)) {
-    fields.push(...(await mapField(property, owner, prefix, ancestors, at, ctx)));
-  }
-  return fields;
-}
-
-async function mapField(
-  property: TsSymbol,
-  owner: string,
-  prefix: readonly string[],
-  ancestors: readonly number[],
-  at: Node,
-  ctx: TypeCtx,
-): Promise<CompositeField[]> {
-  const path = [...prefix, property.name];
-  const where = `\`${owner}.${fieldLabel(path)}\``;
+async function mapField(property: TsSymbol, owner: string, at: Node, ctx: TypeCtx): Promise<CompositeField> {
+  const where = `\`${owner}.${property.name}\``;
   // Report against the field's own declaration when we can resolve it, so the
   // caret lands on the offending property rather than on the parameter that
   // happened to reference the type.
@@ -740,40 +704,27 @@ async function mapField(
   const propertyType = await ctx.checker.getTypeOfSymbol(property);
   if (!propertyType) throw CompileError.at(site, `The type of ${where} could not be resolved.`);
 
-  // An array is not flattened: it is a leaf, one column of array type, mapped
-  // below like any other leaf.
-  const isArrayLike =
-    propertyType.isObjectType() &&
-    ((await ctx.checker.isArrayType(propertyType)) || (await ctx.checker.isTupleType(propertyType)));
-
-  // A nested object is flattened into prefixed columns.
-  if (propertyType.isObjectType() && !isArrayLike) {
-    if (ancestors.includes(propertyType.id)) {
-      throw CompileError.at(
-        site,
-        `${where} makes the shape recursive, which cannot be flattened into a fixed set of columns.`,
-      );
-    }
-    if ((await ctx.checker.getIndexInfosOfType(propertyType)).length > 0) {
-      throw CompileError.at(site, `${where} has an index signature, which has no fixed composite shape.`);
-    }
-    const nested = await flattenFields(propertyType, owner, path, [...ancestors, propertyType.id], site, ctx);
-    if (nested.length === 0) {
-      throw CompileError.at(site, `${where} has no properties, so there is nothing to map.`);
-    }
-    return nested;
-  }
-
-  // A nested shape that might be absent cannot be flattened: there is no single
-  // column to carry "the whole group is missing".
   if (propertyType.isUnionType()) {
     for (const member of await propertyType.getTypes()) {
       if (member.isObjectType() && !(await ctx.checker.isArrayType(member))) {
         throw CompileError.at(
           site,
-          `${where} is an object that may be absent. Flattening cannot represent a missing group of columns — give each field its own \`T | null\`.`,
+          `${where} is an object that may be null. \`IS NULL\` on a composite is also true for a row whose fields are all NULL, so SQL could not tell the two apart. Make the field non-nullable, or make the nested type's own fields \`T | null\`.`,
         );
       }
+    }
+  }
+
+  const isArrayLike =
+    propertyType.isObjectType() &&
+    ((await ctx.checker.isArrayType(propertyType)) || (await ctx.checker.isTupleType(propertyType)));
+  if (propertyType.isObjectType() && !isArrayLike) {
+    const symbol = (await propertyType.getAliasSymbol()) ?? (await propertyType.getSymbol());
+    if (!symbol || symbol.name.startsWith("__")) {
+      throw CompileError.at(
+        site,
+        `${where} is an anonymous object type. Give it a name with \`interface\` or \`type\`: a field of an object type is a column of that type's own composite, which needs a name.`,
+      );
     }
   }
 
@@ -788,10 +739,7 @@ async function mapField(
   if (mapped === NULL_ONLY) {
     throw CompileError.at(site, `${where} is \`null\` alone; write \`T | null\`.`);
   }
-  if (!isScalar(mapped) && !isArray(mapped)) {
-    throw CompileError.at(site, `${where} cannot be mapped to a single column.`);
-  }
-  return [{ path, sqlName: path.map(toSnakeCase).join("_"), type: mapped }];
+  return { tsName: property.name, sqlName: toSnakeCase(property.name), type: mapped };
 }
 
 function merge(parts: readonly Mapped[], at: Node): Mapped {

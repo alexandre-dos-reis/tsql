@@ -3,22 +3,9 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
-IF to_regtype('app.mutable') IS NULL THEN
-  CREATE TYPE app.mutable AS (
-    foo_bar text
-  );
+CREATE TYPE app.mutable AS (
+  foo app.mutable_leaf
+);
 
-CREATE OR REPLACE FUNCTION app.overwrite(
-  nested app.mutable
-)
-RETURNS text
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  next app.mutable;
-BEGIN
-  next := ROW('some')::app.mutable;
-  RETURN (next).foo_bar;
-END;
-$$;
+next := ROW(ROW('some')::app.mutable_leaf)::app.mutable;
+RETURN ((next).foo).bar;

@@ -3,22 +3,15 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
-IF to_regtype('app.nested') IS NULL THEN
-  CREATE TYPE app.nested AS (
-    foo_bar text
+IF to_regtype('app.leaf') IS NULL THEN
+  CREATE TYPE app.leaf AS (
+    bar text
   );
 
-CREATE OR REPLACE FUNCTION app.some_nested_assignment(
-  nested app.nested
-)
-RETURNS app.nested
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  _nested app.nested;
-BEGIN
-  _nested := ROW('some')::app.nested;
-  RETURN _nested;
-END;
-$$;
+IF to_regtype('app.nested') IS NULL THEN
+  CREATE TYPE app.nested AS (
+    foo app.leaf
+  );
+
+_nested := ROW(ROW('some')::app.leaf)::app.nested;
+RETURN _nested;

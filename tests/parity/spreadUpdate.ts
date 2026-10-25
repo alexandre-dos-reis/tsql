@@ -1,8 +1,9 @@
 /**
  * The mutation case, written so both languages agree: build a new value, do not mutate.
  */
+type MutableLeaf = { bar: string };
 type Mutable = {
-  foo: { bar: string };
+  foo: MutableLeaf;
 };
 
 export function overwrite(nested: Mutable): string {

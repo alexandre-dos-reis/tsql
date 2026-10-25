@@ -1,9 +1,9 @@
 import type { Integer } from "../../src/pgtypes";
 
 /**
- * An array field is one column of array type, beside the flattened ones: `Basket` is
- * `(customer_tier text, lines app.basket_line[], tags text[])`, and `app.basket_line` is created
- * first because the column needs it. The field reads as an array anywhere — `for … of`, `.length`,
+ * An array field is one column of array type, beside the others: `Basket` is
+ * `(customer app.basket_customer, lines app.basket_line[], tags app.tag[])`, and both composites are
+ * created first because the columns need them. The field reads as an array anywhere — `for … of`, `.length`,
  * `.includes`, passed on to another function, held in a local or destructured — and a spread carries it
  * into a new value. Products are reduced with `%` to stay inside int32.
  */
@@ -16,8 +16,12 @@ export interface BasketLine {
 
 type Tag = "gift" | "fragile" | "express";
 
+export interface BasketCustomer {
+  readonly tier: "standard" | "gold";
+}
+
 export interface Basket {
-  readonly customer: { readonly tier: "standard" | "gold" };
+  readonly customer: BasketCustomer;
   readonly lines: readonly BasketLine[];
   readonly tags: readonly Tag[];
 }

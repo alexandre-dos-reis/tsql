@@ -1,8 +1,9 @@
 /**
- * A nested shape rebuilt with spreads and returned: flattened columns, one ROW.
+ * A nested object rebuilt with spreads and returned: a `ROW` inside a `ROW`.
  */
+type Leaf = { bar: string };
 type Nested = {
-  foo: { bar: string };
+  foo: Leaf;
 };
 
 export function someNestedAssignment(nested: Nested): Nested {

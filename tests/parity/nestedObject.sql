@@ -3,11 +3,30 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
+IF to_regtype('app."inner"') IS NULL THEN
+  CREATE TYPE app."inner" AS (
+    count double precision
+  );
+
+expected text[] := ARRAY['label text', 'inner ' || format_type(to_regtype('app."inner"'), NULL)];
+
 IF to_regtype('app."outer"') IS NULL THEN
   CREATE TYPE app."outer" AS (
     label text,
-    inner_count double precision
+    "inner" app."inner"
   );
+
+CREATE OR REPLACE FUNCTION app.inner_of(
+  "outer" app."outer"
+)
+RETURNS app."inner"
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN ("outer")."inner";
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION app.is_big(
   "outer" app."outer"
@@ -17,6 +36,6 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN ("outer").inner_count > 10 AND ("outer").label <> '';
+  RETURN (("outer")."inner").count > 10 AND ("outer").label <> '';
 END;
 $$;

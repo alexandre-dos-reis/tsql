@@ -41,7 +41,6 @@ import {
 import { CompileError } from "./errors.ts";
 import {
   describe,
-  fieldLabel,
   arrayType,
   isArray,
   isComposite,
@@ -61,7 +60,6 @@ import {
   type ExprIR,
   type FunctionIR,
   type LocalIR,
-  type CompositeType,
   type ParamIR,
   type PgScalar,
   type PgType,
@@ -783,8 +781,8 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
 /**
  * `const { plan, count } = sub;` is `const plan = sub.plan; const count = sub.count;`
  * — field reads the compiler already does, one local per name. Nested patterns
- * read nested paths (`const { foo: { bar } } = outer` reads `outer.foo.bar`,
- * a flattened column), and `{ plan: p }` renames.
+ * read nested fields (`const { customer: { tier } } = basket` reads
+ * `basket.customer.tier`), and `{ plan: p }` renames.
  *
  * The source is read once, as in JavaScript: a call or an object literal is held
  * in a local first. Defaults and `...rest` are refused — a default would need a
@@ -849,17 +847,7 @@ async function lowerDestructuring(
         throw CompileError.at(name, "Array destructuring is not supported: reading by position is not part of the compiled subset.");
       }
 
-      const composite = base.type as CompositeType;
-      const field = composite.fields.find((f) => samePath(f.path, path));
-      if (!field) {
-        const isGroup = composite.fields.some((f) => startsWith(f.path, path));
-        throw CompileError.at(
-          element,
-          isGroup
-            ? `\`${fieldLabel(path)}\` is a nested shape, not a value. Destructure it further: \`{ ${path.at(-1)}: { … } }\`.`
-            : `\`${composite.tsName}\` has no field \`${fieldLabel(path)}\`.`,
-        );
-      }
+      const field = readPath(base, path, element);
 
       const tsName = (name as Identifier).text;
       if (s.scope.has(tsName)) {
@@ -868,7 +856,7 @@ async function lowerDestructuring(
       const sqlName = uniqueName(toSnakeCase(tsName), s.used);
       s.scope.set(tsName, { sqlName, type: field.type, kind });
       s.locals.push({ tsName, sqlName, type: field.type });
-      out.push({ kind: "assign", sqlName, expr: { kind: "field", operand: base, sqlName: field.sqlName, type: field.type } });
+      out.push({ kind: "assign", sqlName, expr: field });
     }
   };
 
@@ -1182,13 +1170,12 @@ async function lowerArrayLiteral(node: ArrayLiteralExpression, s: State, expecte
  */
 async function arrayOperand(node: Expression, s: State): Promise<(ExprIR & { readonly type: ArrayType }) | undefined> {
   // A field is resolved without lowering it, so a path that is not an array
-  // (a nested group, say) reports its own error later, in its own words.
+  // (a misspelt field, say) reports its own error later, in its own words.
   if (node.kind === SyntaxKind.PropertyAccessExpression) {
     const resolved = await resolveAccess(node, s);
-    if (!resolved || !isComposite(resolved.base.type)) return undefined;
-    const field = resolved.base.type.fields.find((f) => samePath(f.path, resolved.path));
+    const field = resolved && tryReadPath(resolved.base, resolved.path);
     if (!field || !isArray(field.type)) return undefined;
-    return { kind: "field", operand: resolved.base, sqlName: field.sqlName, type: field.type };
+    return field as ExprIR & { readonly type: ArrayType };
   }
   if (
     node.kind !== SyntaxKind.Identifier &&
@@ -1260,9 +1247,9 @@ async function lowerArrayMethod(
 /**
  * A composite-typed base expression plus the field path read from it.
  *
- * Works uniformly for a parameter (`sub.plan`), a local, a nested path
- * (`nested.foo.bar`) and the result of a call (`grantSeat(seat).count`), so
- * field access does not care how the composite was produced.
+ * Works uniformly for a parameter (`sub.plan`), a local, a nested field
+ * (`basket.customer.tier`) and the result of a call (`grantSeat(seat).count`),
+ * so field access does not care how the composite was produced.
  */
 interface ResolvedAccess {
   readonly base: ExprIR;
@@ -1334,7 +1321,7 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
 
   const resolved = await resolveAccess(node, s);
   if (resolved && isComposite(resolved.base.type) && resolved.path.length > 0) {
-    return fieldOf(resolved, node);
+    return readPath(resolved.base, resolved.path, node);
   }
 
   const root = rootIdentifier(node);
@@ -1347,29 +1334,37 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   );
 }
 
-/** Read one leaf from a resolved access, or explain why that path is not a value. */
-function fieldOf(resolved: ResolvedAccess, at: Expression): ExprIR {
-  const composite = resolved.base.type as CompositeType;
-  const field = composite.fields.find((f) => samePath(f.path, resolved.path));
-  if (field) {
-    return { kind: "field", operand: resolved.base, sqlName: field.sqlName, type: field.type };
+/**
+ * Read `path` off a composite value, one field at a time: `basket.customer.tier`
+ * is `((basket).customer).tier`, since a field of an object type is a column of
+ * that type's own composite. Undefined when a segment is not a field.
+ */
+function tryReadPath(base: ExprIR, path: readonly string[]): ExprIR | undefined {
+  let value = base;
+  for (const segment of path) {
+    if (!isComposite(value.type)) return undefined;
+    const field = value.type.fields.find((f) => f.tsName === segment);
+    if (!field) return undefined;
+    value = { kind: "field", operand: value, sqlName: field.sqlName, type: field.type };
   }
+  return value;
+}
 
-  // A partial path names a nested shape rather than a value. After flattening
-  // there is no column for the group itself.
-  const leaves = composite.fields.filter((f) => startsWith(f.path, resolved.path));
-  if (leaves.length > 0) {
-    // Suggest leaves the way the author would write them, rooted at the same
-    // variable. A call result has no variable, so the path stands alone.
-    const root = rootIdentifier(at)?.text;
-    throw CompileError.at(
-      at,
-      `\`${at.getText()}\` is a nested shape, not a value. Reference a leaf instead: ${leaves
-        .map((f) => `\`${root ? `${root}.` : ""}${fieldLabel(f.path)}\``)
-        .join(", ")}.`,
-    );
+/** `tryReadPath`, explaining a segment that is not a field. */
+function readPath(base: ExprIR, path: readonly string[], at: Node): ExprIR {
+  let value = base;
+  for (const segment of path) {
+    if (!isComposite(value.type)) {
+      throw CompileError.at(
+        at,
+        `\`${at.getText()}\` is not supported: \`${describe(value.type)}\` has no fields, and methods on values are not part of the compiled subset.`,
+      );
+    }
+    const field = value.type.fields.find((f) => f.tsName === segment);
+    if (!field) throw CompileError.at(at, `\`${value.type.tsName}\` has no field \`${segment}\`.`);
+    value = { kind: "field", operand: value, sqlName: field.sqlName, type: field.type };
   }
-  throw CompileError.at(at, `\`${composite.tsName}\` has no field \`${fieldLabel(resolved.path)}\`.`);
+  return value;
 }
 
 async function lowerNew(node: NewExpression, s: State): Promise<ExprIR> {
@@ -1394,14 +1389,6 @@ const ACCESS_KINDS = new Set<SyntaxKind>([
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
 ]);
-
-function samePath(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((segment, i) => segment === b[i]);
-}
-
-function startsWith(path: readonly string[], prefix: readonly string[]): boolean {
-  return prefix.length < path.length && prefix.every((segment, i) => segment === path[i]);
-}
 
 /** `Math.max` -> `Math`; `new Date().getTime` -> `Date`; `fc.sample(x).length` -> `fc`. */
 function rootIdentifier(node: Expression): Identifier | undefined {
@@ -1435,9 +1422,12 @@ const ASSIGNMENT_OPERATORS = new Set<SyntaxKind>([
  * type — an annotation, the function's return type, or a parameter being passed
  * to — so an unannotated `const x = { ... }` is rejected with that advice.
  *
- * Fields are resolved by path, which is what makes spread work: `{ ...sub, plan: p }`
- * takes `plan` from `p` and every other leaf from `sub`, with later entries winning
- * exactly as they do in JavaScript.
+ * Fields are matched by name, in source order, so a later entry wins exactly as
+ * in JavaScript: `{ ...sub, plan: p }` takes `plan` from `p` and every other
+ * field from `sub`. A field of an object type takes a value of that type — a
+ * nested literal, a field read off another object, a call — so
+ * `{ ...basket, customer: { ...basket.customer, tier: "gold" } }` builds a `ROW`
+ * inside a `ROW`.
  */
 async function lowerObjectLiteral(node: ObjectLiteralExpression, s: State): Promise<ExprIR> {
   const contextual = await s.checker.getContextualType(node);
@@ -1453,56 +1443,18 @@ async function lowerObjectLiteral(node: ObjectLiteralExpression, s: State): Prom
   }
 
   const values = new Map<string, ExprIR>();
-  for (const [sqlName, expr] of await resolveLiteral(node, target, [], s)) {
-    values.set(sqlName, expr);
-  }
-
-  const args: ExprIR[] = [];
-  const missing: string[] = [];
-  for (const field of target.fields) {
-    const value = values.get(field.sqlName);
-    if (!value) {
-      missing.push(fieldLabel(field.path));
-      continue;
-    }
-    requireAssignable(value.type, field.type, node, `value for \`${fieldLabel(field.path)}\``);
-    args.push(coerce(value, field.type));
-  }
-  if (missing.length > 0) {
-    throw CompileError.at(
-      node,
-      `This literal is missing ${missing.map((m) => `\`${m}\``).join(", ")}. A composite has every field, so there is no way to leave one out.`,
-    );
-  }
-
-  return { kind: "row", args, type: target };
-}
-
-/**
- * Walk one literal, returning `[column, expression]` pairs. Later pairs
- * override earlier ones, so processing in source order gives JavaScript's
- * own last-one-wins behaviour for spreads and duplicate keys.
- */
-async function resolveLiteral(
-  node: ObjectLiteralExpression,
-  target: CompositeType,
-  prefix: readonly string[],
-  s: State,
-): Promise<[string, ExprIR][]> {
-  const pairs: [string, ExprIR][] = [];
-
   for (const property of node.properties) {
     switch (property.kind) {
       case SyntaxKind.SpreadAssignment: {
-        const expression = (property as SpreadAssignment).expression;
-        const source = await resolveAccess(expression, s);
-        if (!source || !isComposite(source.base.type)) {
-          const lowered = await lowerExpr(expression, s);
-          throw CompileError.at(property, `Only an object can be spread, not \`${describe(lowered.type)}\`.`);
+        const source = await lowerExpr((property as SpreadAssignment).expression, s);
+        if (!isComposite(source.type)) {
+          throw CompileError.at(property, `Only an object can be spread, not \`${describe(source.type)}\`.`);
         }
-        // `...nested` copies every leaf; `...nested.foo` copies the leaves under
-        // `foo`, re-rooted at the position being spread into.
-        pairs.push(...spreadPairs(source, target, prefix, property));
+        // A spread may carry more than the target has; those fields are dropped.
+        for (const field of source.type.fields) {
+          if (!target.fields.some((f) => f.tsName === field.tsName)) continue;
+          values.set(field.tsName, { kind: "field", operand: source, sqlName: field.sqlName, type: field.type });
+        }
         break;
       }
 
@@ -1513,32 +1465,13 @@ async function resolveLiteral(
           throw CompileError.at(name, "Computed property names are not supported.");
         }
         const key = name.kind === SyntaxKind.Identifier ? (name as Identifier).text : (name as StringLiteral).text;
-        const path = [...prefix, key];
+        const field = target.fields.find((f) => f.tsName === key);
+        if (!field) throw CompileError.at(property, `\`${target.tsName}\` has no field \`${key}\`.`);
         const value =
           property.kind === SyntaxKind.PropertyAssignment
             ? (property as PropertyAssignment).initializer
             : (property.name as Identifier);
-
-        // A nested literal keeps descending; the flattened target has no
-        // column for the group itself.
-        if (value.kind === SyntaxKind.ObjectLiteralExpression) {
-          pairs.push(...(await resolveLiteral(value as ObjectLiteralExpression, target, path, s)));
-          break;
-        }
-
-        // `{ foo: other.foo }` — splice the referenced group's leaves in.
-        const group = await resolveAccess(value as Expression, s);
-        if (group && isComposite(group.base.type) && !columnFor(target, path)) {
-          pairs.push(...spreadPairs(group, target, path, property));
-          break;
-        }
-
-        const lowered = await lowerExpr(value as Expression, s, target.fields.find((f) => samePath(f.path, path))?.type);
-        const column = columnFor(target, path);
-        if (!column) {
-          throw CompileError.at(property, `\`${target.tsName}\` has no field \`${fieldLabel(path)}\`.`);
-        }
-        pairs.push([column, lowered]);
+        values.set(key, await lowerExpr(value as Expression, s, field.type));
         break;
       }
 
@@ -1550,38 +1483,25 @@ async function resolveLiteral(
     }
   }
 
-  return pairs;
-}
-
-/**
- * Expand a resolved group into `[column, field access]` pairs, re-rooted at
- * `prefix`. Leaves the target does not have are skipped: a spread may carry
- * more than the target needs.
- */
-function spreadPairs(
-  source: ResolvedAccess,
-  target: CompositeType,
-  prefix: readonly string[],
-  at: Node,
-): [string, ExprIR][] {
-  const composite = source.base.type as CompositeType;
-  const leaves = composite.fields.filter((f) => samePath(f.path, source.path) || startsWith(f.path, source.path));
-  if (leaves.length === 0) {
-    throw CompileError.at(at, `\`${composite.tsName}\` has nothing at \`${fieldLabel(source.path)}\` to spread.`);
+  const args: ExprIR[] = [];
+  const missing: string[] = [];
+  for (const field of target.fields) {
+    const value = values.get(field.tsName);
+    if (!value) {
+      missing.push(field.tsName);
+      continue;
+    }
+    requireAssignable(value.type, field.type, node, `value for \`${field.tsName}\``);
+    args.push(coerce(value, field.type));
+  }
+  if (missing.length > 0) {
+    throw CompileError.at(
+      node,
+      `This literal is missing ${missing.map((m) => `\`${m}\``).join(", ")}. A composite has every field, so there is no way to leave one out.`,
+    );
   }
 
-  const pairs: [string, ExprIR][] = [];
-  for (const field of leaves) {
-    const relative = field.path.slice(source.path.length);
-    const column = columnFor(target, [...prefix, ...relative]);
-    if (!column) continue;
-    pairs.push([column, { kind: "field", operand: source.base, sqlName: field.sqlName, type: field.type }]);
-  }
-  return pairs;
-}
-
-function columnFor(target: CompositeType, path: readonly string[]): string | undefined {
-  return target.fields.find((f) => samePath(f.path, path))?.sqlName;
+  return { kind: "row", args, type: target };
 }
 
 /** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */

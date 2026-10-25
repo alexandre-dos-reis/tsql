@@ -181,7 +181,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | `T \| null` | a nullable value, compared with `IS [NOT] DISTINCT FROM` |
 | `type Plan = "free" \| "pro"` | a domain: `text` with a `CHECK` on its values |
 | a string `enum`, or an `as const` object of strings | an enum, in the order written |
-| a named `interface` or object `type` | a composite type; nested fields are flattened (`foo.bar` → `foo_bar`) |
+| a named `interface` or object `type` | a composite type; a field of a named object type is a column of its composite |
 | `readonly T[]` | `t[]` |
 | `a / b` | always `double precision`, as in TypeScript |
 | `` `${a}-${b}` ``, `??`, `c ? a : b` | `\|\|`, `COALESCE`, `CASE` |
@@ -204,7 +204,8 @@ SQL would *quietly* give a different answer:
 - **Mutation**: of a parameter, an object field or an array — PL/pgSQL passes by value.
 - **Array methods with a callback** (`map`, `filter`, `some`…) — write the loop; `xs[i]`.
 - **Optional parameters and `undefined`** — write `T | null`.
-- **Generics, numeric enums, anonymous object types, `var`, `do … while`, `for … in`.**
+- **Anonymous object types**, even nested (`customer: { tier: string }`) — give the shape a name; and a nested object that may be `null`.
+- **Generics, numeric enums, `var`, `do … while`, `for … in`.**
 - **Returning rows** (`SETOF`/`TABLE`) and database access: query in SQL, decide in the function.
 
 The full list, with the reason for each, is in [docs/design.md](docs/design.md#rejected-at-build-time).
@@ -255,7 +256,7 @@ CREATE TRIGGER todos_enforce_limit BEFORE INSERT ON todos
 
 | The function takes or returns… | From SQL |
 | --- | --- |
-| an object | `ROW(a, b)::app.thing`, one value per flattened field, in declaration order |
+| an object | `ROW(a, b)::app.thing`, one value per field in declaration order; a nested object is a `ROW` of its own |
 | an object, returned | `(app.f(…)).field`, or `SELECT (app.f(…)).*` |
 | an `Integer` | an `integer`: cast `count(*)`, which is a `bigint` |
 | a named union or an enum | a column of that type, so the database refuses unknown values |
