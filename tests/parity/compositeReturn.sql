@@ -3,16 +3,16 @@
 -- indentation aside. Only the types and functions are listed, without the type
 -- guard's boilerplate or the provenance comments, so this file is not runnable on its own.
 
-IF to_regtype('app.plan') IS NULL THEN
-  CREATE TYPE app.plan AS (
+IF to_regtype('app.plan_record') IS NULL THEN
+  CREATE TYPE app.plan_record AS (
     name text,
     seats double precision
   );
 
 CREATE OR REPLACE FUNCTION app.echo_plan(
-  plan app.plan
+  plan app.plan_record
 )
-RETURNS app.plan
+RETURNS app.plan_record
 LANGUAGE plpgsql
 IMMUTABLE
 AS $$
