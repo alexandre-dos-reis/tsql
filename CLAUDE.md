@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 anything whose semantics it cannot preserve, and proves the two implementations agree with generated
 parity tests. `docs/design.md` is the design document: it records *why* each restriction and each
 semantic mapping exists. Read the relevant section there before changing behaviour — most of what looks
-like a missing feature is a documented, deliberate rejection. `README.md` is the user's short guide;
+like a missing feature is a documented, deliberate rejection. `docs/architecture.md` maps the pipeline
+to the files in `src/`: update it when a file's role changes. `README.md` is the user's short guide;
 `CONTRIBUTING.md` holds the toolchain, CI and release notes. Keep the README short: reasoning belongs
 in `docs/design.md`.
 
