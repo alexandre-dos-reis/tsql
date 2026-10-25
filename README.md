@@ -252,7 +252,7 @@ The rules are imported as they are, so they have to load under the runtime runni
 | a nested object field | flattened to a prefixed column, `foo.bar` → `foo_bar` |
 | `readonly T[]` parameter or object field | `T[]` — of scalars, nullable scalars, or a named object type |
 
-Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
+Rules are exported `function` declarations or exported `const` arrow functions (`export const f = (x: T): R => …`). Plus `if`/`else if`/`else`, `while` and `for` loops with `break` and `continue` (all as `WHILE … LOOP`), `switch` (as `CASE`), `const` and `let` locals — `let` reassigned with `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `++`, `--` — `for … of` over an array (as `FOREACH`), `xs.length`, `xs.includes(x)` — including object destructuring (`const { plan, shipping: { express } } = order`), one field read per name — comparisons, boolean operators, arithmetic, template literals (as `||`), `??`, ternaries (as `CASE`), object literals and spread, and calls between compiled rules.
 
 Not yet: enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
@@ -373,6 +373,7 @@ A file the project does not hold is an error listing what it does hold, rather t
 - **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
 - **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
+- **Template literals** are concatenation: `` `${plan}-${region}` `` is `plan || '-' || region`. Their substitutions follow the same rule — never nullable — and only types written the same way by `String(value)` and `::text` are accepted: text, `Integer` and `boolean` (`42::text` is `'42'`, `true::text` is `'true'`). Fractional numbers are refused, because the two languages print them differently: `String(0.1 + 0.2)` is `0.30000000000000004`, and a `numeric` keeps its trailing zeros (`1.10`).
 - **String-literal unions** stay `text`. The permitted values are recorded in a comment; enforcing them is a separate concern (an enum, a domain, or a `CHECK`).
 - **Identifiers** are mapped to `snake_case`, and quoted when they collide with a reserved word — `const limit` becomes `"limit"`.
 
@@ -729,6 +730,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | a fraction assigned to an integer `let` | a `let` takes the type of its initial value; PostgreSQL would round, so annotate it wider |
 | `n + 1;` as a statement | a discarded value has no effect in a pure function |
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |
+| a fractional or nullable value in a template literal, a tagged template | the two languages print fractions differently; `\|\| NULL` is NULL where TypeScript writes `null`; a tag is a function call |
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |
 | optional parameters | absence must be explicit: write `T \| null` |
 | `T \| undefined` | SQL models absence one way only — use `null` |
