@@ -1,8 +1,10 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="tsql — TypeScript compiles to PL/pgSQL" width="420">
+<img src="assets/logo.svg" alt="tsql: TypeScript's world (fetch, window, the DOM) and PostgreSQL's world (tables, triggers, RLS policies) overlap on pure business rules, which tsql makes give the same answer on both sides" width="640">
 
-### Write the rule once in TypeScript. Enforce it in PostgreSQL.
+### Write each business rule once, in TypeScript — tsql compiles it to PostgreSQL and proves both give the same answer.
+
+Not `fetch`, not triggers: the logic in between — limits, prices, permissions — identical on both sides.
 
 </div>
 

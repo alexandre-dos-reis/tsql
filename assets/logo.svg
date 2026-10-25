@@ -1,22 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 432 132" width="432" height="132" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 545" width="900" height="545" role="img" aria-labelledby="t d">
   <title id="t">tsql</title>
-  <desc id="d">TypeScript, an arrow labelled tsql, and the PostgreSQL elephant.</desc>
+  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM, npm…) and PostgreSQL's world (tables, triggers, RLS policies, indexes…). Where they overlap — pure business rules — tsql makes both give the same answer.</desc>
 
-  <rect x="8" y="18" width="96" height="96" rx="20" fill="#3178C6" />
-  <text x="56" y="82" text-anchor="middle" fill="#FFFFFF"
-    font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif"
-    font-size="44" font-weight="700" letter-spacing="-1">TS</text>
+  <text x="450.0" y="92" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="96" font-weight="800" letter-spacing="-2"><tspan fill="#3178C6">ts</tspan><tspan fill="#4C86BE">ql</tspan></text>
 
-  <text x="212" y="52" text-anchor="middle" fill="#7C8BA1"
-    font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
-    font-size="19" font-weight="600" letter-spacing="1">tsql</text>
-  <g fill="none" stroke="#7C8BA1" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M160 70 H 264" />
-    <path d="M244 52 L 264 70 L 244 88" />
-  </g>
+  <circle cx="330" cy="325" r="195" fill="#3178C6" fill-opacity="0.10" stroke="#3178C6" stroke-opacity="0.55" stroke-width="2.5" />
+  <circle cx="570" cy="325" r="195" fill="#336791" fill-opacity="0.12" stroke="#336791" stroke-opacity="0.65" stroke-width="2.5" />
 
-  <!-- The PostgreSQL elephant, from the project's own artwork. -->
-  <g transform="translate(328.99 16) scale(0.22453)">
+  <!-- TypeScript's own world -->
+  <rect x="196" y="253" width="64" height="64" rx="13" fill="#3178C6" />
+  <text x="228" y="298" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="29" font-weight="700" letter-spacing="-1">TS</text>
+  <text x="395" y="480" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">fetch</text>
+  <text x="385" y="175" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">window</text>
+  <text x="225" y="460" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">DOM</text>
+  <text x="345" y="350" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">npm</text>
+  <text x="295" y="210" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">localStorage</text>
+  <text x="180" y="370" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">React</text>
+  <text x="315" y="430" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">setTimeout</text>
+  <text x="265" y="360" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">useState</text>
+
+  <!-- PostgreSQL's own world: the elephant, from the project's own artwork -->
+  <g transform="translate(600 257) scale(0.17)">
       <g id="orginal" style="fill-rule:nonzero;clip-rule:nonzero;stroke:#000000;stroke-miterlimit:4;">
 	</g>
       <g id="Layer_x0020_3" style="fill-rule:nonzero;clip-rule:nonzero;fill:none;stroke:#FFFFFF;stroke-width:12.4651;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;">
@@ -34,4 +38,19 @@
 <path style="stroke-width:3;" d="M0,60.232"/>
 </g>
   </g>
+  <text x="510" y="480" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">tables</text>
+  <text x="665" y="445" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">triggers</text>
+  <text x="550" y="175" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">RLS policies</text>
+  <text x="570" y="385" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">indexes</text>
+  <text x="640" y="210" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">transactions</text>
+  <text x="725" y="350" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">roles</text>
+  <text x="595" y="495" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">COPY</text>
+  <text x="560" y="440" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17">VACUUM</text>
+
+  <!-- Where they overlap: the rules tsql makes agree -->
+  <text x="450.0" y="293" text-anchor="middle" fill="#7C8BA1" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" letter-spacing="2">PURE</text>
+  <text x="450.0" y="325" text-anchor="middle" fill="#7C8BA1" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="23" font-weight="800">business</text>
+  <text x="450.0" y="353" text-anchor="middle" fill="#7C8BA1" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="23" font-weight="800">rules</text>
+  <text x="450.0" y="387" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">same answer</text>
+  <text x="450.0" y="405" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">both sides</text>
 </svg>
