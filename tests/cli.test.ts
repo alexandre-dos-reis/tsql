@@ -16,8 +16,17 @@ import { describe, expect, test } from "bun:test";
 const PROJECT = ["--project", "tests/parity/tsconfig.json"];
 
 /** Run the CLI as a user would, and capture both streams and the exit code. */
-async function run(args: readonly string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([process.execPath, "src/cli.ts", ...args], { stdout: "pipe", stderr: "pipe" });
+async function run(
+  args: readonly string[],
+  env: Record<string, string | undefined> = {},
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  // NO_COLOR and FORCE_COLOR are cleared unless a test sets them, so the
+  // environment the suite runs in cannot change what it observes.
+  const proc = Bun.spawn([process.execPath, "src/cli.ts", ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: undefined, ...env },
+  });
   const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   return { stdout, stderr, exitCode: await proc.exited };
 }
@@ -29,7 +38,8 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
   test("no arguments at all shows usage and fails", async () => {
     const { stdout, exitCode } = await run([]);
     expect(exitCode).toBe(1);
-    expect(stdout).toContain("tsql compile <files...>");
+    expect(stdout).toContain("Usage: tsql <command> <files...> [options]");
+    expect(stdout).toContain("compile <files...> [options]");
   });
 
   test("a command with no files says so, and shows usage", async () => {
@@ -61,6 +71,39 @@ describe("the CLI refuses an invocation with nothing to compile", () => {
     const { stdout, exitCode } = await run(["--help"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("tsql compile rules/*.ts");
+  });
+
+  test("--version prints the package's version", async () => {
+    const { version } = (await Bun.file("package.json").json()) as { version: string };
+    const { stdout, exitCode } = await run(["--version"]);
+    expect(exitCode).toBe(0);
+    expect(stdout.trim()).toBe(version);
+  });
+});
+
+describe("each command has its own options and its own help", () => {
+  test("`parity --help` lists the parity options, and not compile's", async () => {
+    const { stdout, exitCode } = await run(["parity", "--help"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Usage: tsql parity <files...> [options]");
+    for (const option of ["--runs <n>", "--seed <n>", "--db-url <url>", "--project <tsconfig>"]) {
+      expect(stdout).toContain(option);
+    }
+    expect(stdout).not.toContain("--out");
+  });
+
+  test("`help <command>` is the same help", async () => {
+    const { stdout, exitCode } = await run(["help", "compile"]);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Usage: tsql compile <files...> [options]");
+    expect(stdout).toContain("--out <file>");
+  });
+
+  test("an option another command owns is refused, not ignored", async () => {
+    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--runs", "5", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown option '--runs'");
+    expect(stderr).toContain("tsql <command> --help");
   });
 });
 
@@ -103,10 +146,19 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
     expect(stdout).toContain("1 function(s) agree with their TypeScript on 10 random inputs each");
   });
 
-  test("it writes nothing", async () => {
+  test("it writes nothing, and takes no --out", async () => {
     const out = "generated/should-not-exist.sql";
-    await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("unknown option '--out'");
     expect(await Bun.file(out).exists()).toBe(false);
+  });
+
+  test("a negative --seed needs no `=`", async () => {
+    const { stdout, stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "3", "--seed", "-5", ...PROJECT]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
   });
 
   test("a malformed --runs is named rather than turned into NaN", async () => {
@@ -196,5 +248,41 @@ describe("the CLI runs on Node, not only Bun", () => {
     expect(exitCode).toBe(1);
     expect(stderr).toContain("is not a rule file in tests/parity/tsconfig.json");
     expect(stderr).not.toContain("ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX");
+  });
+});
+
+describe("colour follows the terminal, and NO_COLOR / FORCE_COLOR", () => {
+  const ESC = "\u001b[";
+
+  test("output that is not a terminal has no escape codes", async () => {
+    for (const args of [["--help"], ["parity", "--help"], ["check"], ["parity", "x.ts", "--runs", "lots"]]) {
+      const { stdout, stderr } = await run(args);
+      expect(stdout + stderr).not.toContain(ESC);
+    }
+  });
+
+  test("FORCE_COLOR colours it, and NO_COLOR wins over FORCE_COLOR", async () => {
+    const forced = await run(["parity", "x.ts", "--runs", "lots"], { FORCE_COLOR: "1" });
+    expect(forced.stderr).toContain(ESC);
+    expect(forced.stderr).toContain("--runs expects an integer of at least 1");
+
+    const refused = await run(["parity", "x.ts", "--runs", "lots"], { FORCE_COLOR: "1", NO_COLOR: "1" });
+    expect(refused.stderr).not.toContain(ESC);
+  });
+});
+
+describe("a refusal reads like a compiler diagnostic", () => {
+  test("it names the position and underlines the whole construct", async () => {
+    const { stderr, exitCode } = await run([
+      "check",
+      "tests/rejected/arrayEquality.ts",
+      "--project",
+      "tests/rejected/tsconfig.json",
+    ]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - Arrays compare by identity");
+    // `a === b` is seven characters, and all seven are underlined.
+    expect(stderr).toMatch(/\|   return a === b;.*\n\s+\|\s{10}\^{7}\n/);
+    expect(stderr).toContain("1 error(s). No SQL was written.");
   });
 });
