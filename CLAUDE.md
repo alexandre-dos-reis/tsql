@@ -237,7 +237,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 **No test reads `examples/`.** Examples are a short showcase of what tsql can do, not coverage; editing
 them must never break a compiler test. CI checks them through the user's own commands (`ex:check`,
-`ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL). Coverage belongs in
+`ex:compile` plus the drift check, `ex:parity` on PGlite and PostgreSQL, and `psql` running
+`examples/output.sql` then the hand-written `examples/usage.sql` — the README's "Using the rules from
+SQL" patterns, with assertions that raise). Coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
 **Test files hold no cases**: they run what the folders contain, so adding a case never means editing a

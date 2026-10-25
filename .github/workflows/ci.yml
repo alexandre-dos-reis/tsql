@@ -52,6 +52,12 @@ jobs:
       - name: tsql parity (PostgreSQL 18)
         run: bun run ex:parity --db-url="$TSQL_TEST_DB_URL"
 
+      # The README's "Using the rules from SQL" patterns, run for real: the generated migration, then
+      # examples/usage.sql, whose assertions raise if a CHECK, a generated column or a trigger does
+      # not behave as documented.
+      - name: Rules used from SQL (PostgreSQL 18)
+        run: psql "$TSQL_TEST_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f examples/output.sql -f examples/usage.sql
+
       # The compiler owns examples/output.sql and manifest.json and guarantees
       # byte-identical re-runs, so a stale committed copy is a build failure.
       - name: Generated examples are up to date

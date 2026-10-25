@@ -256,6 +256,85 @@ Rules are exported `function` declarations or exported `const` arrow functions (
 
 Not yet: enums, generics, array methods that take a callback (`filter`, `map` — write the loop), `RETURNS SETOF`/`TABLE`, and migration versioning beyond a single emitted file.
 
+## Using the rules from SQL
+
+A compiled rule is an ordinary PostgreSQL function, `IMMUTABLE`, so it goes wherever SQL calls one. Three
+patterns cover most uses, from the most declarative to the most general. All three are in
+[`examples/usage.sql`](examples/usage.sql), which CI runs against PostgreSQL with assertions that raise
+if one stops behaving as described here.
+
+**A rule about one row: a `CHECK` constraint.** No trigger needed — PostgreSQL checks it on every insert
+and update, and requires exactly what the generated functions are, `IMMUTABLE`:
+
+```sql
+CREATE TABLE products (
+  sku text PRIMARY KEY CHECK (app.is_not_empty(sku)),
+  ...
+);
+```
+
+**A value derived from the row: a generated column.** Computed by the rule on every write, stored with
+the row:
+
+```sql
+price_cents double precision GENERATED ALWAYS AS (app.price_cents(list_cents, percent_off)) STORED
+```
+
+**A rule about other rows: a trigger.** The trigger gathers what the rule needs — here the plan and the
+count — and the rule decides. Gathering is a database job, with database concerns the rule cannot see:
+
+```sql
+CREATE FUNCTION enforce_todo_limit() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+  sub app.subscription;
+  current_count integer;
+BEGIN
+  -- Lock the user: two concurrent inserts must not both count 2 todos and both pass a limit of 3.
+  SELECT plan INTO sub FROM users WHERE id = NEW.user_id FOR UPDATE;
+  SELECT count(*)::integer INTO current_count FROM todos WHERE user_id = NEW.user_id;
+
+  IF NOT app.can_create_todo(sub, current_count) THEN
+    RAISE EXCEPTION 'todo limit reached: % allows %', sub.plan, app.todo_limit(sub.plan)
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER todos_enforce_limit
+  BEFORE INSERT ON todos
+  FOR EACH ROW EXECUTE FUNCTION enforce_todo_limit();
+```
+
+The rule is the part tsql proves equal to the TypeScript; the trigger around it is yours. That is why
+tsql compiles rules and not triggers: a query, a lock or `FOR UPDATE` has no TypeScript twin to be
+compared with.
+
+**Calling conventions:**
+
+| The rule… | From SQL |
+| --- | --- |
+| takes an object | `ROW(a, b)::app.thing`, one value per flattened field in declaration order — or a variable of that type filled by `SELECT … INTO` |
+| returns an object | `(app.f(…)).field`, or `SELECT (app.f(…)).*` for every field |
+| takes an `Integer` | an `integer`: cast a `count(*)`, which is a `bigint` |
+| takes an array | `ARRAY(SELECT ROW(…)::app.thing FROM …)` — not `array_agg`, which is NULL over no rows, and `FOREACH` raises on NULL; or `COALESCE(array_agg(…), '{}')` |
+| takes a `T` that is not `T \| null` | a non-NULL value: the function does not check, as TypeScript would not have let `null` through |
+
+**When a rule changes.** `IMMUTABLE` is a promise that the result depends on the arguments only, forever,
+and PostgreSQL relies on it: it does not re-run the function over stored data when the function is
+replaced. After changing a rule that a table depends on, the stored results are the old rule's:
+
+- a `CHECK` constraint is not re-checked against existing rows — find them with
+  `SELECT … WHERE NOT app.rule(…)`;
+- a stored generated column keeps its old values until each row is written again — `UPDATE products SET
+  list_cents = list_cents` recomputes them;
+- an index on an expression (`CREATE INDEX … ON t (app.rule(…))`) keeps the old keys, and queries using
+  it return wrong rows until `REINDEX`.
+
+A trigger has none of these problems: it runs the current rule on each write, and stores nothing of its
+own.
+
 ---
 
 # Reference
@@ -762,7 +841,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 2. `bun run typecheck`
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
 4. `bun run ex:parity`, then again with `--db-url` against the same service: `tsql parity` end to end on the examples
-5. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
+5. `psql` runs `examples/output.sql` then `examples/usage.sql` on the PostgreSQL service: the [Using the rules from SQL](#using-the-rules-from-sql) patterns, with assertions that raise if one misbehaves
+6. `bun run ex:compile`, then a check that `examples/output.sql` and `examples/manifest.json` match what is committed. The compiler guarantees byte-identical re-runs, so a difference means the examples are stale; the diff is posted as an annotation on the run, ready for `git apply`.
 
 `examples/` and `tests/` are deliberately separate. `examples/` is the showcase a user reads: a few rules, chosen to show what tsql can do, not to cover every case — CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
@@ -774,6 +854,7 @@ Formatting is not checked in CI; run `bun run format` before committing.
 examples/*.ts           a short showcase for users — the rules the README walks through, own tsconfig
 examples/output.sql     what tsql emits for them, checked in beside the rules it came from
 examples/manifest.json  the manifest emitted with it
+examples/usage.sql      hand-written: the rules used from SQL (CHECK, generated column, trigger), run by CI
 tests/parity/           accepted cases: name.ts, the rule, and name.sql, the SQL it must compile to;
                         each is also proven against its TypeScript on PGlite and PostgreSQL
 tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
