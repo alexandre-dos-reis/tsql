@@ -13,7 +13,9 @@ import { checkParity, type ParityOptions, type RowQuery } from "./parity.ts";
  * a real PostgreSQL instead, and everything runs inside one transaction that is
  * rolled back, so the server is left exactly as it was found.
  *
- * A consumer who wants their own test runner uses `@adr/tsql/parity` directly.
+ * The harness itself (`src/parity.ts`) is internal, not exported: this runner,
+ * through `openDatabase`, is the only way in — for `tsql parity` and for this
+ * repository's own tests alike.
  */
 
 export interface ParityOutcome {
