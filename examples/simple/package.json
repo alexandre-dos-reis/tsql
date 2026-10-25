@@ -1,0 +1,14 @@
+{
+  "name": "tsql-example-simple",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsql check functions/*.ts",
+    "compile": "tsql compile functions/*.ts",
+    "parity": "tsql parity functions/*.ts"
+  },
+  "devDependencies": {
+    "@adr/tsql": "^0.2.0",
+    "typescript": "~7.0.2"
+  }
+}

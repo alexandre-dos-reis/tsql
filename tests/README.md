@@ -46,5 +46,5 @@ test file.
 | `cli.test.ts` | the `tsql` command as a user runs it, under Bun and Node: refused invocations, messages, exit codes, narrowing to named files, `tsql parity` with PGlite and `--db-url` |
 | `packaging.test.ts` | what only breaks once published: alias provenance in an installed layout, locating the native TypeScript executable, the exact runtime dependencies, the exported entry points, a Node-compatible launcher |
 
-No test reads `examples/`: it is a short showcase for users, checked in CI through the commands a user
-runs (`ex:check`, `ex:compile`, `ex:parity`).
+No test reads `examples/`: it holds projects for users to copy, checked in CI through the commands a
+user runs.

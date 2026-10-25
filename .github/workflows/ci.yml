@@ -46,44 +46,50 @@ jobs:
 
       - run: bun test
 
-      # The command users run, end to end on every example, 200 inputs per
-      # function: once on the default in-process PGlite, once on the real
-      # PostgreSQL service through --db-url.
-      - name: tsql parity (PGlite)
-        run: bun run ex:parity
+      # The examples, as a user runs them — but against this checkout, not the published package.
+      - name: Point the examples at this checkout
+        run: bun scripts/examples.ts link
 
-      - name: tsql parity (PostgreSQL 18)
-        run: bun run ex:parity --db-url="$TSQL_TEST_DB_URL"
-
-      # The README's "Using the functions from SQL" patterns, run for real: the generated migration, then
-      # examples/usage.sql, whose assertions raise if a CHECK, a generated column or a trigger does
-      # not behave as documented.
-      - name: Functions used from SQL (PostgreSQL 18)
-        run: psql "$TSQL_TEST_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f examples/output.sql -f examples/usage.sql
-
-      # The compiler owns examples/output.sql and tsql-manifest.json and guarantees
-      # byte-identical re-runs, so a stale committed copy is a build failure.
-      - name: Generated examples are up to date
-        run: bun run ex:compile
-
-      - name: Upload generated examples
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: examples
-          path: |
-            examples/output.sql
-            examples/tsql-manifest.json
-
-      # On drift, the diff is also posted as an annotation, so it can be read
-      # (and applied with `git apply`) from the PR without downloading anything.
-      - name: Fail if generated examples drifted
+      - name: "Example: simple"
+        working-directory: examples/simple
         run: |
-          if ! git diff --quiet -- examples/output.sql examples/tsql-manifest.json; then
-            diff=$(git diff -- examples/output.sql examples/tsql-manifest.json)
-            diff=${diff//'%'/'%25'}
-            diff=${diff//$'\r'/'%0D'}
-            diff=${diff//$'\n'/'%0A'}
-            echo "::error title=Generated examples are stale — run bun run ex:compile::${diff}"
-            exit 1
-          fi
+          bun install
+          bun run check
+          bun run parity
+          bun run parity --db-url="$TSQL_TEST_DB_URL"
+          bun run compile
+          test -s generated/0001_functions.sql
+
+      - name: "Example: with-postgrest, the database"
+        working-directory: examples/with-postgrest
+        run: |
+          bun install
+          bun run check
+          bun run parity
+          bunx tsql compile functions/*.ts --out db/01_functions.sql
+          psql "$TSQL_TEST_DB_URL" -c 'CREATE DATABASE with_postgrest'
+          psql postgres://postgres:postgres@localhost:5432/with_postgrest -v ON_ERROR_STOP=1 \
+            -f db/01_functions.sql -f db/02_schema.sql
+
+      # PostgREST on that database, as docker-compose.yml runs it. Ada is on the free plan:
+      # three todos go in, and the fourth is refused by the compiled function, in the trigger.
+      - name: "Example: with-postgrest, through PostgREST"
+        run: |
+          docker run -d --network host \
+            -e PGRST_DB_URI=postgres://authenticator:secret@localhost:5432/with_postgrest \
+            -e PGRST_DB_SCHEMAS=api -e PGRST_DB_ANON_ROLE=web_anon \
+            postgrest/postgrest:v16.5
+          for i in $(seq 30); do curl -sf localhost:3000/users > /dev/null && break; sleep 1; done
+          curl -sf localhost:3000/users
+          for n in 1 2 3; do
+            curl -sf -X POST localhost:3000/todos -H 'Content-Type: application/json' -d "{\"user_id\": 1, \"title\": \"todo $n\"}"
+          done
+          status=$(curl -s -o refusal.json -w '%{http_code}' -X POST localhost:3000/todos \
+            -H 'Content-Type: application/json' -d '{"user_id": 1, "title": "one too many"}')
+          cat refusal.json
+          test "$status" = 400
+          grep -q 'The free plan allows 3 todos' refusal.json
+
+      - name: "Example: with-postgrest, the page"
+        working-directory: examples/with-postgrest
+        run: bun run build
