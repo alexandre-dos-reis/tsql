@@ -280,9 +280,80 @@ describe("a refusal reads like a compiler diagnostic", () => {
       "tests/rejected/tsconfig.json",
     ]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - Arrays compare by identity");
+    expect(stderr).toContain("tests/rejected/arrayEquality.ts:12:10 - error: Arrays compare by identity");
     // `a === b` is seven characters, and all seven are underlined.
     expect(stderr).toMatch(/\|   return a === b;.*\n\s+\|\s{10}\^{7}\n/);
     expect(stderr).toContain("1 error(s). No SQL was written.");
+  });
+});
+
+describe("check --watch checks again when a file changes", () => {
+  /**
+   * A throwaway project, written to by the test: a watcher needs a file to
+   * change, and this suite never rewrites anything checked in.
+   */
+  async function project(source: string): Promise<{ dir: string; file: string }> {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "tsql-watch-"));
+    await writeFile(
+      join(dir, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { strict: true, noEmit: true, lib: ["ESNext"], types: [] }, include: ["."] }),
+    );
+    const file = join(dir, "limits.ts");
+    await writeFile(file, source);
+    return { dir, file };
+  }
+
+  /** Read a stream until `pattern` has matched `times` times in total, or fail after a while. */
+  async function until(stream: ReadableStream<Uint8Array>, seen: { text: string }, pattern: RegExp, times: number) {
+    const reader = stream.getReader();
+    const deadline = Date.now() + 30_000;
+    try {
+      while ((seen.text.match(new RegExp(pattern, "g")) ?? []).length < times) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${pattern} in:\n${seen.text}`);
+        const { value, done } = await reader.read();
+        if (done) throw new Error(`stream ended before ${pattern}:\n${seen.text}`);
+        seen.text += new TextDecoder().decode(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  test("each round is framed for an editor, and a saved mistake is reported", async () => {
+    const { writeFile, rm } = await import("node:fs/promises");
+    const { dir, file } = await project("export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n");
+    const proc = Bun.spawn([process.execPath, "src/cli.ts", "check", file, "--project", `${dir}/tsconfig.json`, "--watch"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: undefined },
+    });
+    const stdout = { text: "" };
+    const stderr = { text: "" };
+    try {
+      await until(proc.stdout, stdout, /Watching for file changes\./, 1);
+      expect(stdout.text).toMatch(/^\[\d\d:\d\d:\d\d\] tsql: checking…$/m);
+      expect(stdout.text).toContain("tsql: ok — 1 function(s) compile. Watching for file changes.");
+
+      // Truthiness is refused: the second round reports it, and keeps watching.
+      await writeFile(file, "export function limit(name: string): number {\n  if (name) {\n    return 3;\n  }\n  return 100;\n}\n");
+      await until(proc.stderr, stderr, /- error: /, 1);
+      await until(proc.stdout, stdout, /Watching for file changes\./, 2);
+      expect(stderr.text).toMatch(/limits\.ts:2:7 - error: An `if` condition must be a boolean/);
+      expect(stdout.text).toContain("tsql: 1 error(s). Watching for file changes.");
+      expect(proc.exitCode).toBeNull();
+    } finally {
+      proc.kill();
+      await proc.exited;
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--watch belongs to check alone", async () => {
+    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", ...PROJECT, "--watch"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("--watch");
   });
 });

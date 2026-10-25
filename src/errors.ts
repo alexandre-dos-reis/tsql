@@ -42,10 +42,13 @@ export class CompileError extends Error {
     return new CompileError(message, file.fileName, line + 1, character + 1, text, length);
   }
 
-  /** Like a tsc diagnostic: position, message, the source line with the construct underlined. */
+  /** Like a tsc diagnostic: position, `error`, message, the source line with the construct underlined. */
   format(root = process.cwd(), paint: Paint = PLAIN): string {
     const where = this.fileName.startsWith(root) ? this.fileName.slice(root.length + 1) : this.fileName;
-    const head = `${paint("cyan", where)}:${paint("yellow", String(this.line))}:${paint("yellow", String(this.column))} - ${this.message}`;
+    // `file:line:col - error: message`, the shape of TypeScript's own diagnostics
+    // (`- error TS2322: …`), so one pattern reads both — an editor's problem
+    // matcher, a terminal's link detection.
+    const head = `${paint("cyan", where)}:${paint("yellow", String(this.line))}:${paint("yellow", String(this.column))} - ${paint("red", "error")}: ${this.message}`;
     if (this.sourceLine === undefined) return head;
     const gutter = paint("gray", `${String(this.line).padStart(5)} |`);
     const blank = paint("gray", `${" ".repeat(5)} |`);

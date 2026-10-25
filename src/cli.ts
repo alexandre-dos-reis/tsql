@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { compileProject, formatResult, type CompileResult } from "./compile.ts";
 import { ProjectNotFoundError } from "./errors.ts";
 import { err, out, painter } from "./style.ts";
@@ -57,6 +57,10 @@ interface ProjectOptions {
   readonly project: string;
   readonly schema: string;
   readonly comments: boolean;
+}
+
+interface CheckOptions extends ProjectOptions {
+  readonly watch?: boolean;
 }
 
 interface CompileOptions extends ProjectOptions {
@@ -124,8 +128,10 @@ projectCommand("check", "type check and translate, writing nothing")
   .description(
     "Type check the functions and translate them, writing nothing: the build fails on anything outside the subset, with the reason. Put it in CI next to your type checker.",
   )
-  .addHelpText("after", "\nExample:\n  tsql check functions/*.ts")
-  .action(async (files: string[], options: ProjectOptions, command: Command) => {
+  .option("-w, --watch", "check again whenever a file of the project changes, and keep running")
+  .addHelpText("after", "\nExamples:\n  tsql check functions/*.ts\n  tsql check functions/*.ts --watch")
+  .action(async (files: string[], options: CheckOptions, command: Command) => {
+    if (options.watch) return watchCheck(command, files, options);
     const result = await compileFiles(command, files, options);
     say(`${out("green", "✓")} ok — ${counts(result)} compile, nothing written:`);
     say(listing(result));
@@ -218,47 +224,122 @@ function listing(result: CompileResult): string {
   return lines.join("\n");
 }
 
-/**
- * The compile every command starts with. Exits with the diagnostics when the
- * functions do not compile, so a command's action only ever sees a successful build.
- */
-async function compileFiles(command: Command, files: readonly string[], options: ProjectOptions): Promise<CompileResult> {
-  // No files means nothing to do, and there is no safe default to invent: the
-  // migration is written from the files named, so quietly compiling whatever
+/** No files means nothing to do, and there is no safe default to invent. */
+function requireFiles(command: Command, files: readonly string[]): void {
+  // The migration is written from the files named, so quietly compiling whatever
   // the project happened to contain would overwrite it with more than was asked for.
   if (files.length === 0) {
     complain(`${err(["bold", "red"], "tsql:")} \`${command.name()}\` needs at least one file.\n\n${command.helpInformation({ error: true })}`);
     process.exit(1);
   }
+}
 
-  // A toolchain that cannot be assembled — no native compiler, an unreadable
-  // tsconfig — is a message to the user, not a stack trace through bundled code.
-  const result = await compileProject({
-    tsconfig: options.project,
-    files,
-    emit: { schema: options.schema, comments: options.comments },
-  }).catch((error: unknown) => {
+/**
+ * A build, or what to tell the user instead: the diagnostics and how many there
+ * are, or (`count` 0) a project that could not be built at all.
+ */
+type Attempt =
+  | { readonly ok: true; readonly result: CompileResult }
+  | { readonly ok: false; readonly report: string; readonly count: number };
+
+async function attemptCompile(command: Command, files: readonly string[], options: ProjectOptions): Promise<Attempt> {
+  try {
+    const result = await compileProject({
+      tsconfig: options.project,
+      files,
+      emit: { schema: options.schema, comments: options.comments },
+    });
+    if (result.ok) return { ok: true, result };
+    return {
+      ok: false,
+      report: formatResult(result, process.cwd(), err),
+      count: result.errors.length + result.diagnostics.length,
+    };
+  } catch (error: unknown) {
+    // A toolchain that cannot be assembled — no native compiler, an unreadable
+    // tsconfig — is a message to the user, not a stack trace through bundled code.
     // The default `--project` describes a consuming project, not whatever
-    // directory tsql happens to be run from, so this is what a first run hits.
+    // directory tsql happens to be run from, so a missing one is what a first run hits.
     if (error instanceof ProjectNotFoundError) {
-      complain(
-        `${error.message}\n\n` +
+      return {
+        ok: false,
+        report:
+          `${error.message}\n\n` +
           `Point --project at the tsconfig that holds your functions:\n\n` +
           `  tsql ${command.name()} ${files.join(" ")} --project path/to/tsconfig.json\n`,
-      );
-      process.exit(1);
+        count: 0,
+      };
     }
-    complain(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
-
-  if (!result.ok) {
-    complain(formatResult(result, process.cwd(), err));
-    const total = result.errors.length + result.diagnostics.length;
-    complain(`\n${err(["bold", "red"], `${total} error(s).`)} No SQL was written.`);
-    process.exit(1);
+    return { ok: false, report: error instanceof Error ? error.message : String(error), count: 0 };
   }
-  return result;
+}
+
+/**
+ * The compile every command starts with. Exits with the diagnostics when the
+ * functions do not compile, so a command's action only ever sees a successful build.
+ */
+async function compileFiles(command: Command, files: readonly string[], options: ProjectOptions): Promise<CompileResult> {
+  requireFiles(command, files);
+  const attempt = await attemptCompile(command, files, options);
+  if (attempt.ok) return attempt.result;
+  complain(attempt.report);
+  if (attempt.count > 0) {
+    complain(`\n${err(["bold", "red"], `${attempt.count} error(s).`)} No SQL was written.`);
+  }
+  process.exit(1);
+}
+
+/**
+ * `check --watch`: check, then check again whenever a file of the project
+ * changes, until interrupted. Each round opens and closes with a timestamped
+ * line — `tsql: checking…` and `… Watching for file changes.` — so an editor
+ * can tell when a round's diagnostics are complete (a VS Code background task's
+ * problem matcher keys on exactly these), and every diagnostic starts with
+ * `file:line:col - error`, one regular expression for TypeScript's and ours.
+ *
+ * The files are the ones named when it started: a glob is expanded by the shell
+ * once, so a file added later needs a restart.
+ */
+async function watchCheck(command: Command, files: readonly string[], options: ProjectOptions): Promise<void> {
+  requireFiles(command, files);
+  // Nothing to watch: say so the way a plain check would, and stop.
+  if (!existsSync(resolve(options.project))) {
+    await compileFiles(command, files, options);
+    return;
+  }
+  const stamp = () => out("dim", `[${new Date().toLocaleTimeString("en-GB")}]`);
+  let running = false;
+  let again = false;
+
+  const round = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    do {
+      again = false;
+      say(`${stamp()} tsql: checking…`);
+      const attempt = await attemptCompile(command, files, options);
+      if (attempt.ok) {
+        say(`${stamp()} tsql: ${out("green", "ok")} — ${counts(attempt.result)} compile. Watching for file changes.`);
+      } else {
+        complain(attempt.report);
+        const failed = attempt.count > 0 ? `${attempt.count} error(s)` : "the project could not be checked";
+        say(`${stamp()} tsql: ${err("red", failed)}. Watching for file changes.`);
+      }
+    } while (again);
+    running = false;
+  };
+
+  // Saving a file is often several writes; wait for them to settle.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  watch(dirname(resolve(options.project)), { recursive: true }, (_event, name) => {
+    if (!name || name.split(/[\\/]/).includes("node_modules") || !/\.([cm]?tsx?|json)$/.test(name)) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => void round(), 100);
+  });
+  await round();
 }
 
 const args = process.argv.slice(2);
