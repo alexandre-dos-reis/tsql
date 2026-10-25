@@ -278,6 +278,7 @@ API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and throu
 
 - [docs/design.md](docs/design.md) — why each mapping and each refusal is what it is: null handling,
   objects, named types, arrays, the parity harness.
+- [docs/architecture.md](docs/architecture.md) — how the compiler is built, file by file.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — toolchain, tests, CI, releases.
 - [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`with-postgrest`](examples/with-postgrest), PostgreSQL, PostgREST and a Vite page sharing one rule.
 

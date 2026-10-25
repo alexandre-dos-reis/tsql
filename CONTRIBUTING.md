@@ -1,7 +1,7 @@
 # Contributing
 
-How the repository is built, tested and released. [`docs/design.md`](docs/design.md) explains why the
-compiler behaves as it does, [`tests/README.md`](tests/README.md) how to add a test case, and
+How the repository is built, tested and released. [`docs/architecture.md`](docs/architecture.md) shows how
+the compiler is put together, file by file; [`docs/design.md`](docs/design.md) explains why it behaves as it does, [`tests/README.md`](tests/README.md) how to add a test case, and
 [`CLAUDE.md`](CLAUDE.md) the internals: the pipeline, the IR and the invariants to preserve.
 
 ## Toolchain
