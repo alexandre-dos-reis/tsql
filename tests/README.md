@@ -30,7 +30,10 @@ test file.
   boilerplate and the provenance comments are left out, so the file is not runnable on its own. It pins
   what parity cannot see: a quoted identifier, the form of a `CASE`, the types in a signature. All cases also
   compile together as one project, so function and type names must stay unique across the folder.
-- **`rejected/`** tests the compiler: refused at build time, because no faithful SQL translation exists.
+- **`rejected/`** tests the compiler: refused at build time, because no faithful SQL translation exists. Every `.ts` directly in the folder is a case, read with a
+  non-recursive `readdirSync`, so a case that needs a second file puts it in a subdirectory —
+  `rejected/helpers/` is part of the project the compiler opens (the tsconfig includes `.`) without
+  being a case of its own.
   Each file's header explains why, often with the SQL that would have diverged.
 - **`divergent/`** tests the test: the compiler is not involved. The SQL is written by hand because the
   compiler must never produce it; the pair proves the parity harness — and so `tsql parity` — can fail.

@@ -7,7 +7,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 ```
  functions/*.ts ──► program.ts ──► compile.ts ──► lower.ts ──► IR (ir.ts) ──► emit.ts ──► migration.sql
  (+ tsconfig)       open project   orchestrate    AST → IR     types,          IR → SQL
-                    type check     two passes      enforces     statements,     total, no checks
+                    type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
                                        │
                                        ├─ typemap.ts    TypeScript types → PgType (composites, domains, enums, arrays)
@@ -78,10 +78,18 @@ are caught here.
 [`FunctionIR`](../src/ir.ts). Errors are collected per function, so one bad function does not hide
 the others.
 
-### 6. Emit: `emit.ts`
+### 6. Pass 3, exported types: `compile.ts` + `typemap.ts`
 
-`usedTypes` (in `compile.ts`) keeps only the composites, domains and enums a successfully lowered
-function mentions. [`emitMigration`](../src/emit.ts) then writes, in a deterministic order: the
+`exportedTypes` finds the `interface`, `type` and `enum` declarations each file exports, and
+[`mapTypeDeclaration`](../src/typemap.ts) maps each one by the same rules as a type reached from a
+parameter — so an exported type is created whether or not a function mentions it. It runs last, so a
+type a function uses is still reported at that use. A generic declaration is refused: a PostgreSQL
+type is one fixed shape.
+
+### 7. Emit: `emit.ts`
+
+`usedTypes` (in `compile.ts`) keeps the composites, domains and enums a successfully lowered
+function mentions, plus those an exported declaration maps to. [`emitMigration`](../src/emit.ts) then writes, in a deterministic order: the
 schema, domains and enums (`emitDomain`, `emitEnum`), composites in dependency order
 (`emitCompositeType`, `dependencyOrder`), then functions (`emitFunction`). The same sources always
 give a byte-identical file.
@@ -153,7 +161,9 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
 - **Names**: an identifier that is not in scope goes to `classifyReference`
   ([`references.ts`](../src/references.ts)), which uses [`origin.ts`](../src/origin.ts) to tell a
   standard-library global (`Math`, `Date`), a package import, and another project symbol apart —
-  by where the declaration lives, never by a list of names. `referenceMessage` words the refusal.
+  by where the declaration lives, never by a list of names. A project symbol is split again by
+  whether its type is callable, so a non-compiled function and a module-level value get different
+  advice. `referenceMessage` words the refusal.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler
