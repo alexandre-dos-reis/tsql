@@ -6,6 +6,7 @@ import {
   type EnumDeclaration,
   type Expression,
   type IndexedAccessTypeNode,
+  type InterfaceDeclaration,
   type LiteralTypeNode,
   type Node,
   type NumericLiteral,
@@ -803,4 +804,46 @@ export async function mapInferredType(type: Type, at: Node, ctx: TypeCtx): Promi
   const mapped = await mapTypeStructurally(type, at, ctx);
   if (mapped === NULL_ONLY) throw CompileError.at(at, "Cannot infer a usable type from `null` alone.");
   return mapped;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Type declarations compiled for their own sake                              */
+/* -------------------------------------------------------------------------- */
+
+/** A type declaration this compiler maps: `interface`, `type` or `enum`. */
+export type TypeDeclaration = InterfaceDeclaration | TypeAliasDeclaration | EnumDeclaration;
+
+/**
+ * Map a type declaration on its own, with no function to reach it through.
+ *
+ * An exported type is part of the schema whether or not a compiled function
+ * mentions it: its only user may be a table column, declared in SQL the
+ * compiler never sees. So `export` is what asks for the composite, domain or
+ * enum, and the type is mapped by exactly the same rules as one reached from a
+ * parameter — the restrictions live in one place.
+ *
+ * A declaration with no SQL counterpart of its own (`type Name = string`,
+ * `type Ids = readonly Integer[]`) maps to the scalar or array it is, and
+ * leaves nothing behind to create.
+ */
+export async function mapTypeDeclaration(declaration: TypeDeclaration, ctx: TypeCtx): Promise<PgType> {
+  const parameters = (declaration as InterfaceDeclaration | TypeAliasDeclaration).typeParameters;
+  if (parameters && parameters.length > 0) {
+    throw CompileError.at(
+      declaration.name,
+      `\`${declaration.name.text}\` is generic, so it has no one shape. A PostgreSQL type is a fixed shape — export the instantiations you need as named types of their own, or stop exporting this one.`,
+    );
+  }
+
+  // An alias is mapped from the annotation its author wrote, as everywhere
+  // else, so `type Tier = "free" | "pro"` is the same domain here as in a
+  // parameter. An interface or an enum has no type node to read, so the type
+  // the name declares is mapped instead.
+  if (declaration.kind === SyntaxKind.TypeAliasDeclaration) {
+    return mapTypeNode((declaration as TypeAliasDeclaration).type, ctx);
+  }
+
+  const symbol = await ctx.checker.getSymbolAtLocation(declaration.name);
+  if (!symbol) throw CompileError.at(declaration.name, `\`${declaration.name.text}\` could not be resolved.`);
+  return mapInferredType(await ctx.checker.getDeclaredTypeOfSymbol(symbol), declaration.name, ctx);
 }

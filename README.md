@@ -181,6 +181,11 @@ calling each other; `const` and `let`; `if`, `switch` (with a `default`), `while
 `break`, `continue`; arithmetic, comparisons, boolean operators; object literals, spread and
 destructuring; `xs.length` and `xs.includes(x)`.
 
+An exported `interface`, `type` or `enum` is created in the migration even when no function mentions
+it, so a composite, a domain or an enum can exist for a table column you write in SQL. A type a
+function uses is created whether it is exported or not; a type nothing uses and nothing exports is not
+created at all.
+
 ## What's not
 
 Each of these is refused with a message saying what to write instead. Most are refused because the

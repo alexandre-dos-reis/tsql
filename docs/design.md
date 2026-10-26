@@ -334,6 +334,48 @@ Types are created before everything that uses them: domains and enums, then comp
 may be either — then functions. A composite's guard compares such a field through `format_type`, like
 the catalogue's side, so it does not depend on the search path.
 
+### What `export` asks for
+
+A type a function mentions is created because the function's signature needs it, exported or not. A type
+the compiler would otherwise never reach is created because it is **exported**:
+
+```ts
+export type Tier = "standard" | "gold";
+
+export interface TodoRow {
+  readonly label: string;
+  readonly tier: Tier;
+}
+```
+
+```sql
+CREATE DOMAIN app.tier AS text CONSTRAINT tier_values CHECK (VALUE = ANY (ARRAY['gold', 'standard']));
+CREATE TYPE app.todo_row AS (label text, tier app.tier);
+```
+
+No function here takes a `TodoRow` or returns one, and both types are still created. The reason is that a
+composite, a domain or an enum is useful on its own: the column it types lives in a table, written in SQL
+the compiler never sees. Requiring a dummy function to bring a type into the schema would be a
+workaround for nothing, and would put a function in the schema nobody wanted.
+
+So `export` is the author's statement that a type belongs to the schema, and it is the only thing
+`export` means for a type — a non-exported type still compiles wherever a function uses it, and is
+still absent from the migration when nothing does. The rule reads the same both ways: **what the
+functions need, plus what the file exports.**
+
+Two consequences worth knowing:
+
+- An exported type must be mappable, even if nothing uses it. In a project of compiled functions that is
+  the point — these files hold the subset and nothing else — but it does mean `export type Handler = (x:
+  number) => void` beside them is a build error rather than ignored. Stop exporting it, or move it out of
+  the compiled files.
+- An exported alias with no SQL type of its own leaves nothing behind: `export type Name = string` is
+  `text`, and `text` needs no `CREATE`. Only composites, domains and enums are objects in the schema.
+
+A **generic** declaration is refused. `Box<T>` is a family of shapes, and a PostgreSQL type is one fixed
+column list; there is no honest `CREATE TYPE app.box`. Export the instantiations you need as named types
+of their own.
+
 ## Arrays
 
 A `readonly T[]` parameter or object field — also written `ReadonlyArray<T>`, or through an alias — is
@@ -527,6 +569,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `==` / `!=` | no SQL equivalent for loose equality |
 | a numeric `enum`; the enum form without `as const` or with an integer-like key; two named sets with one SQL name | see [Named types](#named-types-domains-and-enums) |
 | generics, `Date` | outside the subset whose semantics can be preserved |
+| an exported generic type, `export interface Box<T>` | an exported type is created in the schema, and a PostgreSQL type is one fixed column list |
 | `{ plan: string }` inline | anonymous: give the shape a name so the composite type has one |
 | `note?: string` on an object | a composite field is always present — write `T \| null` |
 | an anonymous nested shape, `{ foo: { bar: string } }` | a composite column needs a named type: give the shape a name |
@@ -548,8 +591,9 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `fc.sample(…)` from an imported package | `` `fc` comes from a package (`fast-check`), which cannot run inside PostgreSQL `` |
 | `plan.length`, `plan.toUpperCase()` | object access and methods on values are not in the subset |
 | `async` / `await` | `` a PL/pgSQL function runs to completion with nothing to await `` |
+| a module-level value, `const rate = 0.2` read from a function | `` `rate` is a value declared outside the function `` — inlining it would freeze a copy in the database that the TypeScript could later change, and the parity harness would keep agreeing because it imports the same module |
 
-This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
+This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. A symbol declared in the project is then split by whether it is *callable* — a non-compiled function is told to be exported, a value is told to become a parameter — asked of its type, so a `function` declaration and a `const` bound to an arrow answer alike. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
 
 Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: tsql always type checks with `"types": []` and `lib: ["ESNext"]`, whatever a tsconfig says, so they are type errors before the translator runs. It imposes `strict` the same way: without `strictNullChecks`, TypeScript lets `null` into every type, and a nullable comparison would lower to `=` instead of `IS NOT DISTINCT FROM`.
 

@@ -1,5 +1,5 @@
 import type { Node } from "typescript/unstable/ast";
-import { SymbolFlags } from "typescript/unstable/async";
+import { SignatureKind, SymbolFlags, type Symbol as TsSymbol } from "typescript/unstable/async";
 import { originOfPath, packageName } from "./origin.ts";
 import type { TypeCtx } from "./typemap.ts";
 
@@ -19,7 +19,8 @@ import type { TypeCtx } from "./typemap.ts";
 export type Reference =
   | { readonly kind: "runtime-global"; readonly name: string }
   | { readonly kind: "external"; readonly name: string; readonly from: string }
-  | { readonly kind: "module"; readonly name: string; readonly from: string }
+  | { readonly kind: "module-function"; readonly name: string; readonly from: string }
+  | { readonly kind: "module-value"; readonly name: string; readonly from: string }
   | { readonly kind: "unknown"; readonly name: string };
 
 export async function classifyReference(name: string, at: Node, ctx: TypeCtx): Promise<Reference> {
@@ -37,12 +38,27 @@ export async function classifyReference(name: string, at: Node, ctx: TypeCtx): P
       case "external-library":
         return { kind: "external", name, from: declaration.path };
       case "project":
-        return { kind: "module", name, from: declaration.path };
+        return {
+          kind: (await isCallable(symbol, ctx)) ? "module-function" : "module-value",
+          name,
+          from: declaration.path,
+        };
       case "unknown":
         continue;
     }
   }
   return { kind: "unknown", name };
+}
+
+/**
+ * Can this be called? Asked of the type rather than of the syntax, so a
+ * `function` declaration and a `const` bound to an arrow answer the same, and
+ * `const rate = 0.2` answers differently from both.
+ */
+async function isCallable(symbol: TsSymbol, ctx: TypeCtx): Promise<boolean> {
+  const type = await ctx.checker.getTypeOfSymbol(symbol);
+  if (!type) return false;
+  return (await ctx.checker.getSignaturesOfType(type, SignatureKind.Call)).length > 0;
 }
 
 /**
@@ -73,8 +89,15 @@ export function referenceMessage(reference: Reference, usage: string): string {
     }
     case "external":
       return `\`${label}\` comes from a package (\`${packageName(reference.from)}\`), which cannot run inside PostgreSQL. ${ONLY_AVAILABLE}`;
-    case "module":
+    case "module-function":
       return `\`${label}\` is not a compiled function. Only exported functions in this project can be called.`;
+    case "module-value":
+      return (
+        `\`${label}\` is a value declared outside the function. ${ONLY_AVAILABLE} ` +
+        `A PL/pgSQL function sees nothing but itself, and inlining the value would freeze a copy in the database ` +
+        `that the TypeScript could later change — the parity harness would still agree, because it imports the same module. ` +
+        `Pass it as a parameter, or declare it inside the function.`
+      );
     case "unknown":
       return `\`${label}\` is not a parameter or local constant. ${ONLY_AVAILABLE}`;
   }

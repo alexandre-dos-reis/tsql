@@ -127,7 +127,10 @@ properties of that resolver are load-bearing:
    call between compiled functions type-checks regardless of declaration order. SQL-name collisions
    are detected here.
 4. **Pass 2**: `lowerFunction` for each body, against those signatures.
-5. `emitMigration` (`src/emit.ts`) emits used domains and enums first, then composite types, then
+5. **Pass 3**: `mapTypeDeclaration` for every *exported* `interface`, `type` and `enum`
+   (`exportedTypes`), so a type is created even when no function mentions it. Last, so a type reached
+   from a parameter is still reported at that parameter.
+6. `emitMigration` (`src/emit.ts`) emits used domains and enums first, then composite types, then
    functions.
 
 Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, message)` and collected
@@ -199,9 +202,12 @@ non-interactive subcommands (`status`, `version`, `publish`) run fine under `bun
 
 `src/origin.ts` asks the program whether a declaration's file `isDefaultLibrary` or
 `isFromExternalLibrary`. `src/references.ts` uses that to classify a name as a runtime global, a package
-import, a non-compiled project symbol, or unknown — so every standard-library global (`Math`, `JSON`,
-`Date`, anything the lib grows) is covered with no denylist, and a *parameter* named `Math` still
-compiles. `src/typemap.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
+import, a non-compiled project function, a module-level value, or unknown — so every standard-library
+global (`Math`, `JSON`, `Date`, anything the lib grows) is covered with no denylist, and a *parameter*
+named `Math` still compiles. Function and value are told apart by asking whether the symbol's type is
+callable (`isCallable`), not by the syntax of its declaration, so `function f() {}` and `const f = () =>
+{}` answer alike; a module-level value is refused because inlining it would freeze a copy in the
+database while the TypeScript stayed free to change, and the parity harness would keep agreeing. `src/typemap.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
 than turned into composite types.
 
 The numeric aliases are a second, related question: `Integer` is resolved **by name**, so the compiler
@@ -260,7 +266,14 @@ where TypeScript has proven membership; enum literals are emitted typed. The dom
 `<name>_values` constraint and re-adds it when the union changes (re-validating columns); the enum
 guard adds new values in place and refuses removals or reorders.
 
-Only composites, domains and enums a successfully-lowered function mentions are emitted (`usedTypes`). `CREATE TYPE`
+`usedTypes` emits the composites, domains and enums a successfully-lowered function mentions, **plus
+those an exported declaration maps to** — a signature that failed to lower leaves no `CREATE TYPE`
+behind, while an exported type stands on its own because a table column may be its only user, written
+in SQL the compiler never sees (`docs/design.md`, "What `export` asks for"). `export` is the only thing
+that means anything for a type: a non-exported type still compiles wherever a function uses it. The
+flip side is that an exported type must be mappable even if nothing uses it, and an exported generic
+declaration is refused. An exported alias with no SQL type of its own (`type Name = string`) leaves
+nothing behind. `CREATE TYPE`
 has no `IF NOT EXISTS`, so it is wrapped in a `DO` block that also compares the existing shape and
 raises on drift. The compiler creates types; it never rewrites them.
 

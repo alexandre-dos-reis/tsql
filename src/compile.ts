@@ -14,6 +14,7 @@ import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
+import { mapTypeDeclaration, type TypeDeclaration } from "./typemap.ts";
 
 export interface CompileOptions {
   /**
@@ -139,8 +140,24 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       }
     }
 
+    // Pass 3: the exported types, mapped for their own sake. A type exported
+    // from a compiled file belongs to the schema whether or not a function
+    // mentions it — its only user may be a table column, written in SQL this
+    // compiler never sees. Last, so a type reached from a parameter is still
+    // reported at that parameter.
+    const declared: PgType[] = [];
+    for (const file of files) {
+      for (const declaration of exportedTypes(file)) {
+        try {
+          declared.push(await mapTypeDeclaration(declaration, ctx));
+        } catch (error) {
+          errors.push(asCompileError(error));
+        }
+      }
+    }
+
     const ok = errors.length === 0;
-    const { composites: used, named } = usedTypes(functions, composites);
+    const { composites: used, named } = usedTypes(functions, declared, composites);
     return {
       ok,
       functions,
@@ -173,11 +190,17 @@ function emptyManifest(options: CompileOptions): Manifest {
 }
 
 /**
- * Only emit types that a compiled function actually mentions: a signature that
- * failed to lower should not leave a `CREATE TYPE` behind.
+ * The types this migration creates: the ones a compiled function mentions, and
+ * the ones a compiled file exports.
+ *
+ * A function's types are collected from its lowered IR rather than from
+ * everything mapping discovered, so a signature that failed to lower does not
+ * leave a `CREATE TYPE` behind. An exported type stands on its own, which is
+ * what lets a table column be a composite's only user.
  */
 function usedTypes(
   functions: readonly FunctionIR[],
+  declared: readonly PgType[],
   discovered: ReadonlyMap<string, CompositeType>,
 ): { composites: CompositeType[]; named: NamedText[] } {
   const names = new Set<string>();
@@ -197,6 +220,7 @@ function usedTypes(
   for (const fn of functions) {
     for (const type of [...fn.params.map((p) => p.type), fn.returns, ...fn.locals.map((l) => l.type)]) collect(type);
   }
+  for (const type of declared) collect(type);
   return {
     composites: [...names].sort().flatMap((name) => {
       const composite = discovered.get(name);
@@ -259,6 +283,30 @@ function selected(inProject: readonly string[], options: CompileOptions): Set<st
     wanted.add(path);
   }
   return wanted;
+}
+
+/**
+ * The type declarations a file exports: `interface`, `type` and `enum`.
+ *
+ * `export` is the whole rule, and the only place in this compiler where it
+ * means something for a type: a type a function uses is mapped whether it is
+ * exported or not, and exporting one asks for it in the schema on top of that.
+ */
+function exportedTypes(file: SourceFile): TypeDeclaration[] {
+  const types: TypeDeclaration[] = [];
+  for (const statement of file.statements) {
+    if (!isExported(statement)) continue;
+    switch (statement.kind) {
+      case SyntaxKind.InterfaceDeclaration:
+      case SyntaxKind.TypeAliasDeclaration:
+      case SyntaxKind.EnumDeclaration:
+        types.push(statement as TypeDeclaration);
+        break;
+      default:
+        break;
+    }
+  }
+  return types;
 }
 
 /**
