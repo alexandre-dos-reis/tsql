@@ -8,8 +8,8 @@
  *                                  that need it go out together.
  *   bun scripts/examples.ts link   this checkout and its own `typescript` (`file:` paths), so a
  *                                  `bun install` in an example installs neither a second time.
- *                                  For local work and CI only: `tests/examples.test.ts` fails
- *                                  while an example is linked, so it cannot be committed that way.
+ *                                  For local work only: `tests/examples.test.ts` fails while an
+ *                                  example is linked, so it cannot be committed that way.
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

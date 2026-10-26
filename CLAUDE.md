@@ -85,7 +85,7 @@ PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check 
 indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
 package's version (and typescript's peer range) — what is committed, so an example is ready to copy
 — and runs inside `bun run version`. `link` points both at this checkout (`file:` paths) for local
-work and CI's install job, so neither is installed twice. Each example must define `tsql:check`,
+work, so neither is installed twice. Each example must define `tsql:check`,
 `tsql:parity` and `tsql:compile` (and may define `build`). Generated SQL is not checked in there
 (`.gitignore`), except `simple/output.sql`.
 
@@ -287,9 +287,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 `@adr/tsql/pgtypes` resolves through a self-link, `node_modules/@adr/tsql` → the repository, which the
 test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
 with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
-committed. CI's second job, `examples`, installs them (linked) for what needs installing: `vite build`
-and the PostgREST / PostGraphile end-to-end checks — the only place an example is named. Examples are
-projects to copy, not coverage; coverage belongs in
+committed. Only those three scripts are tested, with no database to set up (parity runs on
+PGlite, as the script does): nothing installs an example's Vite, React, PostgREST or PostGraphile.
+Examples are projects to copy, not coverage; coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
 **Test files hold no cases**: they run what the folders contain, so adding a case never means editing a

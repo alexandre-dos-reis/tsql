@@ -6,8 +6,9 @@ import { PUBLISHED } from "../scripts/examples.ts";
 
 /**
  * Every folder in `examples/` is a project a user copies, and is tested the way it is used: through
- * its own `tsql:check`, `tsql:parity` and `tsql:compile` scripts — but run by this checkout's CLI, with
- * nothing installed. A new example is covered by adding its folder.
+ * its own `tsql:check`, `tsql:parity` and `tsql:compile` scripts — and only those, run by this
+ * checkout's CLI, with nothing installed and no database (parity runs on the in-process PGlite, as
+ * the script does). A new example is covered by adding its folder.
  *
  * The examples import `@adr/tsql/pgtypes`. Without an install, that resolves through one link in
  * this repository's own `node_modules` (`@adr/tsql` → the repository), made here if missing; the
@@ -19,7 +20,6 @@ import { PUBLISHED } from "../scripts/examples.ts";
 
 const root = resolve(import.meta.dir, "..");
 const cli = join(root, "src", "cli.ts");
-const dbUrl = process.env["TSQL_TEST_DB_URL"];
 
 const self = join(root, "node_modules", "@adr", "tsql");
 if (!existsSync(self) && !lstatSync(self, { throwIfNoEntry: false })) {
@@ -86,14 +86,12 @@ for (const name of examples) {
       expect(stdout).toContain("ok");
     });
 
+    // As the script runs it: on the in-process PGlite, no database to set up.
     test("tsql:parity", async () => {
-      const args = argumentsOf(scripts["tsql:parity"]!, dir);
-      for (const extra of dbUrl ? [[], [`--db-url=${dbUrl}`]] : [[]]) {
-        const { stdout, stderr, exitCode } = await run([...args, ...extra], dir);
-        expect(stderr).toBe("");
-        expect(exitCode).toBe(0);
-        expect(stdout).toContain("agree with their TypeScript");
-      }
+      const { stdout, stderr, exitCode } = await run(argumentsOf(scripts["tsql:parity"]!, dir), dir);
+      expect(stderr).toBe("");
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("agree with their TypeScript");
     });
 
     test("tsql:compile, and what it checks in is what tsql writes", async () => {
