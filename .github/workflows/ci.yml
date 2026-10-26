@@ -50,24 +50,37 @@ jobs:
       - name: Point the examples at this checkout
         run: bun scripts/examples.ts link
 
-      - name: "Example: simple"
-        working-directory: examples/simple
+      # Every folder in examples/ is a project a user copies, and every one runs the same scripts:
+      # tsql:check, tsql:parity (on PGlite, then on the PostgreSQL service) and tsql:compile, then
+      # build when it has a page. A new example is covered by adding its folder. Anything it checks
+      # in (simple/output.sql) must be exactly what tsql writes today.
+      - name: Examples
         run: |
-          bun install
-          bun run tsql:check
-          bun run tsql:parity
-          bun run tsql:parity --db-url="$TSQL_TEST_DB_URL"
-          bun run tsql:compile
-          # output.sql is checked in for reading: it must be what tsql writes today.
-          git diff --exit-code -- output.sql
+          for example in examples/*/; do
+            echo "::group::$example"
+            (
+              cd "$example"
+              for script in tsql:check tsql:parity tsql:compile; do
+                jq -e --arg s "$script" '.scripts[$s]' package.json > /dev/null \
+                  || { echo "::error::$example has no $script script"; exit 1; }
+              done
+              bun install
+              bun run tsql:check
+              bun run tsql:parity
+              bun run tsql:parity --db-url="$TSQL_TEST_DB_URL"
+              bun run tsql:compile
+              if jq -e '.scripts.build' package.json > /dev/null; then bun run build; fi
+              # package.json was pointed at this checkout above; everything else must be unchanged.
+              git diff --exit-code -- . ':!package.json'
+            )
+            echo "::endgroup::"
+          done
 
+      # End to end, for the examples with an API: the migration tsql:compile wrote, then the schema,
+      # into a fresh database each.
       - name: "Example: with-postgrest, the database"
         working-directory: examples/with-postgrest
         run: |
-          bun install
-          bun run check
-          bun run parity
-          bunx tsql compile functions/*.ts --out db/01_functions.sql
           psql "$TSQL_TEST_DB_URL" -c 'CREATE DATABASE with_postgrest'
           psql postgres://postgres:postgres@localhost:5432/with_postgrest -v ON_ERROR_STOP=1 \
             -f db/01_functions.sql -f db/02_schema.sql
@@ -91,17 +104,9 @@ jobs:
           test "$status" = 400
           grep -q 'The free plan allows 3 todos' refusal.json
 
-      - name: "Example: with-postgrest, the page"
-        working-directory: examples/with-postgrest
-        run: bun run build
-
       - name: "Example: with-postgraphile, the database"
         working-directory: examples/with-postgraphile
         run: |
-          bun install
-          bun run check
-          bun run parity
-          bunx tsql compile functions/*.ts --out db/01_functions.sql
           psql "$TSQL_TEST_DB_URL" -c 'CREATE DATABASE with_postgraphile'
           psql postgres://postgres:postgres@localhost:5432/with_postgraphile -v ON_ERROR_STOP=1 \
             -f db/01_functions.sql -f db/02_schema.sql
@@ -135,7 +140,3 @@ jobs:
           todos=$(gql '{"query":"{ allTodos(condition: { userId: 1 }, orderBy: ROW_ID_ASC) { nodes { id: rowId title } } }"}')
           echo "$todos"
           test "$(echo "$todos" | grep -o '"title"' | wc -l)" = 3 || fail "allTodos: $todos"
-
-      - name: "Example: with-postgraphile, the page"
-        working-directory: examples/with-postgraphile
-        run: bun run build

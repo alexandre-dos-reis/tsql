@@ -3,9 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsql check functions/*.ts",
-    "parity": "tsql parity functions/*.ts",
-    "db": "tsql compile functions/*.ts --out db/01_functions.sql && docker compose up -d",
+    "tsql:check": "tsql check functions/*.ts",
+    "tsql:parity": "tsql parity functions/*.ts",
+    "tsql:compile": "tsql compile functions/*.ts --out db/01_functions.sql",
+    "db": "npm run tsql:compile && docker compose up -d",
     "dev": "vite",
     "build": "vite build"
   },

@@ -84,7 +84,10 @@ PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check 
 23514, what the trigger raises) through; it names an `id` column `rowId`, and filters only on
 indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
 package's version and runs inside `bun run version`; `link` points them at this checkout
-(`file:../..`), which CI does before running each example as a user would. Generated SQL is not
+(`file:../..`), which CI does before running **every folder in `examples/`** through the same
+scripts — each example must define `tsql:check`, `tsql:parity` and `tsql:compile` (and may define
+`build`), and any file it checks in must match a fresh compile. Only the end-to-end API checks
+(PostgREST, PostGraphile) name an example. Generated SQL is not
 checked in there (`.gitignore`), except `simple/output.sql`, which CI compares with a fresh compile.
 
 ## TypeScript 7 compiler API
