@@ -12,15 +12,15 @@
     "sql",
     "typescript"
   ],
-  "homepage": "https://github.com/alexandre-dos-reis/ts-to-plpgsql#readme",
+  "homepage": "https://github.com/alexandre-dos-reis/tsql#readme",
   "bugs": {
-    "url": "https://github.com/alexandre-dos-reis/ts-to-plpgsql/issues"
+    "url": "https://github.com/alexandre-dos-reis/tsql/issues"
   },
   "license": "MIT",
   "author": "Alexandre Dos Reis",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/alexandre-dos-reis/ts-to-plpgsql.git"
+    "url": "git+https://github.com/alexandre-dos-reis/tsql.git"
   },
   "bin": {
     "tsql": "bin/tsql.mjs"

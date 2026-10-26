@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "ts-to-plpgsql",
+      "name": "@adr/tsql",
       "dependencies": {
         "@electric-sql/pglite": "^0.5.11",
         "commander": "^15.0.0",
