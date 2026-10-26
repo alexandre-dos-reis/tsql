@@ -551,7 +551,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 
 This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
 
-Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: the functions project's tsconfig sets `"types": []`, so they are type errors before the translator runs.
+Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: tsql always type checks with `"types": []` and `lib: ["ESNext"]`, whatever a tsconfig says, so they are type errors before the translator runs. It imposes `strict` the same way: without `strictNullChecks`, TypeScript lets `null` into every type, and a nullable comparison would lower to `=` instead of `IS NOT DISTINCT FROM`.
 
 Rejections carry a file, line, column and the offending source line.
 

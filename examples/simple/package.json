@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsql check functions/*.ts",
-    "compile": "tsql compile functions/*.ts",
-    "parity": "tsql parity functions/*.ts"
+    "tsql:check": "tsql check input.ts",
+    "tsql:compile": "tsql compile input.ts --out output.sql",
+    "tsql:parity": "tsql parity input.ts"
   },
   "devDependencies": {
-    "@adr/tsql": "^0.2.0",
+    "@adr/tsql": "^0.1.0",
     "typescript": "~7.0.2"
   }
 }

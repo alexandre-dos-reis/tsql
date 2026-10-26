@@ -9,9 +9,8 @@ import { describe, expect, test } from "bun:test";
  */
 
 /**
- * The CLI defaults to `functions/tsconfig.json`, which describes a consuming
- * project rather than this repo. The tests use the accepted cases in
- * `tests/parity/`, never the user-facing `examples/`.
+ * The tests use the accepted cases in `tests/parity/`, through their tsconfig,
+ * never the user-facing `examples/`.
  */
 const PROJECT = ["--project", "tests/parity/tsconfig.json"];
 
@@ -115,14 +114,12 @@ describe("the CLI compiles the files it is given", () => {
     expect(stdout).not.toContain("can_create_todo");
   });
 
-  test("a missing project names the path and points at --project", async () => {
-    // The `--project` default describes a consuming project, so a first run
-    // from anywhere else lands here.
-    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts"]);
+  test("a missing project names the path, and says none is needed", async () => {
+    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--project", "nowhere/tsconfig.json"]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("No TypeScript project at");
-    expect(stderr).toContain("functions/tsconfig.json");
-    expect(stderr).toContain("--project");
+    expect(stderr).toContain("nowhere/tsconfig.json");
+    expect(stderr).toContain("tsql needs none");
     expect(stderr).not.toContain("at <anonymous>");
   });
 
@@ -402,6 +399,64 @@ describe("compile writes the migration, and the manifest only when asked", () =>
       const manifest = JSON.parse(await readFile(join(dir, "tsql-manifest.json"), "utf8"));
       expect(manifest.generatedBy).toBe("tsql");
       expect(stdout).toContain("tsql-manifest.json");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("tsql needs no tsconfig, and imposes the options that keep it faithful", () => {
+  async function files(entries: Record<string, string>): Promise<string> {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "tsql-options-"));
+    for (const [name, text] of Object.entries(entries)) await writeFile(join(dir, name), text);
+    return dir;
+  }
+
+  test("a file is checked with no tsconfig at all", async () => {
+    const { rm } = await import("node:fs/promises");
+    const dir = await files({ "limits.ts": "export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n" });
+    try {
+      const { stdout, stderr, exitCode } = await run(["check", `${dir}/limits.ts`]);
+      expect(stderr).toBe("");
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("ok — 1 function(s) compile");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Without strictNullChecks, TypeScript lets `null` into every type: lowering
+  // would treat nullable values as present, and `x === y` would become `=`, which
+  // is NULL rather than false when one side is. TypeScript's own strict error
+  // proves the option was on.
+  test("a tsconfig cannot turn strict off", async () => {
+    const { rm } = await import("node:fs/promises");
+    const dir = await files({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { strict: false }, include: ["."] }),
+      "first.ts": "export function first(a: string | null): string {\n  return a;\n}\n",
+    });
+    try {
+      const { exitCode, stderr } = await run(["check", `${dir}/first.ts`, "--project", `${dir}/tsconfig.json`]);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("Type 'string | null' is not assignable to type 'string'");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a tsconfig cannot bring in the DOM", async () => {
+    const { rm } = await import("node:fs/promises");
+    const dir = await files({
+      "tsconfig.json": JSON.stringify({ compilerOptions: { lib: ["ESNext", "DOM"] }, include: ["."] }),
+      "width.ts": "export function width(): number {\n  return window.innerWidth;\n}\n",
+    });
+    try {
+      const { exitCode, stderr } = await run(["check", `${dir}/width.ts`, "--project", `${dir}/tsconfig.json`]);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain("Cannot find name 'window'");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

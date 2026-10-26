@@ -54,7 +54,7 @@ Run \`tsql <command> --help\` for a command's options.`;
 
 /** Options every command takes: where the functions are, and how the SQL is named. */
 interface ProjectOptions {
-  readonly project: string;
+  readonly project?: string;
   readonly schema: string;
   readonly comments: boolean;
 }
@@ -103,7 +103,10 @@ function projectCommand(name: string, summary: string): Command {
     .summary(summary)
     .usage("<files...> [options]")
     .argument("[files...]", "the files to translate; a glob works (functions/*.ts)")
-    .option("--project <tsconfig>", "the tsconfig of the functions project", "functions/tsconfig.json")
+    .option(
+      "--project <tsconfig>",
+      "a tsconfig whose settings and paths to use (optional; strict, noEmit and no DOM or Node globals are imposed regardless)",
+    )
     .option("--schema <name>", "the schema the generated types and functions go in", "app")
     .option("--no-comments", "omit the provenance comments from the generated SQL")
     .helpOption("-h, --help", "show this help");
@@ -250,7 +253,7 @@ type Attempt =
 async function attemptCompile(command: Command, files: readonly string[], options: ProjectOptions): Promise<Attempt> {
   try {
     const result = await compileProject({
-      tsconfig: options.project,
+      ...(options.project === undefined ? {} : { tsconfig: options.project }),
       files,
       emit: { schema: options.schema, comments: options.comments },
     });
@@ -263,15 +266,13 @@ async function attemptCompile(command: Command, files: readonly string[], option
   } catch (error: unknown) {
     // A toolchain that cannot be assembled — no native compiler, an unreadable
     // tsconfig — is a message to the user, not a stack trace through bundled code.
-    // The default `--project` describes a consuming project, not whatever
-    // directory tsql happens to be run from, so a missing one is what a first run hits.
     if (error instanceof ProjectNotFoundError) {
       return {
         ok: false,
         report:
           `${error.message}\n\n` +
-          `Point --project at the tsconfig that holds your functions:\n\n` +
-          `  tsql ${command.name()} ${files.join(" ")} --project path/to/tsconfig.json\n`,
+          `Point --project at an existing tsconfig, or leave it out — tsql needs none:\n\n` +
+          `  tsql ${command.name()} ${files.join(" ")}\n`,
         count: 0,
       };
     }
@@ -294,6 +295,18 @@ async function compileFiles(command: Command, files: readonly string[], options:
   process.exit(1);
 }
 
+/** The deepest directory that holds every one of `files`. */
+function commonDirectory(files: readonly string[]): string {
+  const [first = [], ...rest] = files.map((file) => dirname(resolve(file)).split(/[\\/]/));
+  let length = first.length;
+  for (const parts of rest) {
+    let i = 0;
+    while (i < length && parts[i] === first[i]) i++;
+    length = i;
+  }
+  return first.slice(0, length).join("/") || "/";
+}
+
 /**
  * `check --watch`: check, then check again whenever a file of the project
  * changes, until interrupted, for a person watching a terminal. On a terminal
@@ -307,11 +320,12 @@ async function compileFiles(command: Command, files: readonly string[], options:
 async function watchCheck(command: Command, files: readonly string[], options: ProjectOptions): Promise<void> {
   requireFiles(command, files);
   // Nothing to watch: say so the way a plain check would, and stop.
-  if (!existsSync(resolve(options.project))) {
+  if (options.project !== undefined && !existsSync(resolve(options.project))) {
     await compileFiles(command, files, options);
     return;
   }
-  const root = dirname(resolve(options.project));
+  // The tsconfig's directory, or the directory holding every file named.
+  const root = options.project !== undefined ? dirname(resolve(options.project)) : commonDirectory(files);
   const stamp = () => out("dim", `[${new Date().toLocaleTimeString("en-GB")}]`);
   let running = false;
   let pending: string | undefined;

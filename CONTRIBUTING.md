@@ -27,8 +27,10 @@ Three things worth knowing about TypeScript 7:
 ## Commands
 
 ```
-bun test                 # parity, SQL-shape and rejection tests on tests/ — PGlite, then PostgreSQL
-                         # too when TSQL_TEST_DB_URL is set
+bun test                 # parity, SQL-shape and rejection tests on tests/, and every example's
+                         # tsql scripts — PGlite, then PostgreSQL too when TSQL_TEST_DB_URL is set
+bun scripts/examples.ts link   # point the examples at this checkout before `bun install` in one
+bun scripts/examples.ts sync   # and back to the published versions before committing
 bun run typecheck        # bun check over the compiler and its tests
 bun run format           # oxfmt, pinned as a dev dependency
 ```
@@ -39,19 +41,17 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`):
+`.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`). The `test` job:
 
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
-3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
-4. `bun scripts/examples.ts link` points every example at this checkout instead of the published package, then each runs as a user would:
-   - `examples/simple`: `check`, `parity` on PGlite and on the service, `compile`;
-   - `examples/with-postgrest`: `check`, `parity`, the generated migration and `db/02_schema.sql` loaded into a fresh database, PostgREST started on it (three todos accepted, the fourth refused by the compiled function in the trigger), and `vite build` for the React page;
-   - `examples/with-postgraphile`: the same, through PostGraphile and its GraphQL mutations.
+3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
 
 `examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
 Formatting is not checked in CI; run `bun run format` before committing.
+
+**A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 ## Layout
 
@@ -59,7 +59,7 @@ Formatting is not checked in CI; run `bun run format` before committing.
 README.md               for users: what tsql does and how to use it
 docs/design.md          why: every semantic mapping and every refusal, with its reason
 CONTRIBUTING.md         this file
-examples/simple/        a project to copy: one type, one function, the tsconfig tsql reads
+examples/simple/        a project to copy: one type, one function, no tsconfig
 examples/with-postgrest/  a project to copy: PostgreSQL + PostgREST (Docker) and a React page sharing one rule
 examples/with-postgraphile/  the same with PostGraphile 5 (GraphQL)
 scripts/examples.ts     points the examples at the published version (sync) or at this checkout (link)
@@ -83,7 +83,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```
 
-Each example's `functions/tsconfig.json` sets `"types": []`, so a pure function cannot reach for a Bun or Node global that the database side has no equivalent for.
+No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib: ["ESNext"]` itself (`FORCED_OPTIONS` in `src/program.ts`), so a pure function cannot reach for a Bun, Node or browser global that the database side has no equivalent for.
 
 ## Publishing
 

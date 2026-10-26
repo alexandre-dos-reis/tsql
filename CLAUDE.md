@@ -63,24 +63,31 @@ predicate form, used by the tests.
 that name only, so tooling finds it without being told; without it only the migration is written. No
 command reads the manifest back — `check` and `parity` use the one built in memory.
 
-The CLI's `--project` and `--out` defaults describe a
-*consuming* project — which is exactly the layout of each `examples/*/` project — not this repo, so the
-tests pass paths explicitly.
+**No tsconfig is required, and none can loosen the build.** `openProject` (`src/program.ts`) writes a
+tsconfig of its own to a temporary directory: it `extends` the user's when `--project` names one (for
+paths and settings), or lists the files named when there is none, and sets `FORCED_OPTIONS` on top —
+`strict` (without `strictNullChecks`, `null` slips into every type and nullable equality would lower to
+`=`), `noEmit`, `types: []`, `lib: ["ESNext"]`. `--project` has no default. Tests pass the cases'
+tsconfigs; `tests/cli.test.ts` checks a file with none, and that a tsconfig cannot turn `strict` off or
+bring in the DOM.
 
 `bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
 `typecheck` script, never the compiler API the translator depends on. A script named `check` would
 shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
-`^<version>`: `simple` (one type, one function, `functions/tsconfig.json`), `with-postgrest` and
+`^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
+and checked for drift in CI), `with-postgrest` and
 `with-postgraphile` (the same todo list: PostgreSQL via Docker, a trigger calling the compiled
 function, a React page on Vite importing the same TypeScript, behind PostgREST or PostGraphile 5).
 PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check violation (SQLSTATE
 23514, what the trigger raises) through; it names an `id` column `rowId`, and filters only on
 indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
-package's version and runs inside `bun run version`; `link` points them at this checkout
-(`file:../..`), which CI does before running each example as a user would. Generated SQL is not
-checked in there (`.gitignore`).
+package's version (and typescript's peer range) — what is committed, so an example is ready to copy
+— and runs inside `bun run version`. `link` points both at this checkout (`file:` paths) for local
+work, so neither is installed twice. Each example must define `tsql:check`,
+`tsql:parity` and `tsql:compile` (and may define `build`). Generated SQL is not checked in there
+(`.gitignore`), except `simple/output.sql`.
 
 ## TypeScript 7 compiler API
 
@@ -112,7 +119,7 @@ properties of that resolver are load-bearing:
 
 `src/compile.ts#compileProject` is the whole build, in order:
 
-1. `openProject` (`src/program.ts`) opens the functions project's tsconfig.
+1. `openProject` (`src/program.ts`) opens the project, with `FORCED_OPTIONS` over any tsconfig.
 2. `typeCheck` runs TypeScript's own diagnostics first. Any error aborts before translation — so a
    construct can be blocked by *tsconfig* rather than by the translator (see isolation below).
 3. **Pass 1**: `lowerSignature` for every exported function in the project — a `function` declaration or a
@@ -262,9 +269,9 @@ raises on drift. The compiler creates types; it never rewrites them.
 - `tsconfig.json` — the compiler itself (`src`, `tests`), `types: ["bun"]`. It excludes `tests/parity` and
   `tests/rejected`: those are projects of functions to compile, type checked through their own tsconfig by the compiler in
   the tests, and `erasableSyntaxOnly` (for `src/`) must not forbid a case's `enum`.
-- `examples/*/functions/tsconfig.json` — each example's functions project, `types: []`. This is
-  load-bearing: `process`, `Bun` and `require` become *type errors* before the translator ever runs, so
-  one class of rejection costs no compiler code.
+- No tsconfig for the examples' functions: `FORCED_OPTIONS` (`types: []`, no DOM) make `process`, `Bun`
+  and `require` *type errors* before the translator ever runs, so one class of rejection costs no
+  compiler code — for every user, not only those whose tsconfig says so.
 - `tests/parity/tsconfig.json` — **accepted cases**, one per pair: `name.ts`, the functions, and `name.sql`, the
   types and functions it must compile to (blocks matched in order, indentation aside; not runnable on its
   own). Isolated the same way (`types: []`). They share one SQL namespace, so function and
@@ -275,9 +282,14 @@ raises on drift. The compiler creates types; it never rewrites them.
   `Expected:` lines with the message the compiler must give; `// ← rejected here` marks the line it must
   point at, where that matters.
 
-**No test reads `examples/`.** Examples are projects to copy, not coverage; editing them must never
-break a compiler test. CI runs each one through the user's own commands, linked to this checkout
-(see `.github/workflows/ci.yml`). Coverage belongs in
+**Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
+`examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
+`@adr/tsql/pgtypes` resolves through a self-link, `node_modules/@adr/tsql` → the repository, which the
+test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
+with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
+committed. Only those three scripts are tested, with no database to set up (parity runs on
+PGlite, as the script does): nothing installs an example's Vite, React, PostgREST or PostGraphile.
+Examples are projects to copy, not coverage; coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
 **Test files hold no cases**: they run what the folders contain, so adding a case never means editing a
@@ -302,10 +314,16 @@ test file. `tests/README.md` explains the three.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
   visible to the library tests. `compile` only ever writes into a throwaway directory — a test suite has
   no business rewriting checked-in output.
+- `tests/examples.test.ts` runs every `examples/*/` through its `tsql:*` scripts, nothing installed (see
+  above), and fails while an example is `link`ed.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
+
+**Commits are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at `.githooks`;
+its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be committed
+(`--no-verify` skips it, deliberately).
 
 ## Constraints to preserve
 
