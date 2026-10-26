@@ -1,5 +1,6 @@
 import type { Node } from "typescript/unstable/ast";
 import { SignatureKind, SymbolFlags, type Symbol as TsSymbol } from "typescript/unstable/async";
+import { resolve } from "node:path";
 import { originOfPath, packageName } from "./origin.ts";
 import type { TypeCtx } from "./typemap.ts";
 
@@ -20,6 +21,7 @@ export type Reference =
   | { readonly kind: "runtime-global"; readonly name: string }
   | { readonly kind: "external"; readonly name: string; readonly from: string }
   | { readonly kind: "module-function"; readonly name: string; readonly from: string }
+  | { readonly kind: "excluded-function"; readonly name: string; readonly from: string }
   | { readonly kind: "module-value"; readonly name: string; readonly from: string }
   | { readonly kind: "unknown"; readonly name: string };
 
@@ -37,12 +39,13 @@ export async function classifyReference(name: string, at: Node, ctx: TypeCtx): P
         return { kind: "runtime-global", name };
       case "external-library":
         return { kind: "external", name, from: declaration.path };
-      case "project":
-        return {
-          kind: (await isCallable(symbol, ctx)) ? "module-function" : "module-value",
-          name,
-          from: declaration.path,
-        };
+      case "project": {
+        if (!(await isCallable(symbol, ctx))) return { kind: "module-value", name, from: declaration.path };
+        // In one of the files being compiled, so it was never exported; in a
+        // project file that is not, so it was exported and left out.
+        const inBuild = ctx.compiled?.has(resolve(declaration.path)) ?? true;
+        return { kind: inBuild ? "module-function" : "excluded-function", name, from: declaration.path };
+      }
       case "unknown":
         continue;
     }
@@ -75,6 +78,11 @@ const HINTS: Record<string, string> = {
 const ONLY_AVAILABLE =
   "A compiled function may only use its parameters, its local constants, and other compiled functions.";
 
+/** A path reads better in a message from where the command was run. */
+function relativeTo(path: string, root = process.cwd()): string {
+  return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
+}
+
 /** A plain dotted path reads well in a message; anything busier is reported by its root. */
 const DOTTED_PATH = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
 
@@ -90,7 +98,13 @@ export function referenceMessage(reference: Reference, usage: string): string {
     case "external":
       return `\`${label}\` comes from a package (\`${packageName(reference.from)}\`), which cannot run inside PostgreSQL. ${ONLY_AVAILABLE}`;
     case "module-function":
-      return `\`${label}\` is not a compiled function. Only exported functions in this project can be called.`;
+      return `\`${label}\` is not exported, so it is not compiled. Only exported functions become functions in the schema, and only those can be called.`;
+    case "excluded-function":
+      return (
+        `\`${label}\` is exported from \`${relativeTo(reference.from)}\`, which this build does not include. ` +
+        `A migration is written from exactly the files named, so calling into a file that was left out would emit a call to a function this migration does not create. ` +
+        `Name that file too, or compile the whole set at once (\`tsql compile functions/*.ts\`).`
+      );
     case "module-value":
       return (
         `\`${label}\` is a value declared outside the function. ${ONLY_AVAILABLE} ` +

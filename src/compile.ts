@@ -99,8 +99,9 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
       };
     }
 
-    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>() };
     const files = await sourceFiles(project, projectRoot, options);
+    const compiled = new Set(files.map((file) => resolve(file.fileName)));
+    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>(), compiled };
 
     // Pass 1: every signature, so call checking does not depend on file order.
     const signatures = new Map<string, SignatureIR>();

@@ -67,6 +67,16 @@ export interface TypeCtx {
   readonly mapping: Set<string>;
   /** Domains and enums discovered while mapping, keyed by SQL name, like `composites`. */
   readonly named: Map<string, NamedText>;
+  /**
+   * The resolved paths of the files this build compiles.
+   *
+   * Only used to word a refusal: a name declared in a project file that is not
+   * one of these is exported — it could not have been imported otherwise, since
+   * the build type checks first — and is simply outside the files that were
+   * named. Telling that apart from a name that was never exported is the
+   * difference between useful advice and advice the author has already followed.
+   */
+  readonly compiled?: ReadonlySet<string>;
 }
 
 /** `null` carries no scalar of its own; it only contributes nullability to a union. */
