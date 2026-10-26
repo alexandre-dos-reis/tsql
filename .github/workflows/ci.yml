@@ -62,8 +62,6 @@ jobs:
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
-    env:
-      TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
