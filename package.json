@@ -53,6 +53,7 @@
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "typecheck": "bun check --no-script",
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "build": "bun scripts/build.ts",
     "prepublishOnly": "bun run build && bun run typecheck && bun test",
     "changeset": "changeset",

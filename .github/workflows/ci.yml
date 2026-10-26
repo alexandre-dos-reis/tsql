@@ -46,38 +46,59 @@ jobs:
 
       - run: bun test
 
-      # The examples, as a user runs them — but against this checkout, not the published package.
+  # The examples as a user runs them, installed: their pages build, and the APIs refuse what the
+  # compiled function refuses. Every example's tsql scripts are already run by `bun test` above,
+  # with nothing installed; this job is what needs Vite, React, PostgREST and PostGraphile.
+  examples:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+    env:
+      TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same Bun as devenv.nix: `bun check` (used by `typecheck`) arrived in 1.4.3.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for >=22.18.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+
+      # The published JavaScript: what bin/tsql.mjs and the package's exports load.
+      - run: bun run build
+
+      # Each example's @adr/tsql and typescript become this checkout's, so neither is installed twice.
       - name: Point the examples at this checkout
         run: bun scripts/examples.ts link
 
-      # Every folder in examples/ is a project a user copies, and every one runs the same scripts:
-      # tsql:check, tsql:parity (on PGlite, then on the PostgreSQL service) and tsql:compile, then
-      # build when it has a page. A new example is covered by adding its folder. Anything it checks
-      # in (simple/output.sql) must be exactly what tsql writes today.
-      - name: Examples
+      - name: Install and build every example
         run: |
           for example in examples/*/; do
             echo "::group::$example"
-            (
-              cd "$example"
-              for script in tsql:check tsql:parity tsql:compile; do
-                jq -e --arg s "$script" '.scripts[$s]' package.json > /dev/null \
-                  || { echo "::error::$example has no $script script"; exit 1; }
-              done
+            ( cd "$example"
               bun install
-              bun run tsql:check
-              bun run tsql:parity
-              bun run tsql:parity --db-url="$TSQL_TEST_DB_URL"
               bun run tsql:compile
-              if jq -e '.scripts.build' package.json > /dev/null; then bun run build; fi
-              # package.json was pointed at this checkout above; everything else must be unchanged.
-              git diff --exit-code -- . ':!package.json'
-            )
+              if jq -e '.scripts.build' package.json > /dev/null; then bun run build; fi )
             echo "::endgroup::"
           done
 
-      # End to end, for the examples with an API: the migration tsql:compile wrote, then the schema,
-      # into a fresh database each.
+      # Then, for the examples with an API, the migration tsql:compile wrote and the schema, into a
+      # fresh database each, and the API on it.
       - name: "Example: with-postgrest, the database"
         working-directory: examples/with-postgrest
         run: |

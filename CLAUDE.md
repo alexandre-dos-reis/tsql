@@ -83,12 +83,11 @@ function, a React page on Vite importing the same TypeScript, behind PostgREST o
 PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check violation (SQLSTATE
 23514, what the trigger raises) through; it names an `id` column `rowId`, and filters only on
 indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
-package's version and runs inside `bun run version`; `link` points them at this checkout
-(`file:../..`), which CI does before running **every folder in `examples/`** through the same
-scripts — each example must define `tsql:check`, `tsql:parity` and `tsql:compile` (and may define
-`build`), and any file it checks in must match a fresh compile. Only the end-to-end API checks
-(PostgREST, PostGraphile) name an example. Generated SQL is not
-checked in there (`.gitignore`), except `simple/output.sql`, which CI compares with a fresh compile.
+package's version (and typescript's peer range) — what is committed, so an example is ready to copy
+— and runs inside `bun run version`. `link` points both at this checkout (`file:` paths) for local
+work and CI's install job, so neither is installed twice. Each example must define `tsql:check`,
+`tsql:parity` and `tsql:compile` (and may define `build`). Generated SQL is not checked in there
+(`.gitignore`), except `simple/output.sql`.
 
 ## TypeScript 7 compiler API
 
@@ -283,9 +282,14 @@ raises on drift. The compiler creates types; it never rewrites them.
   `Expected:` lines with the message the compiler must give; `// ← rejected here` marks the line it must
   point at, where that matters.
 
-**No test reads `examples/`.** Examples are projects to copy, not coverage; editing them must never
-break a compiler test. CI runs each one through the user's own commands, linked to this checkout
-(see `.github/workflows/ci.yml`). Coverage belongs in
+**Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
+`examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
+`@adr/tsql/pgtypes` resolves through a self-link, `node_modules/@adr/tsql` → the repository, which the
+test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
+with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
+committed. CI's second job, `examples`, installs them (linked) for what needs installing: `vite build`
+and the PostgREST / PostGraphile end-to-end checks — the only place an example is named. Examples are
+projects to copy, not coverage; coverage belongs in
 `tests/parity/` (a new file there gets a parity test on both backends automatically),
 `tests/rejected/` or `tests/divergent/` (a hand-written TypeScript/SQL pair the harness must catch).
 **Test files hold no cases**: they run what the folders contain, so adding a case never means editing a
@@ -310,10 +314,16 @@ test file. `tests/README.md` explains the three.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
   visible to the library tests. `compile` only ever writes into a throwaway directory — a test suite has
   no business rewriting checked-in output.
+- `tests/examples.test.ts` runs every `examples/*/` through its `tsql:*` scripts, nothing installed (see
+  above), and fails while an example is `link`ed.
 - `tests/packaging.test.ts` covers what only breaks once published: alias provenance across the
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
+
+**Commits are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at `.githooks`;
+its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be committed
+(`--no-verify` skips it, deliberately).
 
 ## Constraints to preserve
 

@@ -27,8 +27,10 @@ Three things worth knowing about TypeScript 7:
 ## Commands
 
 ```
-bun test                 # parity, SQL-shape and rejection tests on tests/ — PGlite, then PostgreSQL
-                         # too when TSQL_TEST_DB_URL is set
+bun test                 # parity, SQL-shape and rejection tests on tests/, and every example's
+                         # tsql scripts — PGlite, then PostgreSQL too when TSQL_TEST_DB_URL is set
+bun scripts/examples.ts link   # point the examples at this checkout before `bun install` in one
+bun scripts/examples.ts sync   # and back to the published versions before committing
 bun run typecheck        # bun check over the compiler and its tests
 bun run format           # oxfmt, pinned as a dev dependency
 ```
@@ -39,17 +41,22 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`):
+`.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`). The `test` job:
 
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
-3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
-4. `bun scripts/examples.ts link` points every example at this checkout instead of the published package. Then **every folder in `examples/`** runs the same scripts, which each must have: `tsql:check`, `tsql:parity` on PGlite and on the service, `tsql:compile`, and `build` when it has one; anything it checks in (`simple/output.sql`) must be exactly what tsql writes. A new example is covered by adding its folder.
-5. End to end, for the examples with an API: the migration and `db/02_schema.sql` loaded into a fresh database, then PostgREST or PostGraphile started on it — three todos accepted, the fourth refused by the compiled function in the trigger.
+3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts, with nothing installed. A new example is covered by adding its folder.
+
+The `examples` job, in parallel, installs what the examples need beyond tsql:
+
+1. `bun scripts/examples.ts link` points each example's `@adr/tsql` and `typescript` at this checkout, then each example is installed, compiled and, when it has a page, built (`vite build`).
+2. End to end, for the examples with an API: the migration and `db/02_schema.sql` loaded into a fresh database, then PostgREST or PostGraphile started on it — three todos accepted, the fourth refused by the compiled function in the trigger.
 
 `examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
 Formatting is not checked in CI; run `bun run format` before committing.
+
+**A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 ## Layout
 
