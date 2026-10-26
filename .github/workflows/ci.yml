@@ -105,13 +105,13 @@ jobs:
           psql postgres://postgres:postgres@localhost:5432/with_postgraphile -v ON_ERROR_STOP=1 \
             -f db/01_functions.sql -f db/02_schema.sql
 
-      # PostGraphile on that database, as `npm run api` runs it, then the page's own queries:
+      # PostGraphile on that database, through `npm run api` and graphile.config.mjs, then the page's own queries:
       # three todos go in, and the fourth comes back as a GraphQL error from the trigger.
       - name: "Example: with-postgraphile, through PostGraphile"
         working-directory: examples/with-postgraphile
         run: |
-          nohup bunx postgraphile -P postgraphile/presets/amber \
-            -c postgres://postgraphile:secret@localhost:5432/with_postgraphile -s api > postgraphile.log 2>&1 &
+          DATABASE_URL=postgres://postgraphile:secret@localhost:5432/with_postgraphile \
+            nohup bun run api > postgraphile.log 2>&1 &
           gql() { curl -s localhost:5678/graphql -H 'Content-Type: application/json' -d "$1"; }
           for i in $(seq 60); do gql '{"query":"{ __typename }"}' | grep -q Query && break; sleep 1; done
           fail() {

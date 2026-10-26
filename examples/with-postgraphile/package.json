@@ -6,7 +6,7 @@
     "check": "tsql check functions/*.ts",
     "parity": "tsql parity functions/*.ts",
     "db": "tsql compile functions/*.ts --out db/01_functions.sql && docker compose up -d",
-    "api": "postgraphile -P postgraphile/presets/amber -c postgres://postgraphile:secret@localhost:5432/postgres -s api",
+    "api": "postgraphile",
     "dev": "vite",
     "build": "vite build"
   },
