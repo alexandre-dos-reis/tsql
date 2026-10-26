@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 // The same functions tsql compiled into the database, run here in the browser.
 import { canAddTodo, todoLimit, type Plan } from "../functions/todos";
 
+// PostGraphile 5 names a table's `id` column `rowId` (its own `id` is the global node ID); the
+// queries alias it back.
 type User = { id: number; name: string; plan: Plan };
 type Todo = { id: number; title: string };
 
@@ -23,7 +25,7 @@ function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    graphql<{ allUsers: { nodes: User[] } }>("{ allUsers(orderBy: ID_ASC) { nodes { id name plan } } }").then(({ data }) => {
+    graphql<{ allUsers: { nodes: User[] } }>("{ allUsers(orderBy: ROW_ID_ASC) { nodes { id: rowId name plan } } }").then(({ data }) => {
       setUsers(data?.allUsers.nodes ?? []);
       setUserId(data?.allUsers.nodes[0]?.id);
     });
@@ -31,7 +33,7 @@ function App() {
 
   const load = (id: number) =>
     graphql<{ allTodos: { nodes: Todo[] } }>(
-      "query ($id: Int!) { allTodos(condition: { userId: $id }, orderBy: ID_ASC) { nodes { id title } } }",
+      "query ($id: Int!) { allTodos(condition: { userId: $id }, orderBy: ROW_ID_ASC) { nodes { id: rowId title } } }",
       { id },
     ).then(({ data }) => setTodos(data?.allTodos.nodes ?? []));
   useEffect(() => {
@@ -44,7 +46,7 @@ function App() {
   async function add(event: FormEvent) {
     event.preventDefault();
     const { errors } = await graphql(
-      "mutation ($todo: TodoInput!) { createTodo(input: { todo: $todo }) { todo { id } } }",
+      "mutation ($todo: TodoInput!) { createTodo(input: { todo: $todo }) { todo { rowId } } }",
       { todo: { userId: user!.id, title } },
     );
     setError(errors?.[0]?.message ?? "");
