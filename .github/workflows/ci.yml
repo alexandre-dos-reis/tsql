@@ -54,11 +54,12 @@ jobs:
         working-directory: examples/simple
         run: |
           bun install
-          bun run check
-          bun run parity
-          bun run parity --db-url="$TSQL_TEST_DB_URL"
-          bun run compile
-          test -s generated/0001_functions.sql
+          bun run tsql:check
+          bun run tsql:parity
+          bun run tsql:parity --db-url="$TSQL_TEST_DB_URL"
+          bun run tsql:compile
+          # output.sql is checked in for reading: it must be what tsql writes today.
+          git diff --exit-code -- output.sql
 
       - name: "Example: with-postgrest, the database"
         working-directory: examples/with-postgrest

@@ -45,7 +45,7 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 2. `bun run typecheck`
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service
 4. `bun scripts/examples.ts link` points every example at this checkout instead of the published package, then each runs as a user would:
-   - `examples/simple`: `check`, `parity` on PGlite and on the service, `compile`;
+   - `examples/simple`: `tsql:check`, `tsql:parity` on PGlite and on the service, `tsql:compile`, and a check that the committed `output.sql` is what it writes;
    - `examples/with-postgrest`: `check`, `parity`, the generated migration and `db/02_schema.sql` loaded into a fresh database, PostgREST started on it (three todos accepted, the fourth refused by the compiled function in the trigger), and `vite build` for the React page;
    - `examples/with-postgraphile`: the same, through PostGraphile and its GraphQL mutations.
 
@@ -59,7 +59,7 @@ Formatting is not checked in CI; run `bun run format` before committing.
 README.md               for users: what tsql does and how to use it
 docs/design.md          why: every semantic mapping and every refusal, with its reason
 CONTRIBUTING.md         this file
-examples/simple/        a project to copy: one type, one function, the tsconfig tsql reads
+examples/simple/        a project to copy: one type, one function, no tsconfig
 examples/with-postgrest/  a project to copy: PostgreSQL + PostgREST (Docker) and a React page sharing one rule
 examples/with-postgraphile/  the same with PostGraphile 5 (GraphQL)
 scripts/examples.ts     points the examples at the published version (sync) or at this checkout (link)
@@ -83,7 +83,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```
 
-Each example's `functions/tsconfig.json` sets `"types": []`, so a pure function cannot reach for a Bun or Node global that the database side has no equivalent for.
+No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib: ["ESNext"]` itself (`FORCED_OPTIONS` in `src/program.ts`), so a pure function cannot reach for a Bun, Node or browser global that the database side has no equivalent for.
 
 ## Publishing
 

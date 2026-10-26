@@ -16,8 +16,11 @@ import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from
 import { openProject, typeCheck } from "./program.ts";
 
 export interface CompileOptions {
-  /** tsconfig of the project holding the pure functions. */
-  readonly tsconfig: string;
+  /**
+   * A tsconfig whose settings and paths to use. Optional: without one, the
+   * `files` are the project. Either way tsql imposes its `FORCED_OPTIONS`.
+   */
+  readonly tsconfig?: string;
   /** Restrict compilation to specific files (used by tests). */
   readonly include?: (fileName: string) => boolean;
   /**
@@ -67,9 +70,13 @@ export interface CompileResult {
  * preserved, lower, emit.
  */
 export async function compileProject(options: CompileOptions): Promise<CompileResult> {
-  const tsconfig = resolve(options.tsconfig);
-  const projectRoot = dirname(tsconfig);
-  const opened = await openProject(tsconfig);
+  // With a tsconfig, only files under its directory are the project's own;
+  // without one, the files named are the project.
+  const projectRoot = options.tsconfig === undefined ? undefined : dirname(resolve(options.tsconfig));
+  const opened = await openProject({
+    ...(options.tsconfig === undefined ? {} : { tsconfig: options.tsconfig }),
+    ...(options.files === undefined ? {} : { files: options.files }),
+  });
   const errors: CompileError[] = [];
   // Composite types are discovered while mapping signatures, and shared across
   // the whole build so one `CREATE TYPE` is emitted per named object type.
@@ -202,12 +209,12 @@ function usedTypes(
 /** Only files inside the functions project are compiled; imported helpers are not. */
 async function sourceFiles(
   project: Awaited<ReturnType<typeof openProject>>["project"],
-  projectRoot: string,
+  projectRoot: string | undefined,
   options: CompileOptions,
 ): Promise<SourceFile[]> {
   const inProject = (await project.program.getSourceFileNames())
     .filter((name) => !name.endsWith(".d.ts") && !name.includes("node_modules"))
-    .filter((name) => resolve(name).startsWith(`${projectRoot}/`));
+    .filter((name) => projectRoot === undefined || resolve(name).startsWith(`${projectRoot}/`));
 
   const requested = selected(inProject, options);
   const names = inProject
@@ -245,7 +252,7 @@ function selected(inProject: readonly string[], options: CompileOptions): Set<st
         .sort()
         .join("\n");
       throw new Error(
-        `\`${where}\` is not a source file in ${relative(process.cwd(), options.tsconfig)}.\n\n` +
+        `\`${where}\` is not a source file in ${options.tsconfig === undefined ? "this build" : relative(process.cwd(), options.tsconfig)}.\n\n` +
           `The project holds:\n\n${known}\n`,
       );
     }

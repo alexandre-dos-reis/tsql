@@ -6,7 +6,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 
 ```
  functions/*.ts ──► program.ts ──► compile.ts ──► lower.ts ──► IR (ir.ts) ──► emit.ts ──► migration.sql
- + tsconfig.json    open project   orchestrate    AST → IR     types,          IR → SQL
+ (+ tsconfig)       open project   orchestrate    AST → IR     types,          IR → SQL
                     type check     two passes      enforces     statements,     total, no checks
                                                    every rule   expressions
                                        │
@@ -34,8 +34,12 @@ a feature, the question is always *what must lowering prove so the emitter can s
 
 ### 1. Open the project: `program.ts`
 
-[`openProject`](../src/program.ts) opens the functions project's `tsconfig.json` through the
-TypeScript 7 API. TypeScript 7 is the native Go compiler, driven as a **separate process**:
+[`openProject`](../src/program.ts) opens the project through the TypeScript 7 API. The API opens
+projects from a config file, so tsql writes one of its own to a temporary directory: it `extends` the
+user's tsconfig when `--project` names one, or lists the files named when there is none, and in both
+cases sets `FORCED_OPTIONS` on top — `strict` (without it `null` slips into every type and nullable
+equality would lower wrongly), `noEmit`, `types: []` and `lib: ["ESNext"]` — so no tsconfig can turn
+them off. TypeScript 7 is the native Go compiler, driven as a **separate process**:
 
 - `typescript/unstable/ast` gives nodes, `SyntaxKind`, positions — synchronous, in process.
 - `typescript/unstable/async` gives the `Project` and its `Checker` — every query is awaited,
@@ -44,13 +48,13 @@ TypeScript 7 API. TypeScript 7 is the native Go compiler, driven as a **separate
 The native executable belongs to the user's own `typescript` install;
 [`tscPath.ts`](../src/tscPath.ts) finds it (`findTscPath`) and refuses one without its
 `lib.*.d.ts` beside it, on which the compiler would hang. `program.ts` is the only file that touches
-the API surface directly; a missing tsconfig is a [`ProjectNotFoundError`](../src/errors.ts).
+the API surface directly; a `--project` that does not exist is a [`ProjectNotFoundError`](../src/errors.ts).
 
 ### 2. Type check: `program.ts`
 
 [`typeCheck`](../src/program.ts) runs TypeScript's own diagnostics. Any error stops the build
-before translation, so some constructs are refused by the *tsconfig* rather than by the compiler:
-`"types": []` makes `process`, `Bun` and `require` type errors at no cost.
+before translation, so some constructs are refused by the forced options rather than by the
+compiler: `"types": []` makes `process`, `Bun` and `require` type errors at no cost.
 
 ### 3. Choose the files: `compile.ts`
 

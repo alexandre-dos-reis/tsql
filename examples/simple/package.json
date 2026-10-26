@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "tsql:check": "tsql check ./*.ts --project tsconfig.json",
-    "tsql:compile": "tsql compile input.ts --out output.sql --project tsconfig.json",
-    "tsql:parity": "tsql parity ./*.ts --project tsconfig.json"
+    "tsql:check": "tsql check input.ts",
+    "tsql:compile": "tsql compile input.ts --out output.sql",
+    "tsql:parity": "tsql parity input.ts"
   },
   "devDependencies": {
     "@adr/tsql": "^0.1.0",

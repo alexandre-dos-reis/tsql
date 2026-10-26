@@ -60,24 +60,7 @@ translate *exactly* is a build error, never a guess.
 npm i -D @adr/tsql typescript@~7.0.2     # or: bun add -d @adr/tsql typescript@~7.0.2
 ```
 
-**2. Give your functions their own project**, `functions/tsconfig.json`. `"types": []` keeps Node and
-browser globals out: a function cannot reach for something the database does not have.
-
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noEmit": true,
-    "lib": ["ESNext"],
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "types": []
-  },
-  "include": ["."]
-}
-```
-
-**3. Write a function**, `functions/billing.ts`:
+**2. Write a function**, `functions/billing.ts`:
 
 ```ts
 import type { Integer } from "@adr/tsql/pgtypes";
@@ -96,7 +79,11 @@ export function todoLimit(plan: Plan): Integer {
 
 `Integer` is a plain alias of `number`: it tells tsql you meant `integer`, not `double precision`.
 
-**4. Compile, then prove:**
+No tsconfig is needed. tsql always type checks with `strict` (without it, `null` slips into every type)
+and without the DOM or Node's globals, which do not exist in the database. `--project` lends it your
+tsconfig's paths and settings, but never turns those off.
+
+**3. Compile, then prove:**
 
 ```bash
 npx tsql compile functions/*.ts    # writes generated/0001_functions.sql
@@ -140,7 +127,7 @@ brings a changed union or enum in line, and fails loudly rather than drop or rew
 
 | Option | For | Default |
 | --- | --- | --- |
-| `--project <tsconfig>` | all | `functions/tsconfig.json` |
+| `--project <tsconfig>` | all | none; tsql brings its own options |
 | `--schema <name>` | all | `app` |
 | `--no-comments` | all | comments on |
 | `--out <file>` | `compile` | `generated/0001_functions.sql` |
