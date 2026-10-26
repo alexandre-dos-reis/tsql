@@ -15,6 +15,9 @@ CREATE TABLE api.todos (
   title   text NOT NULL
 );
 
+-- Todos are read by user. (PostGraphile also only offers a filter on an indexed column.)
+CREATE INDEX ON api.todos (user_id);
+
 -- The rule the page uses to grey out its button, enforced where no client can skip it.
 -- The trigger gathers what the function needs; the function decides.
 CREATE SCHEMA internal;
