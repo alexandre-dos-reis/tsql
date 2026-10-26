@@ -2,7 +2,7 @@
 
 A todo list where a free plan allows 3 todos. The rule is written once, in `functions/todos.ts`:
 the page runs it to grey out its button, and PostgreSQL runs the compiled copy in a trigger, so no
-client can get around it. PostgREST serves the tables; Vite serves the page.
+client can get around it. PostgREST serves the tables; a React page, served by Vite, reads them.
 
 ```bash
 npm install

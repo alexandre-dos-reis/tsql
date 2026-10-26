@@ -72,9 +72,12 @@ tests pass paths explicitly.
 shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
-`^<version>`: `simple` (one type, one function, `functions/tsconfig.json`) and `with-postgrest`
-(PostgreSQL + PostgREST via Docker, a trigger calling the compiled function, a Vite page importing
-the same TypeScript). Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
+`^<version>`: `simple` (one type, one function, `functions/tsconfig.json`), `with-postgrest` and
+`with-postgraphile` (the same todo list: PostgreSQL via Docker, a trigger calling the compiled
+function, a React page on Vite importing the same TypeScript, behind PostgREST or PostGraphile 5).
+PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check violation (SQLSTATE
+23514, what the trigger raises) through; it names an `id` column `rowId`, and filters only on
+indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
 package's version and runs inside `bun run version`; `link` points them at this checkout
 (`file:../..`), which CI does before running each example as a user would. Generated SQL is not
 checked in there (`.gitignore`).

@@ -93,3 +93,48 @@ jobs:
       - name: "Example: with-postgrest, the page"
         working-directory: examples/with-postgrest
         run: bun run build
+
+      - name: "Example: with-postgraphile, the database"
+        working-directory: examples/with-postgraphile
+        run: |
+          bun install
+          bun run check
+          bun run parity
+          bunx tsql compile functions/*.ts --out db/01_functions.sql
+          psql "$TSQL_TEST_DB_URL" -c 'CREATE DATABASE with_postgraphile'
+          psql postgres://postgres:postgres@localhost:5432/with_postgraphile -v ON_ERROR_STOP=1 \
+            -f db/01_functions.sql -f db/02_schema.sql
+
+      # PostGraphile on that database, through `npm run api` and graphile.config.mjs, then the page's own queries:
+      # three todos go in, and the fourth comes back as a GraphQL error from the trigger.
+      - name: "Example: with-postgraphile, through PostGraphile"
+        working-directory: examples/with-postgraphile
+        run: |
+          DATABASE_URL=postgres://postgraphile:secret@localhost:5432/with_postgraphile \
+            nohup bun run api > postgraphile.log 2>&1 &
+          gql() { curl -s localhost:5678/graphql -H 'Content-Type: application/json' -d "$1"; }
+          for i in $(seq 60); do gql '{"query":"{ __typename }"}' | grep -q Query && break; sleep 1; done
+          fail() {
+            report=$(printf '%s\n\n%s\n\n%s' "$1" "$(cat postgraphile.log)" \
+              "$(gql '{"query":"{ __type(name: \"Query\") { fields { name } } t: __type(name: \"Todo\") { fields { name } } u: __type(name: \"User\") { fields { name } } }"}')")
+            report=${report//'%'/'%25'}; report=${report//$'\n'/'%0A'}
+            echo "::error title=PostGraphile example::${report}"; exit 1
+          }
+          users=$(gql '{"query":"{ allUsers(orderBy: ROW_ID_ASC) { nodes { id: rowId name plan } } }"}')
+          echo "$users"
+          echo "$users" | grep -q '"name":"Ada"' || fail "allUsers: $users"
+          for n in 1 2 3; do
+            created=$(gql "{\"query\":\"mutation (\$todo: TodoInput!) { createTodo(input: { todo: \$todo }) { todo { rowId } } }\",\"variables\":{\"todo\":{\"userId\":1,\"title\":\"todo $n\"}}}")
+            echo "$created"
+            echo "$created" | grep -q '"errors"' && fail "createTodo $n: $created"
+          done
+          refused=$(gql '{"query":"mutation ($todo: TodoInput!) { createTodo(input: { todo: $todo }) { todo { rowId } } }","variables":{"todo":{"userId":1,"title":"one too many"}}}')
+          echo "$refused"
+          echo "$refused" | grep -q 'The free plan allows 3 todos' || fail "the fourth todo: $refused"
+          todos=$(gql '{"query":"{ allTodos(condition: { userId: 1 }, orderBy: ROW_ID_ASC) { nodes { id: rowId title } } }"}')
+          echo "$todos"
+          test "$(echo "$todos" | grep -o '"title"' | wc -l)" = 3 || fail "allTodos: $todos"
+
+      - name: "Example: with-postgraphile, the page"
+        working-directory: examples/with-postgraphile
+        run: bun run build
