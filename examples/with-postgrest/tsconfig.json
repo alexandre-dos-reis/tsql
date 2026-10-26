@@ -4,7 +4,8 @@
     "noEmit": true,
     "lib": ["ESNext", "DOM"],
     "module": "preserve",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx"
   },
-  "include": ["src"]
+  "include": ["src", "vite.config.ts"]
 }
