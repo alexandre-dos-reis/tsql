@@ -214,7 +214,7 @@ The full list, with the reason for each, is in [docs/design.md](docs/design.md#r
 ## Using the functions from SQL
 
 A compiled function is an ordinary `IMMUTABLE` PostgreSQL function. Three patterns cover most uses;
-[`examples/with-postgrest`](examples/with-postgrest) runs the trigger one end to end.
+[`with-postgrest`](examples/with-postgrest) and [`with-postgraphile`](examples/with-postgraphile) run the trigger one end to end.
 
 **A condition on one row: a `CHECK` constraint.**
 
@@ -280,7 +280,7 @@ API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and throu
   objects, named types, arrays, the parity harness.
 - [docs/architecture.md](docs/architecture.md) — how the compiler is built, file by file.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — toolchain, tests, CI, releases.
-- [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`with-postgrest`](examples/with-postgrest), PostgreSQL, PostgREST and a Vite page sharing one rule.
+- [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`with-postgrest`](examples/with-postgrest) and [`with-postgraphile`](examples/with-postgraphile), PostgreSQL behind PostgREST or PostGraphile, and a React page sharing one rule.
 
 ## Licence and trademarks
 
