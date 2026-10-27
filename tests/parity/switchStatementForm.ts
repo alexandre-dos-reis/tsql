@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * A branch that does more than return keeps the CASE statement, where grouped labels share one WHEN.
@@ -10,7 +10,7 @@ export function discounted(tier: Tier, amount: Integer): Integer {
     case "free":
     case "starter": {
       const off: Integer = 5;
-      return amount - off;
+      return int(amount - off);
     }
     default:
       return amount;
@@ -24,7 +24,7 @@ export function shippingCents(region: Region, weightGrams: Integer): Integer {
     case "eu":
     case "us": {
       const base: Integer = 500;
-      return base + weightGrams * 2;
+      return int(base + int(weightGrams * 2));
     }
     case "apac":
       if (weightGrams > 1000) {

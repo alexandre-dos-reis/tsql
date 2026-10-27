@@ -10,7 +10,7 @@ import { PUBLISHED } from "../scripts/examples.ts";
  * checkout's CLI, with nothing installed and no database (parity runs on the in-process PGlite, as
  * the script does). A new example is covered by adding its folder.
  *
- * The examples import `@adr/tsql/pgtypes`. Without an install, that resolves through one link in
+ * The examples import `@adr/tsql`. Without an install, that resolves through one link in
  * this repository's own `node_modules` (`@adr/tsql` → the repository), made here if missing; the
  * provenance check still sees the declaration inside the package named `@adr/tsql`.
  *
@@ -39,7 +39,10 @@ function argumentsOf(script: string, cwd: string): string[] {
   return words.flatMap((word) => (word.includes("*") ? [...new Bun.Glob(word).scanSync({ cwd })].sort() : [word]));
 }
 
-async function run(args: readonly string[], cwd: string): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function run(
+  args: readonly string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, cli, ...args], {
     cwd,
     stdout: "pipe",
@@ -51,7 +54,10 @@ async function run(args: readonly string[], cwd: string): Promise<{ stdout: stri
 }
 
 function tracked(path: string): boolean {
-  return Bun.spawnSync(["git", "ls-files", "--error-unmatch", path], { cwd: root, stdout: "ignore", stderr: "ignore" }).exitCode === 0;
+  return (
+    Bun.spawnSync(["git", "ls-files", "--error-unmatch", path], { cwd: root, stdout: "ignore", stderr: "ignore" })
+      .exitCode === 0
+  );
 }
 
 test("there are examples to test", () => {
@@ -71,7 +77,9 @@ for (const name of examples) {
     // this keeps a linked example from being committed.
     test("asks for the published @adr/tsql and typescript", () => {
       for (const [dependency, range] of Object.entries(PUBLISHED)) {
-        expect(manifest.devDependencies?.[dependency], `${dependency} — run \`bun scripts/examples.ts sync\``).toBe(range);
+        expect(manifest.devDependencies?.[dependency], `${dependency} — run \`bun scripts/examples.ts sync\``).toBe(
+          range,
+        );
       }
     });
 
@@ -100,7 +108,8 @@ for (const name of examples) {
       const out = at === -1 ? "generated/0001_functions.sql" : args[at + 1]!;
       const scratch = mkdtempSync(join(tmpdir(), "tsql-example-"));
       try {
-        const redirected = at === -1 ? [...args, "--out", join(scratch, "out.sql")] : args.with(at + 1, join(scratch, "out.sql"));
+        const redirected =
+          at === -1 ? [...args, "--out", join(scratch, "out.sql")] : args.with(at + 1, join(scratch, "out.sql"));
         const { stderr, exitCode } = await run(redirected, dir);
         expect(stderr).toBe("");
         expect(exitCode).toBe(0);

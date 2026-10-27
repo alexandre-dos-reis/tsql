@@ -7,8 +7,8 @@
     "compiler",
     "parity-testing",
     "plpgsql",
-    "pure-functions",
     "postgresql",
+    "pure-functions",
     "sql",
     "typescript"
   ],
@@ -39,10 +39,6 @@
       "types": "./src/index.ts",
       "default": "./dist/index.mjs"
     },
-    "./pgtypes": {
-      "types": "./src/pgtypes.ts",
-      "default": "./dist/pgtypes.mjs"
-    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -58,7 +54,9 @@
     "prepublishOnly": "bun run build && bun run typecheck && bun test",
     "changeset": "changeset",
     "version": "changeset version && bun scripts/examples.ts sync && bun install --lockfile-only",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "ex:link": "bun run scripts/examples link",
+    "ex:sync": "bun run scripts/examples sync"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.11",

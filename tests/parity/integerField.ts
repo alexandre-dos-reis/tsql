@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * A field declared `Integer` in an object type is an `integer` column, exactly as a parameter would
@@ -7,5 +7,5 @@ import type { Integer } from "../../src/pgtypes";
 type Ticket = { label: string; count: Integer };
 
 export function nextCount(ticket: Ticket): Integer {
-  return ticket.count + 1;
+  return int(ticket.count + 1);
 }

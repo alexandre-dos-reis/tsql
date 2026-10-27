@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * A named object type as a parameter: a composite type, read with `(sub).plan`, created before the

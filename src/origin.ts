@@ -26,9 +26,9 @@ export async function originOfPath(path: Path, project: Project): Promise<Origin
  *
  * Answered by walking up to the nearest `package.json` and reading its name,
  * rather than by matching the path. tsql's own authoring vocabulary has to be
- * recognised both in this repo (`src/pgtypes.ts` beside the compiler) and once
- * installed (`node_modules/<pkg>/src/pgtypes.ts`), and a suffix match that
- * covered both would also trust a *consumer's* `src/pgtypes.ts` — letting a
+ * recognised both in this repo (`src/index.ts` beside the compiler) and once
+ * installed (`node_modules/<pkg>/src/index.ts`), and a suffix match that
+ * covered both would also trust a *consumer's* `src/index.ts` — letting a
  * local `type Integer = Date` masquerade as PostgreSQL's `integer`, which is
  * the confusion this check exists to prevent.
  */

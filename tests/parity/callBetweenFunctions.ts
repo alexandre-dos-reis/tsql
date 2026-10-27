@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * One compiled function calling another — schema-qualified — through a local named after a reserved word,
@@ -15,5 +15,5 @@ export function remainingTodos(plan: Plan, count: Integer): Integer {
   if (count >= limit) {
     return 0;
   }
-  return limit - count;
+  return int(limit - count);
 }

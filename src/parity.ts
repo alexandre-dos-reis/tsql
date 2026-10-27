@@ -63,8 +63,6 @@ function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
       return type.allowed ? fc.constantFrom(...type.allowed) : fc.string().filter((s) => !TEXT_UNSAFE.test(s));
     case "integer":
       return fc.integer({ min: -INT_BOUND, max: INT_BOUND });
-    case "numeric":
-      return fc.integer({ min: -INT_BOUND, max: INT_BOUND }).map((n) => n / 100);
     case "double precision":
       return fc
         .double({ min: -FLOAT_BOUND, max: FLOAT_BOUND, noNaN: true })
@@ -149,14 +147,18 @@ export function resultEqual(row: Record<string, unknown>, tsValue: unknown, retu
 function fieldsEqual(record: Record<string, unknown>, tsValue: unknown, type: CompositeType): boolean {
   if (tsValue === null || tsValue === undefined) return false;
   const object = tsValue as Record<string, unknown>;
-  return type.fields.every((field) => jsonEqual(record[field.sqlName] ?? null, object[field.tsName] ?? null, field.type));
+  return type.fields.every((field) =>
+    jsonEqual(record[field.sqlName] ?? null, object[field.tsName] ?? null, field.type),
+  );
 }
 
 /** A value as a typed column or `to_jsonb` hands it back: a scalar, an array, or an object of fields. */
 function jsonEqual(sqlValue: unknown, tsValue: unknown, type: PgType): boolean {
   if (isScalar(type)) return valuesEqual(sqlValue, tsValue, type);
   if (isArray(type)) return jsonArrayEqual(sqlValue, tsValue, type);
-  return sqlValue !== null && typeof sqlValue === "object" && fieldsEqual(sqlValue as Record<string, unknown>, tsValue, type);
+  return (
+    sqlValue !== null && typeof sqlValue === "object" && fieldsEqual(sqlValue as Record<string, unknown>, tsValue, type)
+  );
 }
 
 /** An array column as `to_jsonb` returns it, element by element. */
@@ -178,8 +180,6 @@ export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarTyp
       const scale = Math.max(Math.abs(a), Math.abs(b), 1);
       return Math.abs(a - b) <= scale * Number.EPSILON * 4;
     }
-    case "numeric":
-      return Number(sqlValue) === Number(tsValue);
     default:
       return sqlValue === tsValue;
   }
@@ -193,6 +193,30 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return [...keys].every((key) => deepEqual(left[key], right[key]));
 }
 
+/** The outcome of one call: what it returned, or the fact that it raised. */
+type Attempt<T> = { readonly raised: false; readonly value: T } | { readonly raised: true; readonly error: unknown };
+
+function attempt<T>(run: () => T): Attempt<T> {
+  try {
+    return { raised: false, value: run() };
+  } catch (error) {
+    return { raised: true, error };
+  }
+}
+
+async function attemptAsync<T>(run: () => Promise<T>): Promise<Attempt<T>> {
+  try {
+    return { raised: false, value: await run() };
+  } catch (error) {
+    return { raised: true, error };
+  }
+}
+
+/** A scalar or array return arrives as a one-column row; report the value, not the row. */
+function rowValue(row: unknown, returns: PgType): unknown {
+  return isScalar(returns) || isArray(returns) ? (row as Record<string, unknown>).value : row;
+}
+
 export interface ParityOptions {
   readonly runs?: number;
   readonly seed?: number;
@@ -201,6 +225,12 @@ export interface ParityOptions {
 /**
  * Property-check one function. Resolves when every generated input agrees;
  * rejects with fast-check's shrunk counterexample otherwise.
+ *
+ * Raising counts as a result. PostgreSQL raises where TypeScript cannot — on
+ * `integer` overflow above all — so a function whose arithmetic is wrapped in
+ * `int(...)` is *meant* to throw on the inputs that overflow, and the two
+ * implementations agree precisely when they raise together. One side raising
+ * alone stays what it always was: a divergence.
  */
 export async function checkParity(
   fn: ManifestFunction,
@@ -218,10 +248,14 @@ export async function checkParity(
       // function that mutates what it was given has an effect its SQL twin can
       // never reproduce. Comparing return values alone would not notice.
       const before = structuredClone(args);
-      const tsValue = call(...args);
-      if (!deepEqual(args, before)) return false;
+      const ts = attempt(() => call(...args));
+      // Only a call that returned can be held to the no-mutation rule; one that
+      // threw part way through was never claiming to have finished.
+      if (!ts.raised && !deepEqual(args, before)) return false;
       const prepared = prepareCall(fn, schema, args);
-      return resultEqual(await query(prepared.sql, prepared.params), tsValue, fn.returns);
+      const pg = await attemptAsync(() => query(prepared.sql, prepared.params));
+      if (ts.raised || pg.raised) return ts.raised && pg.raised;
+      return resultEqual(pg.value, ts.value, fn.returns);
     }),
     { numRuns: options.runs ?? 200, ...(options.seed === undefined ? {} : { seed: options.seed }) },
   );
@@ -232,20 +266,29 @@ export async function checkParity(
   // answers that disagree rather than just the input that provoked it.
   const args = run.counterexample?.[0] ?? [];
   const { sql, params } = prepareCall(fn, schema, args);
+  const before = structuredClone(args);
+  const ts = attempt(() => call(...args));
+  const pg = await attemptAsync(() => query(sql, params));
+  // Narrowed once, here, because the two outcomes are independent unions and
+  // `ts.raised` tells the checker nothing about `pg`.
+  const tsShown = ts.raised ? undefined : JSON.stringify(ts.value);
+  const pgShown = pg.raised ? undefined : JSON.stringify(rowValue(pg.value, fn.returns));
+
   let detail: string;
-  try {
-    const before = structuredClone(args);
-    const tsValue = call(...args);
-    const row = await query(sql, params);
-    // A scalar return arrives as a one-column row; report the value, not the row.
-    const sqlValue = isScalar(fn.returns) || isArray(fn.returns) ? row.value : row;
+  if (ts.raised && pg.raised) {
+    // Both raising is agreement, so the replay no longer reproduces what
+    // `fc.check` saw. Say so rather than blame a side.
+    detail = `both sides raised on replay, which is agreement — rerun with the seed below (TypeScript: ${String(ts.error)})`;
+  } else if (ts.raised) {
+    detail = `TypeScript raised (${String(ts.error)}) where PostgreSQL returned ${pgShown}`;
+  } else if (pg.raised) {
+    detail =
+      `PostgreSQL raised (${String(pg.error)}) where TypeScript returned ${tsShown}` +
+      ` — if that is \`integer\` overflow, the TypeScript has to raise too: wrap the arithmetic in \`int(...)\``;
+  } else {
     detail = !deepEqual(args, before)
       ? `the TypeScript function mutated its arguments (${JSON.stringify(before)} -> ${JSON.stringify(args)}). PL/pgSQL passes composites by value, so the SQL function cannot do the same; build a new value instead`
-      : `TypeScript gave ${JSON.stringify(tsValue)}, PostgreSQL gave ${JSON.stringify(sqlValue)}`;
-  } catch (error) {
-    // One side raising where the other does not is itself a divergence —
-    // PostgreSQL's integer overflow being the obvious example.
-    detail = `one side raised: ${String(error)}`;
+      : `TypeScript gave ${tsShown}, PostgreSQL gave ${pgShown}`;
   }
 
   throw new Error(

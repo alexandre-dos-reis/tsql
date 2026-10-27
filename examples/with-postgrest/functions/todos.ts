@@ -1,4 +1,4 @@
-import type { Integer } from "@adr/tsql/pgtypes";
+import type { Integer } from "@adr/tsql";
 
 export type Plan = "free" | "pro";
 

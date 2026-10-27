@@ -69,7 +69,7 @@ import {
 } from "./ir.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
-import { enumMember, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
+import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
 
 interface Binding {
   readonly sqlName: string;
@@ -175,7 +175,9 @@ export async function lowerFunction(
   const state: State = {
     ...ctx,
     signatures,
-    scope: new Map(signature.params.map((p) => [p.tsName, { sqlName: p.sqlName, type: p.type, kind: "param" as const }])),
+    scope: new Map(
+      signature.params.map((p) => [p.tsName, { sqlName: p.sqlName, type: p.type, kind: "param" as const }]),
+    ),
     locals: [],
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
@@ -410,14 +412,22 @@ async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
 
   // A label compared to an enum subject as text makes every comparison text.
   let subjectExpr = subject;
-  if (simple && groups.some((g) => g.labels.some((l) => l.value!.kind !== "lit" && !sameNamed(subject.type, l.value!.type)))) {
+  if (
+    simple &&
+    groups.some((g) => g.labels.some((l) => l.value!.kind !== "lit" && !sameNamed(subject.type, l.value!.type)))
+  ) {
     subjectExpr = textOf(subject);
     for (const g of groups) for (const l of g.labels) l.value = textOf(l.value!);
   }
 
   if (simple && allReturn) {
     const whens = groups.flatMap((g) => g.labels.map((l) => ({ value: l.value!, result: returnedValue(g.body)! })));
-    return [{ kind: "return", expr: { kind: "simpleCaseExpr", subject: subjectExpr, whens, orElse: elseValue, type: s.returns } }];
+    return [
+      {
+        kind: "return",
+        expr: { kind: "simpleCaseExpr", subject: subjectExpr, whens, orElse: elseValue, type: s.returns },
+      },
+    ];
   }
   if (simple) {
     return [
@@ -593,7 +603,10 @@ async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> {
  */
 async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR> {
   if (node.awaitModifier) {
-    throw CompileError.at(node, "`for await` is not supported: a PL/pgSQL function runs to completion with nothing to await.");
+    throw CompileError.at(
+      node,
+      "`for await` is not supported: a PL/pgSQL function runs to completion with nothing to await.",
+    );
   }
   const init = node.initializer;
   if (init.kind !== SyntaxKind.VariableDeclarationList) {
@@ -731,7 +744,17 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
           `\`${binary.operatorToken.getText()}\` is not supported; write the assignment out (\`x = x … y\`).`,
         );
       }
-      value = async (current) => combine(base, current, await lowerExpr(binary.right, s), binary);
+      value = async (current) => {
+        const next = combine(base, current, await lowerExpr(binary.right, s), binary, true);
+        if (isExactly(next.type, "integer") && COMPOUND_OVERFLOWS.has(base)) {
+          throw CompileError.at(
+            binary.operatorToken,
+            `\`${binary.operatorToken.getText()}\` on an \`integer\` has nowhere to put the 32-bit overflow guard. ` +
+              `Write the assignment out and guard it: \`${(target as Identifier).text} = ${INT_GUARD}(${(target as Identifier).text} ${binary.operatorToken.getText().slice(0, -1)} ${binary.right.getText()})\`.`,
+          );
+        }
+        return next;
+      };
     }
   } else if (
     expression.kind === SyntaxKind.PostfixUnaryExpression ||
@@ -747,7 +770,22 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
       if (!isNumeric(current.type)) {
         throw CompileError.at(expression, `\`${expression.getText()}\` needs a number.`);
       }
-      return arithmetic(op === SyntaxKind.PlusToken ? "+" : "-", current, { kind: "lit", value: 1, type: scalarType("integer") }, expression);
+      const step = arithmetic(
+        op === SyntaxKind.PlusToken ? "+" : "-",
+        current,
+        { kind: "lit", value: 1, type: scalarType("integer") },
+        expression,
+        true,
+      );
+      if (isExactly(step.type, "integer")) {
+        const text = (target as Identifier).text;
+        throw CompileError.at(
+          expression,
+          `\`${expression.getText()}\` on an \`integer\` has nowhere to put the 32-bit overflow guard. ` +
+            `Write it out and guard it: \`${text} = ${INT_GUARD}(${text} ${op === SyntaxKind.PlusToken ? "+" : "-"} 1)\`.`,
+        );
+      }
+      return step;
     };
   } else {
     return undefined;
@@ -844,7 +882,10 @@ async function lowerDestructuring(
         continue;
       }
       if (name.kind !== SyntaxKind.Identifier) {
-        throw CompileError.at(name, "Array destructuring is not supported: reading by position is not part of the compiled subset.");
+        throw CompileError.at(
+          name,
+          "Array destructuring is not supported: reading by position is not part of the compiled subset.",
+        );
       }
 
       const field = readPath(base, path, element);
@@ -895,11 +936,19 @@ function uniqueName(base: string, used: Set<string>): string {
  * Lower an expression. `expected`, when the position has one — a return, an
  * annotated declaration, an assignment, an argument, an object field — types
  * what has no type of its own: `[]`, and `null`.
+ *
+ * `guarded` says this expression sits directly inside `int(...)`, which is what
+ * makes an overflowing `integer` operation translatable. It is deliberately not
+ * propagated past one operation: only parentheses carry it, so the operands of
+ * a guarded `+` are themselves unguarded and nested arithmetic needs its own
+ * `int(...)`. PostgreSQL raises on an intermediate overflow even when the final
+ * result would fit, so a single guard around the whole expression would not be
+ * the same program.
  */
-async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise<ExprIR> {
+async function lowerExpr(node: Expression, s: State, expected?: PgType, guarded = false): Promise<ExprIR> {
   switch (node.kind) {
     case SyntaxKind.ParenthesizedExpression:
-      return lowerExpr((node as ParenthesizedExpression).expression, s, expected);
+      return lowerExpr((node as ParenthesizedExpression).expression, s, expected, guarded);
 
     case SyntaxKind.StringLiteral:
     case SyntaxKind.NoSubstitutionTemplateLiteral:
@@ -916,7 +965,18 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise
 
     case SyntaxKind.NumericLiteral: {
       const value = Number((node as NumericLiteral).text);
-      return { kind: "lit", value, type: scalarType(Number.isInteger(value) ? "integer" : "double precision") };
+      // A whole literal is an `integer` only within 32 bits. Beyond them
+      // PostgreSQL has no `integer` to hold it, so where one is wanted the
+      // literal is refused outright rather than reported as a narrowing — it is
+      // out of range, not merely fractional.
+      const whole = Number.isInteger(value) && value >= INT4_MIN && value <= INT4_MAX;
+      if (!whole && Number.isInteger(value) && expected && isExactly(expected, "integer")) {
+        throw CompileError.at(
+          node,
+          `${value} is outside PostgreSQL's \`integer\` (${INT4_MIN} .. ${INT4_MAX}), so it cannot be an \`Integer\`. Declare it a \`Float\` to hold it as a double, as TypeScript does.`,
+        );
+      }
+      return { kind: "lit", value, type: scalarType(whole ? "integer" : "double precision") };
     }
 
     case SyntaxKind.TrueKeyword:
@@ -929,7 +989,10 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise
       return {
         kind: "lit",
         value: null,
-        type: expected && isScalar(expected) ? scalarType(expected.sql, true, expected.allowed) : scalarType("boolean", true),
+        type:
+          expected && isScalar(expected)
+            ? scalarType(expected.sql, true, expected.allowed)
+            : scalarType("boolean", true),
       };
 
     case SyntaxKind.Identifier: {
@@ -953,10 +1016,10 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType): Promise
       return lowerNew(node as NewExpression, s);
 
     case SyntaxKind.PrefixUnaryExpression:
-      return lowerPrefixUnary(node as PrefixUnaryExpression, s);
+      return lowerPrefixUnary(node as PrefixUnaryExpression, s, guarded);
 
     case SyntaxKind.BinaryExpression:
-      return lowerBinary(node as BinaryExpression, s);
+      return lowerBinary(node as BinaryExpression, s, guarded);
 
     case SyntaxKind.ConditionalExpression:
       return lowerConditional(node as ConditionalExpression, s, expected);
@@ -1023,7 +1086,7 @@ async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR
   return pieces.reduce((left, right): ExprIR => ({ kind: "binary", op: "||", left, right, type: text }));
 }
 
-async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State): Promise<ExprIR> {
+async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State, guarded = false): Promise<ExprIR> {
   const operand = await lowerExpr(node.operand as Expression, s);
   switch (node.operator) {
     case SyntaxKind.ExclamationToken: {
@@ -1035,6 +1098,12 @@ async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State): Promise<
     case SyntaxKind.MinusToken: {
       if (!isNumeric(operand.type) || !isScalar(operand.type)) {
         throw CompileError.at(node, `Unary \`-\` needs a numeric operand, not \`${describe(operand.type)}\`.`);
+      }
+      // `-(-2147483648)` is the one input that overflows, and it overflows in
+      // PostgreSQL only. A negative literal is already folded by the time it
+      // gets here, and its range was checked where it was read.
+      if (isExactly(operand.type, "integer") && !guarded && operand.kind !== "lit") {
+        throw unguarded("-", "Negating", node);
       }
       return { kind: "neg", operand, type: operand.type };
     }
@@ -1077,6 +1146,7 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
     throw CompileError.at(node.expression, "Only direct calls to other compiled functions are supported.");
   }
   const name = (node.expression as Identifier).text;
+  if (await isIntGuard(node.expression, s)) return lowerIntGuard(node, s);
   const target = s.signatures.get(name);
   if (!target) throw await referenceError(name, node.expression, node.expression, s);
   if (node.arguments.length !== target.params.length) {
@@ -1094,6 +1164,32 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
     args.push(coerce(lowered, param.type));
   }
   return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
+}
+
+/**
+ * `int(x)`, which disappears.
+ *
+ * The guard exists for the TypeScript side alone: it makes the function raise
+ * where PostgreSQL already raises on its own, so the emitted SQL is the bare
+ * expression. Its operand must already be an `integer` — erasing the guard over
+ * a `double precision` would leave PostgreSQL rounding on assignment where
+ * TypeScript threw, which is the divergence this is here to remove.
+ */
+async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
+  const [argument, ...rest] = node.arguments;
+  if (!argument || rest.length > 0) {
+    throw CompileError.at(node, `\`${INT_GUARD}\` takes exactly one argument, got ${node.arguments.length}.`);
+  }
+  const operand = await lowerExpr(argument as Expression, s, scalarType("integer"), true);
+  if (!isExactly(operand.type, "integer")) {
+    throw CompileError.at(
+      argument as Node,
+      `\`${INT_GUARD}\` guards \`integer\` arithmetic, but this is \`${describe(operand.type)}\`. ` +
+        `It leaves no cast behind in the SQL, so guarding a double would round in PostgreSQL where TypeScript raised. ` +
+        `Annotate the operands as \`Integer\`, or drop the guard and keep the result a \`Float\`.`,
+    );
+  }
+  return operand;
 }
 
 /**
@@ -1401,6 +1497,9 @@ function rootIdentifier(node: Expression): Identifier | undefined {
   return current.kind === SyntaxKind.Identifier ? (current as Identifier) : undefined;
 }
 
+/** `+=`, `-=`, `*=` lower to the operators that can overflow; `/=` and `%=` cannot. */
+const COMPOUND_OVERFLOWS = new Set<SyntaxKind>([SyntaxKind.PlusToken, SyntaxKind.MinusToken, SyntaxKind.AsteriskToken]);
+
 const ASSIGNMENT_OPERATORS = new Set<SyntaxKind>([
   SyntaxKind.EqualsToken,
   SyntaxKind.PlusEqualsToken,
@@ -1552,7 +1651,7 @@ function strictEquality(leftOperand: ExprIR, rightOperand: ExprIR, negated: bool
   return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
 }
 
-async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
+async function lowerBinary(node: BinaryExpression, s: State, guarded = false): Promise<ExprIR> {
   const op = node.operatorToken.kind;
 
   if (ASSIGNMENT_OPERATORS.has(op)) {
@@ -1589,14 +1688,14 @@ async function lowerBinary(node: BinaryExpression, s: State): Promise<ExprIR> {
 
   const left = await lowerExpr(node.left, s);
   const right = await lowerExpr(node.right, s);
-  return combine(op, left, right, node);
+  return combine(op, left, right, node, guarded);
 }
 
 /**
  * The value of `left op right`, both already lowered. Shared by binary
  * expressions and compound assignment (`x += y` is `x = x + y`).
  */
-function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpression): ExprIR {
+function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpression, guarded = false): ExprIR {
   switch (op) {
     case SyntaxKind.EqualsEqualsEqualsToken:
     case SyntaxKind.ExclamationEqualsEqualsToken: {
@@ -1642,13 +1741,13 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
         }
         return { kind: "binary", op: "||", left: textOf(left), right: textOf(right), type: scalarType("text") };
       }
-      return arithmetic("+", left, right, node);
+      return arithmetic("+", left, right, node, guarded);
     }
 
     case SyntaxKind.MinusToken:
-      return arithmetic("-", left, right, node);
+      return arithmetic("-", left, right, node, guarded);
     case SyntaxKind.AsteriskToken:
-      return arithmetic("*", left, right, node);
+      return arithmetic("*", left, right, node, guarded);
 
     case SyntaxKind.SlashToken: {
       numericOperands(left, right, node, "/");
@@ -1671,10 +1770,10 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
       if (isExactly(left.type, "double precision") || isExactly(right.type, "double precision")) {
         throw CompileError.at(
           node,
-          "`%` is not defined for `double precision` in PostgreSQL. Annotate the operands as `Integer` or `Numeric`.",
+          "`%` is not defined for `double precision` in PostgreSQL. Annotate the operands as `Integer`.",
         );
       }
-      return arithmetic("%", left, right, node);
+      return arithmetic("%", left, right, node, true);
     }
 
     case SyntaxKind.AmpersandAmpersandToken:
@@ -1709,15 +1808,38 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
   }
 }
 
-function arithmetic(op: BinOp, left: ExprIR, right: ExprIR, node: Node): ExprIR {
+function arithmetic(op: BinOp, left: ExprIR, right: ExprIR, node: Node, guarded = false): ExprIR {
   const [a, b] = numericOperands(left, right, node, op);
-  return {
-    kind: "binary",
-    op,
-    left,
-    right,
-    type: scalarType(widenNumeric(a.sql, b.sql), a.nullable || b.nullable),
-  };
+  const sql = widenNumeric(a.sql, b.sql);
+  if (sql === "integer" && OVERFLOWS.has(op) && !guarded) throw unguarded(op, "This", node);
+  return { kind: "binary", op, left, right, type: scalarType(sql, a.nullable || b.nullable) };
+}
+
+/** The bounds of PostgreSQL's `integer`, mirrored from the authoring module. */
+const INT4_MIN = -2147483648;
+const INT4_MAX = 2147483647;
+
+/**
+ * The operators whose `integer` result can leave 32 bits. `%` cannot — its
+ * result is smaller than its divisor — and `/` yields `double precision`.
+ */
+const OVERFLOWS = new Set<BinOp>(["+", "-", "*"]);
+
+/**
+ * Unguarded `integer` arithmetic.
+ *
+ * This is the one divergence the compiler cannot close on its own: PostgreSQL
+ * raises `integer out of range`, TypeScript carries on into the doubles past
+ * 32 bits, and nothing emitted here runs on the TypeScript side. So the author
+ * is asked to close it, with a guard that costs nothing in the SQL.
+ */
+function unguarded(op: string, what: string, node: Node): CompileError {
+  return CompileError.at(
+    node,
+    `${what} \`${op}\` can overflow 32 bits, which PostgreSQL refuses (\`integer out of range\`) where TypeScript keeps counting in doubles. ` +
+      `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise — one guard per operation, so \`${INT_GUARD}(a + ${INT_GUARD}(b * c))\` — ` +
+      `or annotate the result as \`Float\` to compute in doubles, which both languages do alike.`,
+  );
 }
 
 /** Checks both operands are numeric and hands back their scalar types. */

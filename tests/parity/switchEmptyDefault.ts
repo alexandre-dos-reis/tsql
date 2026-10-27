@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * A computed discriminant is evaluated once, by the CASE itself; an empty `default` becomes `ELSE

@@ -110,7 +110,7 @@ A few others: a `switch` without `default` (PostgreSQL does not enforce a union'
 - **`x === null`** becomes `IS NULL` rather than a comparison.
 - **`switch`** becomes a `CASE` — the expression `RETURN CASE … END` when every branch only returns a value, the PL/pgSQL `CASE … END CASE` statement otherwise — and **needs a `default`**. A `CASE` that matches nothing raises `CASE_NOT_FOUND`, and TypeScript's exhaustiveness does not carry over: `switch (plan)` may cover `"free" \| "pro"`, and even when `Plan` is a domain or an enum that PostgreSQL enforces, a `CASE` over it is still checked by the database at runtime, not at compile time. The `default` becomes the `ELSE` wherever it is written, so the generated function can never raise. Labels match with `===`: the simple form `CASE plan WHEN 'free', 'pro'` is used whenever no label can be NULL — a NULL discriminant matches no `WHEN` and reaches the `ELSE`, as `null === "free"` is false — and `case null` (or a nullable label) switches to the searched form, `CASE WHEN plan IS NULL`, with the equality rules above. Empty clauses group their labels; any other fallthrough is rejected, so a clause with statements must end in `break`, always return, or be the last one.
 - **Division** always produces `double precision`, with the dividend cast when needed: `7 / 2` is `3.5` in TypeScript but integer division in PostgreSQL.
-- **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers widen implicitly and need no cast.
+- **Fractional literals** are emitted as `1.5::double precision`, because an unadorned `1.5` is `numeric` in PostgreSQL — exact decimal rather than the IEEE-754 double TypeScript computed with. Whole numbers within 32 bits are `integer` and widen implicitly; wider ones are cast too, since PostgreSQL would read them as `bigint`. See [Numbers](#numbers).
 - **`&&` / `||`** require boolean operands. TypeScript returns the operand value, which SQL cannot express.
 - **Text concatenation** requires non-nullable operands: `'a' || NULL` is `NULL` in SQL but `"anull"` in TypeScript.
 - **Template literals** are concatenation: `` `${plan}-${region}` `` is `plan || '-' || region` (an enum is cast `::text` first, which writes its label). Their substitutions follow the same rule — never nullable — and only types written the same way by `String(value)` and `::text` are accepted: text, `Integer` and `boolean` (`42::text` is `'42'`, `true::text` is `'true'`). Fractional numbers are refused, because the two languages print them differently: `String(0.1 + 0.2)` is `0.30000000000000004`, and a `numeric` keeps its trailing zeros (`1.10`).
@@ -119,9 +119,131 @@ A few others: a `switch` without `default` (PostgreSQL does not enforce a union'
 
 ### Known divergence
 
-PostgreSQL raises on `integer` overflow where TypeScript silently continues. The parity harness generates integers well inside int32 rather than pretending this is handled; narrowing `Integer` to a checked domain would be the real fix.
+PostgreSQL raises on `double precision` underflow — a result too small to represent, such as `5e-324 / 10`, is the error `value out of range: underflow` — where TypeScript quietly gives 0 (and on overflow, where TypeScript gives `Infinity`). The parity harness generates doubles away from the subnormal range and within ±1e9 for the same reason.
 
-PostgreSQL likewise raises on `double precision` underflow — a result too small to represent, such as `5e-324 / 10`, is the error `value out of range: underflow` — where TypeScript quietly gives 0 (and on overflow, where TypeScript gives `Infinity`). The parity harness generates doubles away from the subnormal range and within ±1e9 for the same reason.
+## Numbers
+
+TypeScript has one number type: the IEEE-754 double. PostgreSQL has several, and they are not
+interchangeable — so the author says which one is meant, and the compiler offers only the two whose
+behaviour it can preserve.
+
+| alias | PostgreSQL | agrees with TypeScript |
+| --- | --- | --- |
+| `Integer` | `integer` | exactly, inside 32 bits — past them see [the guard](#the-int-guard) |
+| `Float` | `double precision` | exactly, always: the same bits, the same rounding |
+
+Both are plain aliases of `number`, so they cost nothing at a call site. They are resolved **by name**
+at build time, which is why the compiler checks [which package declared the
+name](#keeping-integer-honest-once-installed).
+
+### Why `Float` and not `DoublePrecision`
+
+`Integer` is PostgreSQL's canonical name, CamelCased. `Float` is not — `'float'::regtype` canonicalises
+to `double precision` — so the pair does not follow one rule, and that was weighed rather than
+overlooked. The canonical spelling has a space in it, so the exact name is not a TypeScript
+identifier; the candidates were `DoublePrecision` and PostgreSQL's own short alias `Float8`.
+
+`Float` is kept because it is what an author writing TypeScript reaches for, and because `float` is a
+spelling PostgreSQL does accept — this is the authoring vocabulary, read at every annotation, and
+familiarity wins over a rule that would otherwise need no explaining.
+
+The cost, recorded so it is not rediscovered: **`Float` does not say its width.** PostgreSQL also has
+`float4`, which is `real`. `Float` is always `double precision` — 8 bytes, the IEEE-754 double
+TypeScript computes in — and never `real`, which the compiler does not offer at all, because nothing
+in TypeScript corresponds to a 4-byte float.
+
+### Why there is no `Numeric`
+
+PostgreSQL's `numeric` is exact decimal arithmetic. That is a different number system from the double
+TypeScript computes in, and the two disagree on ordinary input:
+
+```ts
+export function addNumeric(a: Numeric, b: Numeric): Numeric {
+  return a + b; // if `Numeric` existed
+}
+```
+
+```
+addNumeric(24.41, -314.26)
+  TypeScript  -289.84999999999997
+  PostgreSQL  -289.85
+```
+
+Neither is wrong; they are not the same answer. `numeric` also carries a scale, so it keeps trailing
+zeros (`1.10`) where `String(1.1)` does not — which is why fractional values are refused in template
+literals. There is no cast or guard that reconciles exact decimal with binary floating point, so
+rather than offer a type that quietly diverges, the compiler does not offer it. `numeric` is not in
+`PgScalar` at all: no path through the compiler can produce it.
+
+Money is the usual reason to want it. The answer is to count in integer minor units (`priceCents:
+Integer`), or to keep the arithmetic in the database, where `numeric` is the right type and nothing
+has to agree with a double.
+
+### The `int` guard
+
+`integer` is exact in both languages, but only across 32 bits. Past them PostgreSQL raises and
+TypeScript does not:
+
+```
+2147483647 + 1
+  TypeScript  2147483648
+  PostgreSQL  ERROR: integer out of range
+```
+
+This is the one divergence the compiler cannot close by choosing a translation, because the gap is on
+the *TypeScript* side and nothing the compiler emits runs there. Narrowing `Integer` to a checked
+domain was the idea recorded here for a long time; it does not work, because a domain constrains what
+PostgreSQL stores, not what TypeScript computes.
+
+So the author closes it, with a function from the authoring module that raises where PostgreSQL
+already raises:
+
+```ts
+import { int, type Integer } from "@adr/tsql";
+
+export function seatTotalCents(seats: Integer, unitCents: Integer): Integer {
+  return int(seats * unitCents);
+}
+```
+
+```sql
+RETURN seats * unit_cents;
+```
+
+The guard **leaves no trace in the SQL**. It is not a cast and not a check — PostgreSQL does this
+already — it exists so that the two implementations raise on the same inputs. The parity harness
+counts *both* sides raising as agreement, which is what makes the guard worth writing; one side
+raising alone is still a divergence, and `tests/divergent/unguardedOverflow.ts` is the negative
+control that keeps it so.
+
+It is **required**, not offered. Any `+`, `-`, `*` or unary `-` whose result is an `integer` must sit
+directly inside `int(...)`, or the build fails. Three consequences follow:
+
+- **One guard per operation.** `int(a + b * c)` is refused: PostgreSQL raises on the inner product
+  even when the sum would have fitted, so the two programs would differ in *where* they raise. Write
+  `int(a + int(b * c))`.
+- **A compound assignment has nowhere to put it.** `total += 200` and `i++` are statements, so
+  `int(...)` cannot wrap them. They are refused in favour of `total = int(total + 200)` and
+  `i = int(i + 1)` — including a `for` step, since a `for` lowers to `WHILE` with the step as
+  written and nothing proves `i < limit` bounds it (`i <= 2147483647` would overflow on the last
+  step).
+- **`%` and `/` are exempt.** A remainder is smaller than its divisor, so it cannot overflow;
+  division already yields `double precision`. Neither needs a guard.
+
+The way out of the verbosity is the other type: annotate the result `Float` and both languages
+compute in the same doubles, with nothing to guard. That is a real choice about which arithmetic is
+wanted, which is the point.
+
+`int` is recognised the same way `Integer` is — by asking which package declared it, never by name —
+so a consumer's own `int` is an ordinary uncompiled function, not something the compiler erases.
+
+### Literals
+
+A whole literal is an `integer` only inside 32 bits. `3000000000` is exact in TypeScript (every
+integer up to 2^53 fits in a double) but has no `integer` to live in, so where one is wanted it is
+refused outright rather than reported as a narrowing — it is out of range, not merely fractional.
+In a `Float` position it is emitted `3000000000::double precision`, because PostgreSQL would
+otherwise read it as `bigint`.
 
 ## Object types
 
@@ -558,9 +680,13 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |
 | a fractional or nullable value in a template literal, a tagged template | the two languages print fractions differently; `\|\| NULL` is NULL where TypeScript writes `null`; a tag is a function call |
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |
+| `+`, `-`, `*` or unary `-` yielding an `integer`, outside `int(...)` | PostgreSQL raises past 32 bits where TypeScript does not; see [The `int` guard](#the-int-guard) |
+| `+=`, `-=`, `*=`, `++`, `--` on an `integer` | a statement has nowhere to put the guard; write `x = int(x + y)` |
+| `int(...)` around a `double precision` expression | the guard leaves no cast behind, so PostgreSQL would round where TypeScript raised |
+| a whole literal outside 32 bits where an `Integer` is wanted | PostgreSQL has no `integer` that wide; declare it a `Float` |
 | optional parameters | absence must be explicit: write `T \| null` |
 | `T \| undefined` | SQL models absence one way only — use `null` |
-| a `number` where `Integer` is expected | PostgreSQL rounds a `double precision` stored into an `integer` silently; numbers may only widen |
+| a `number` where `Integer` is expected | PostgreSQL rounds a `double precision` stored into an `integer` silently; numbers may only widen (`integer` → `double precision`) |
 | inferred return types | the signature is part of the contract, so it must be written down — for arrow functions too |
 | destructuring defaults, `...rest`, array destructuring | a default applies on `undefined`, which SQL lacks; a rest object has no named type; reading by position is outside the subset |
 | a mutable `T[]`, `xs[i]`, array methods but `includes`, `===` on arrays | see [Arrays](#arrays) |
@@ -618,14 +744,14 @@ Two further checks:
 
 ## Keeping `Integer` honest once installed
 
-`Integer`, `Numeric` and `Float` are resolved by name, so the compiler has to be sure the name it found is *its* name. That check asks which npm package declared the symbol — walking up to the nearest `package.json` — rather than matching the path:
+`Integer`, `Float` and `int` are resolved by name, so the compiler has to be sure the name it found is *its* name. That check asks which npm package declared the symbol — walking up to the nearest `package.json` — rather than matching the path:
 
 ```ts
-// a consumer's own src/pgtypes.ts
+// a consumer's own src/index.ts
 export type Integer = string;
 ```
 
-A path-suffix check accepts that file, because it does end in `src/pgtypes.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
+A path-suffix check accepts that file, because it does end in `src/index.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
 
 ## The CLI's own refusals
 

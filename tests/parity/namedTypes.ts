@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * Named closed sets of strings become types of their own. A union alias is a domain over `text`:
@@ -47,7 +47,7 @@ export function deeper(area: AreaType): AreaType {
 }
 
 export function depthOfLevel2(bonus: Integer): Integer {
-  return areaDepth("level-2") + bonus;
+  return int(areaDepth("level-2") + bonus);
 }
 
 export function areaLabel(area: AreaType, zone: Zone): string {

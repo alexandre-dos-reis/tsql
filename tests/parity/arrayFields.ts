@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * An array field is one column of array type, beside the others: `Basket` is
@@ -29,7 +29,7 @@ export interface Basket {
 export function linesTotalCents(lines: readonly BasketLine[]): Integer {
   let total = 0;
   for (const line of lines) {
-    total += (line.quantity % 100) * (line.unitCents % 1000);
+    total = int(total + int((line.quantity % 100) * (line.unitCents % 1000)));
   }
   return total;
 }

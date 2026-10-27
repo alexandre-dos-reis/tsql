@@ -116,16 +116,18 @@ function's SQL name, module, parameters and return types, which the parity harne
 
 Every expression carries its type, so lowering can decide casts and operators locally.
 
-## Types: `typemap.ts`, `origin.ts`, `pgtypes.ts`
+## Types: `typemap.ts`, `origin.ts`, `index.ts`
 
 [`typemap.ts`](../src/typemap.ts) maps TypeScript types to `PgType`, **from the type the author
 wrote** (`mapTypeNode`) when there is one, so `count: Integer` stays `integer` instead of becoming
 the `number` it resolves to; `mapInferredType` asks the checker when there is no annotation.
 
-- `Integer`, `Numeric`, `Float` are aliases of `number` declared in
-  [`pgtypes.ts`](../src/pgtypes.ts). They are recognised by name, but only after `isFromPackage`
-  ([`origin.ts`](../src/origin.ts)) confirms the declaration comes from this package — never by
-  path suffix, which a user's own `src/pgtypes.ts` would match.
+- `Integer` and `Float` are aliases of `number` declared in
+  [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
+  are recognised by name, but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
+  the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
+  would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
+  [design.md, Numbers](design.md#numbers)).
 - Named object types become composites (`mapCompositeType`, `mapField`): keyed by name, nested as
   PostgreSQL nests them, anonymous or nullable nested shapes refused, recursion caught through
   `TypeCtx.mapping`.
@@ -209,8 +211,11 @@ compile on every change under the project. `parity` imports `runParity.ts` lazil
 [`style.ts`](../src/style.ts) colours output only on a terminal, honouring `NO_COLOR` and
 `FORCE_COLOR`; the CLI writes to `process.stdout`/`stderr` directly so that rule holds under Bun.
 
-[`index.ts`](../src/index.ts) is the library entry point: `compileProject`, `formatResult`, the
-error classes and the IR types.
+[`index.ts`](../src/index.ts) is the package's only public entry point, and it is the *authoring*
+vocabulary — `Integer`, `Float`, `int` — not the compiler. The compiler is reached through the `tsql`
+command alone. That is deliberate: a compiled project type checks this module under `types: []` with
+no DOM, so anything reachable from it that touched `process` or `node:path` would be a type error in
+every consumer's build. Keeping the root free of the compiler makes that structural.
 
 ## How it runs
 
@@ -218,7 +223,7 @@ error classes and the IR types.
   The sources must stay *erasable* (`erasableSyntaxOnly`): no enums, namespaces or parameter
   properties.
 - **Published**, the code is JavaScript: [`scripts/build.ts`](../scripts/build.ts) builds
-  `dist/cli.mjs`, `dist/index.mjs` and `dist/pgtypes.mjs`, with no dependency bundled, because Node
+  `dist/cli.mjs` and `dist/index.mjs`, with no dependency bundled, because Node
   refuses to strip types under `node_modules`. The types still come from `src/` through `exports`.
   [`bin/tsql.mjs`](../bin/tsql.mjs) imports `dist/cli.mjs`.
 

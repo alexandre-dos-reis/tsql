@@ -110,9 +110,10 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
           : quoteLiteral(expr.value);
       }
       // An unadorned `1.5` is `numeric` in PostgreSQL — exact decimal, not the
-      // IEEE double TypeScript computed with — so fractional literals are cast.
-      // Whole numbers are already `integer` and widen implicitly.
-      return !Number.isInteger(expr.value) && expr.type.sql === "double precision"
+      // IEEE double TypeScript computed with — so fractional literals are cast,
+      // and so are whole ones too wide for `integer`, which would otherwise be
+      // `bigint`. Whole numbers within 32 bits are `integer` and widen implicitly.
+      return expr.type.sql === "double precision" && !isInt4(expr.value)
         ? `${numberLiteral(expr.value)}::double precision`
         : numberLiteral(expr.value);
 
@@ -194,6 +195,11 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
 function arrayTypeName(type: ArrayType, q: Qualifier): string {
   return `${isScalar(type.element) ? q.scalar(type.element) : q.type(type.element)}[]`;
+}
+
+/** Is this a whole number PostgreSQL would read as `integer` rather than `bigint`? */
+function isInt4(value: number): boolean {
+  return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
 }
 
 function numberLiteral(value: number): string {
@@ -285,7 +291,9 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         break;
 
       case "foreach":
-        lines.push(`${indent}FOREACH ${quoteIdentifier(statement.variable)} IN ARRAY ${emitExpr(statement.array, q)} LOOP`);
+        lines.push(
+          `${indent}FOREACH ${quoteIdentifier(statement.variable)} IN ARRAY ${emitExpr(statement.array, q)} LOOP`,
+        );
         lines.push(...emitBranch(statement.body, q, `${indent}  `));
         lines.push(`${indent}END LOOP;`);
         break;

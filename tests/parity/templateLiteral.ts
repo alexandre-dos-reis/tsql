@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * Template literals are `||` concatenation. Text goes in as is; `Integer` and `boolean` are written
@@ -24,7 +24,7 @@ export function helloOrNobody(name: string): string {
 }
 
 export function sumLabel(a: Integer, b: Integer): string {
-  return `${a + b}/${a * 2}`;
+  return `${int(a + b)}/${int(a * 2)}`;
 }
 
 export function ownerLabel(owner: string | null): string {

@@ -11,7 +11,7 @@
  *
  * Expected: would need a cast that rounds it
  */
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 export function hasSeats(seats: readonly Integer[], wanted: number): boolean {
   return seats.includes(wanted); // ← rejected here
