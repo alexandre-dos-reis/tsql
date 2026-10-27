@@ -12,6 +12,7 @@ import {
   type PgType,
   type StmtIR,
 } from "./ir.ts";
+import { isInt4 } from "./constants.ts";
 import { quoteIdentifier, quoteLiteral } from "./names.ts";
 
 export interface EmitOptions {
@@ -195,11 +196,6 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
 function arrayTypeName(type: ArrayType, q: Qualifier): string {
   return `${isScalar(type.element) ? q.scalar(type.element) : q.type(type.element)}[]`;
-}
-
-/** Is this a whole number PostgreSQL would read as `integer` rather than `bigint`? */
-function isInt4(value: number): boolean {
-  return Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
 }
 
 function numberLiteral(value: number): string {

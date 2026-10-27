@@ -134,7 +134,9 @@ behaviour it can preserve.
 
 Both are plain aliases of `number`, so they cost nothing at a call site. They are resolved **by name**
 at build time, which is why the compiler checks [which package declared the
-name](#keeping-integer-honest-once-installed).
+name](#keeping-integer-honest-once-installed). `INT4_MIN` and `INT4_MAX` are exported alongside them —
+the compiler reads its own range checks from there, so there is one declaration of the bounds, and a
+caller validating input before it reaches a compiled function can use the same two numbers.
 
 ### Why `Float` and not `DoublePrecision`
 

@@ -90,7 +90,9 @@ src/lower.ts            AST -> IR; every restriction is enforced here
 src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
-src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int)
+src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int,
+                        and the int4 bounds). Imports nothing — see CLAUDE.md
+src/constants.ts        values more than one stage needs; borrows the bounds from index.ts
 bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```

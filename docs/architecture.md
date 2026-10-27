@@ -217,6 +217,12 @@ command alone. That is deliberate: a compiled project type checks this module un
 no DOM, so anything reachable from it that touched `process` or `node:path` would be a type error in
 every consumer's build. Keeping the root free of the compiler makes that structural.
 
+**It imports nothing, and must not.** `FORCED_OPTIONS` does not set `allowImportingTsExtensions`, so
+the `./x.ts` import style the rest of `src/` uses is a *consumer-side* error (TS5097) the moment it is
+reachable from the root. That is why `index.ts` declares the `integer` bounds and
+[`constants.ts`](../src/constants.ts) borrows them, rather than the other way round: the dependency
+runs compiler → authoring only.
+
 ## How it runs
 
 - **In the repository**, everything runs the TypeScript in `src/` directly, under Bun or Node.

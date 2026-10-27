@@ -67,6 +67,7 @@ import {
   type SignatureIR,
   type StmtIR,
 } from "./ir.ts";
+import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -969,7 +970,7 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType, guarded 
       // PostgreSQL has no `integer` to hold it, so where one is wanted the
       // literal is refused outright rather than reported as a narrowing — it is
       // out of range, not merely fractional.
-      const whole = Number.isInteger(value) && value >= INT4_MIN && value <= INT4_MAX;
+      const whole = isInt4(value);
       if (!whole && Number.isInteger(value) && expected && isExactly(expected, "integer")) {
         throw CompileError.at(
           node,
@@ -1814,10 +1815,6 @@ function arithmetic(op: BinOp, left: ExprIR, right: ExprIR, node: Node, guarded 
   if (sql === "integer" && OVERFLOWS.has(op) && !guarded) throw unguarded(op, "This", node);
   return { kind: "binary", op, left, right, type: scalarType(sql, a.nullable || b.nullable) };
 }
-
-/** The bounds of PostgreSQL's `integer`, mirrored from the authoring module. */
-const INT4_MIN = -2147483648;
-const INT4_MAX = 2147483647;
 
 /**
  * The operators whose `integer` result can leave 32 bits. `%` cannot — its

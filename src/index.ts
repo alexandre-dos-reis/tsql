@@ -16,9 +16,18 @@
  * friction at call sites — the compiler resolves them by name at build time.
  */
 
-/** The bounds of PostgreSQL's `integer`. */
-const INT4_MIN = -2147483648;
-const INT4_MAX = 2147483647;
+/**
+ * The bounds of PostgreSQL's `integer`, and the single place they are written.
+ *
+ * The compiler borrows them from here (`src/constants.ts`) rather than keeping
+ * its own copy, so the guard below and the build-time range checks cannot
+ * drift. The dependency only ever points this way: **this module imports
+ * nothing**, because a compiled project type checks it under the compiler's
+ * forced options, which do not allow a `.ts` import extension — the rest of
+ * `src/` relies on exactly that and never reaches a consumer's type graph.
+ */
+export const INT4_MIN = -2147483648;
+export const INT4_MAX = 2147483647;
 
 /**
  * `integer` in PostgreSQL: a signed 32-bit integer.

@@ -182,6 +182,12 @@ bun run release     # changeset publish
   `Buffer` would be a type error in every consumer's build; keeping the compiler out of the root
   makes that structural rather than a convention. Re-adding a `./compiler` subpath would be additive
   if embedding is ever wanted; there was no consumer for it.
+- **`src/index.ts` must import nothing.** `FORCED_OPTIONS` does not set
+  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses becomes
+  TS5097 in the *consumer's* build as soon as it is reachable from the root — which is where a
+  compiled project starts type checking. This is why `index.ts` owns `INT4_MIN`/`INT4_MAX` and
+  `src/constants.ts` imports them from it, never the reverse. Breaking it fails every compiled
+  case at once, with an error that names `src/index.ts` and looks like the consumer's fault.
 - **Code from `dist/`, types from `src/`.** Node strips TypeScript types, but refuses to under
   `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every installed copy
   lives — so the published code is JavaScript. `scripts/build.ts` runs `Bun.build` on `cli.ts`,
