@@ -68,7 +68,7 @@ import {
   type StmtIR,
 } from "./ir.ts";
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
-import { mathFunction, unsupportedMathMessage } from "./math.ts";
+import { mathConstant, mathFunction, unsupportedMathMessage } from "./math.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -94,6 +94,8 @@ interface State extends TypeCtx {
   readonly used: Set<string>;
   readonly returns: PgType;
   readonly targets: Target[];
+  /** Names for the values a rewrite binds once (`bind`), numbered per function. */
+  readonly temps: { count: number };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -184,6 +186,7 @@ export async function lowerFunction(
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
     targets: [],
+    temps: { count: 0 },
   };
 
   const { fn } = exported;
@@ -1204,6 +1207,101 @@ function negate(expr: ExprIR): ExprIR {
   return { kind: "neg", operand: expr, type: expr.type as ScalarType };
 }
 
+/** Can this be written again without running anything twice? */
+function isAtom(expr: ExprIR): boolean {
+  switch (expr.kind) {
+    case "ref":
+    case "lit":
+      return true;
+    case "field":
+    case "cast":
+      return isAtom(expr.operand);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Runs `body` on `value`, evaluated once: written again where it is an atom, bound
+ * to a name otherwise (`bind`), so a rewrite that reads its argument several times
+ * does not repeat a costly expression.
+ */
+function once(value: ExprIR, s: State, body: (atom: ExprIR) => ExprIR): ExprIR {
+  if (isAtom(value)) return body(value);
+  const name = `_tsql_${++s.temps.count}`;
+  const inner = body({ kind: "ref", sqlName: name, type: value.type });
+  return { kind: "bind", name, value, body: inner, type: inner.type };
+}
+
+const DOUBLE = scalarType("double precision");
+const BOOLEAN = scalarType("boolean");
+const num = (value: number): ExprIR => ({ kind: "lit", value, type: DOUBLE });
+const test = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: BOOLEAN });
+const arith = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: DOUBLE });
+const fn = (sql: string, ...args: ExprIR[]): ExprIR => ({ kind: "builtin", sql, args, type: DOUBLE });
+const pick = (cond: ExprIR, whenTrue: ExprIR, whenFalse: ExprIR): ExprIR => ({
+  kind: "case",
+  cond,
+  whenTrue,
+  whenFalse,
+  type: DOUBLE,
+});
+
+/** The edges of `real`: its largest value, and the point from which rounding goes to infinity. */
+const REAL_MAX = (2 - 2 ** -23) * 2 ** 127;
+const REAL_OVERFLOW = REAL_MAX + 2 ** 103;
+/** Half the smallest `real`: at or below it, rounding goes to zero. */
+const REAL_UNDERFLOW = 2 ** -150;
+
+/** `Math.round(x)`: ties go up, and a result of -0 is kept for -0.5 ≤ x < 0. */
+function roundRule(x: ExprIR): ExprIR {
+  const floor = fn("floor", x);
+  const up = arith("+", floor, num(1));
+  const isTie = test(">=", arith("-", x, floor), num(0.5));
+  const negativeZero = test("and", test("=", up, num(0)), test("<", x, num(0)));
+  return pick(isTie, pick(negativeZero, num(-0), up), floor);
+}
+
+/** `Math.fround(x)`: the nearest `real`, with `Infinity` and `0` where PostgreSQL's cast raises. */
+function froundRule(x: ExprIR): ExprIR {
+  const magnitude = fn("abs", x);
+  const asIs = test(
+    "or",
+    test("or", test("=", x, num(NaN)), test("=", x, num(0))),
+    test("=", magnitude, num(Infinity)),
+  );
+  const cast: ExprIR = { kind: "template", sql: "{0}::real::double precision", args: [x], atomic: true, type: DOUBLE };
+  return pick(
+    asIs,
+    x,
+    pick(
+      test(">=", magnitude, num(REAL_OVERFLOW)),
+      arith("*", fn("sign", x), num(Infinity)),
+      pick(test("<=", magnitude, num(REAL_UNDERFLOW)), arith("*", fn("sign", x), num(0)), cast),
+    ),
+  );
+}
+
+/** Is this zero the negative one? `atan2(-0, -1)` is -π, `atan2(0, -1)` is π. */
+const isNegativeZero = (x: ExprIR): ExprIR => test("<", fn("atan2", x, num(-1)), num(0));
+
+/** `Math.max(a, b)` / `Math.min(a, b)` on doubles, `NaN` and the order of the two zeros included. */
+function extremumRule(rule: "min" | "max", a: ExprIR, b: ExprIR): ExprIR {
+  const bothZero = test("and", test("=", a, num(0)), test("=", b, num(0)));
+  if (rule === "max") {
+    return pick(
+      bothZero,
+      pick(test("and", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)),
+      fn("greatest", a, b),
+    );
+  }
+  return pick(bothZero, pick(test("or", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)), {
+    kind: "neg",
+    operand: fn("greatest", negate(a), negate(b)),
+    type: DOUBLE,
+  });
+}
+
 /**
  * Is this the standard library's `Math`? Asked by provenance, like every other
  * global: a parameter, a local or a module-level value that happens to be
@@ -1256,12 +1354,13 @@ async function lowerMathCall(
       );
     }
   }
-  if (entry.shape === "widest" ? node.arguments.length === 0 : node.arguments.length !== 1) {
+  const arity = entry.arity ?? 1;
+  if (entry.shape === "widest" ? node.arguments.length === 0 : node.arguments.length !== arity) {
     throw CompileError.at(
       node,
       entry.shape === "widest"
         ? `\`${label}()\` with no argument is ${member === "max" ? "-Infinity" : "Infinity"}, which has no SQL equivalent. Pass at least one number.`
-        : `\`${label}\` takes exactly one argument, got ${node.arguments.length}.`,
+        : `\`${label}\` takes exactly ${arity === 1 ? "one argument" : `${arity} arguments`}, got ${node.arguments.length}.`,
     );
   }
 
@@ -1272,6 +1371,12 @@ async function lowerMathCall(
       throw CompileError.at(
         argument as Node,
         `\`${label}\` needs numbers that cannot be null, not \`${describe(lowered.type)}${lowered.type.nullable ? " | null" : ""}\`.`,
+      );
+    }
+    if (entry.shape === "int32" && !isExactly(lowered.type, "integer")) {
+      throw CompileError.at(
+        argument as Node,
+        `\`${label}\` takes \`Integer\` arguments: it works on a 32-bit pattern, and a \`Float\` would first be truncated and wrapped modulo 2^32 (\`NaN\` and the infinities to 0), which tsql does not reproduce.`,
       );
     }
     args.push(lowered);
@@ -1287,30 +1392,30 @@ async function lowerMathCall(
             `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise, or pass a \`Float\`.`,
         );
       }
-      return { kind: "builtin", sql: entry.sql, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
+      return { kind: "builtin", sql: entry.sql!, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
     }
     case "float": {
-      const type = scalarType("double precision");
       const operand = args[0]!;
-      const call: ExprIR = { kind: "builtin", sql: entry.sql, args: [coerce(operand, type)], type };
-      // `sign('NaN')` is 0 where `Math.sign(NaN)` is `NaN`: hand a `NaN` back as it is.
-      // Only a double can hold one, so an `Integer` argument keeps the plain call.
-      const bool = scalarType("boolean");
-      const zero: ExprIR = { kind: "lit", value: 0, type };
-      if (entry.nan === "passThrough" && isExactly(operand.type, "double precision")) {
-        const nan: ExprIR = { kind: "lit", value: Number.NaN, type };
-        const isNan: ExprIR = { kind: "binary", op: "=", left: operand, right: nan, type: bool };
-        const isZero: ExprIR = { kind: "binary", op: "=", left: operand, right: zero, type: bool };
-        const cond: ExprIR = { kind: "binary", op: "or", left: isZero, right: isNan, type: bool };
-        return { kind: "case", cond, whenTrue: operand, whenFalse: call, type };
+      // An `Integer` has no NaN, no infinity and no negative zero, but it is widened
+      // first, so the rules below read a double either way.
+      const x = coerce(operand, DOUBLE);
+      switch (entry.rule) {
+        case "round":
+          return once(x, s, roundRule);
+        case "fround":
+          return once(x, s, froundRule);
+        case "sqrt":
+          // PostgreSQL raises on a negative argument where `Math.sqrt` is `NaN`.
+          return once(x, s, (a) => pick(test("<", a, num(0)), num(NaN), fn("sqrt", a)));
+        case "sign":
+          // `sign('NaN')` and `sign(-0)` are 0: hand a `NaN` or a zero back as it is.
+          // An `Integer` has neither.
+          return isExactly(operand.type, "integer")
+            ? fn("sign", x)
+            : once(x, s, (a) => pick(test("or", test("=", a, num(0)), test("=", a, num(NaN))), a, fn("sign", a)));
+        default:
+          return fn(entry.sql!, x);
       }
-      // `sqrt` of a negative raises in PostgreSQL where `Math.sqrt` is `NaN`.
-      if (entry.nan === "negativeIsNaN") {
-        const negative: ExprIR = { kind: "binary", op: "<", left: coerce(operand, type), right: zero, type: bool };
-        const nan: ExprIR = { kind: "lit", value: Number.NaN, type };
-        return { kind: "case", cond: negative, whenTrue: nan, whenFalse: call, type };
-      }
-      return call;
     }
     case "widest": {
       let type: PgType = args[0]!.type;
@@ -1319,13 +1424,37 @@ async function lowerMathCall(
       }
       const widest = scalarType((type as ScalarType).sql);
       const widened = args.map((a) => coerce(a, widest));
-      // `LEAST` skips a `NaN` where `Math.min` returns it. `GREATEST` returns it
-      // (PostgreSQL orders `NaN` above every number), and negation is exact, so
-      // `min(a, b)` is `-greatest(-a, -b)`. All-`integer` calls cannot hold a `NaN`.
-      if (entry.nan === "negated" && isExactly(widest, "double precision")) {
-        return negate({ kind: "builtin", sql: "greatest", args: widened.map(negate), type: widest });
+      // Integers have neither a NaN nor a negative zero: the PostgreSQL function is exact.
+      if (!isExactly(widest, "double precision")) {
+        return { kind: "builtin", sql: entry.sql!, args: widened, type: widest };
       }
-      return { kind: "builtin", sql: entry.sql, args: widened, type: widest };
+      // Pairwise, left to right, as `Math.max(a, b, c)` is `max(max(a, b), c)`.
+      const rule = entry.rule as "min" | "max";
+      let result = widened[0]!;
+      for (const next of widened.slice(1)) {
+        const left = result;
+        result = once(left, s, (a) => once(next, s, (b) => extremumRule(rule, a, b)));
+      }
+      return result;
+    }
+    case "int32": {
+      const integer = scalarType("integer");
+      if (entry.rule === "clz32") {
+        return {
+          kind: "template",
+          sql: "COALESCE(NULLIF(position('1' IN {0}::bit(32)), 0) - 1, 32)",
+          args,
+          atomic: true,
+          type: integer,
+        };
+      }
+      return {
+        kind: "template",
+        sql: "((({0}::bigint * {1}::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer",
+        args,
+        atomic: true,
+        type: integer,
+      };
     }
   }
 }
@@ -1525,6 +1654,12 @@ async function resolveAccess(node: Expression, s: State): Promise<ResolvedAccess
  */
 async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   const operand = (node as PropertyAccessExpression).expression;
+  // `Math.PI` and the other constants: the double itself, as a literal.
+  if (node.kind === SyntaxKind.PropertyAccessExpression && (await isMathGlobal(operand, s))) {
+    const name = (node as PropertyAccessExpression).name;
+    const value = name.kind === SyntaxKind.Identifier ? mathConstant((name as Identifier).text) : undefined;
+    if (value !== undefined) return { kind: "lit", value, type: DOUBLE };
+  }
   const array = await arrayOperand(operand, s);
   if (array) {
     if (node.kind === SyntaxKind.ElementAccessExpression) {

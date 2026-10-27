@@ -71,6 +71,9 @@ function precedenceOf(expr: ExprIR): number {
       return PREC.is;
     case "neg":
       return PREC.unary;
+    // The text of a template is any expression: parenthesised unless it is a call.
+    case "template":
+      return expr.atomic ? PREC.atom : PREC.or;
     case "arrayLiteral":
       return expr.parts.length > 1 ? PREC.concat : PREC.atom;
     default:
@@ -106,6 +109,9 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       // An enum's literal names its type: an untyped literal resolves to text in
       // a CASE or a COALESCE, which an enum is not.
       if (typeof expr.value === "number" && Number.isNaN(expr.value)) return "'NaN'::double precision";
+      if (expr.value === Infinity) return "'Infinity'::double precision";
+      if (expr.value === -Infinity) return "'-Infinity'::double precision";
+      if (Object.is(expr.value, -0)) return "'-0'::double precision";
       if (typeof expr.value === "string") {
         return expr.type.named?.kind === "enum"
           ? `${quoteLiteral(expr.value)}::${q.scalar(expr.type)}`
@@ -158,6 +164,17 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
+
+    case "bind":
+      return `(SELECT ${emitExpr(expr.body, q)} FROM (SELECT ${emitExpr(expr.value, q)} AS ${quoteIdentifier(expr.name)}) AS t)`;
+
+    case "template":
+      // A negative literal is `-5`: `-5::bit(32)` would negate the cast, so it is wrapped.
+      return expr.sql.replace(/\{(\d+)\}/g, (_, i) => {
+        const arg = expr.args[Number(i)]!;
+        const text = emitExpr(arg, q, PREC.atom);
+        return text.startsWith("-") ? `(${text})` : text;
+      });
 
     case "builtin":
       return `${expr.sql}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;

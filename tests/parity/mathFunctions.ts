@@ -69,3 +69,36 @@ export function mathClamp(x: Float, lo: Float, hi: Float): Float {
 export function mathWidest(a: Integer, b: Float): Float {
   return Math.max(a, b, 0);
 }
+
+// Ties go up (PostgreSQL's own `round` sends them to the even neighbour).
+export function mathRound(x: Float): Float {
+  return Math.round(x);
+}
+
+// The argument is not a name: it is computed once, then read several times.
+export function mathRoundAbs(a: Float): Float {
+  return Math.round(Math.abs(a));
+}
+
+// A cast through `real`, with `Infinity` and `0` where PostgreSQL's cast raises.
+export function mathFround(x: Float): Float {
+  return Math.fround(x);
+}
+
+export function mathClz32(x: Integer): Integer {
+  return Math.clz32(x);
+}
+
+// The product wraps to 32 bits, with no error.
+export function mathImul(a: Integer, b: Integer): Integer {
+  return Math.imul(a, b);
+}
+
+// More than two doubles, one of them computed: folded pairwise, each bound once.
+export function mathMaxOfThree(a: Float, b: Float, c: Float): Float {
+  return Math.max(a, Math.abs(b), c);
+}
+
+export function mathMinOfThree(a: Float, b: Float, c: Float): Float {
+  return Math.min(a, Math.abs(b), c);
+}

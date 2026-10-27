@@ -344,6 +344,32 @@ export type ExprIR =
    */
   | { readonly kind: "builtin"; readonly sql: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
+  /**
+   * `(SELECT body FROM (SELECT value AS name) AS t)` — `value` evaluated once and
+   * named for `body`, which reads it with a `ref` of the same `name`. It exists so
+   * a rewrite that needs its argument several times (`Math.round`) does not run a
+   * costly or repeated expression several times.
+   */
+  | {
+      readonly kind: "bind";
+      readonly name: string;
+      readonly value: ExprIR;
+      readonly body: ExprIR;
+      readonly type: PgType;
+    }
+  /**
+   * SQL written out in lowering, with `{0}`, `{1}`… standing for `args`: for the
+   * few rewrites that need a type the IR does not have (`bigint`, `real`, `bit(32)`)
+   * only inside one expression, never as the type of a value. `atomic` says the text
+   * is a single term (a call, a parenthesised expression), so it needs no parentheses.
+   */
+  | {
+      readonly kind: "template";
+      readonly sql: string;
+      readonly args: readonly ExprIR[];
+      readonly atomic: boolean;
+      readonly type: ScalarType;
+    }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
   | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
   /**

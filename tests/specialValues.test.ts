@@ -11,23 +11,40 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * rewrite that exists only for those values (`sign(NaN)`, `sqrt(-1)`,
  * `min(NaN, 1)`) is checked here, one fixed grid, strictly with `Object.is`.
  * Like the rest of the suite it holds no cases: it runs `tests/parity/mathFunctions.ts`.
- *
- * Known residual, recorded in docs/design.md ("Math"): when both arguments of
- * `Math.min` / `Math.max` are zeros of opposite sign, PostgreSQL returns the
- * first one where JavaScript orders -0 below +0. Those functions compare ±0 as equal.
  */
 
-const FILE = resolve("tests/parity/mathFunctions.ts");
-const DOUBLES = [NaN, Infinity, -Infinity, 0, -0, 0.5, -0.5, 2.5, -2.5, 1e308, -5e-324];
-const INTEGERS = [0, 1, -1, 7, -7, 2147483647];
-const SIGNED_ZERO_TIES = new Set(["mathMax", "mathMinInt", "mathMinFloat", "mathMinMixed", "mathClamp", "mathWidest"]);
+const FILES = ["mathFunctions", "mathConstants"].map((name) => resolve(`tests/parity/${name}.ts`));
+const DOUBLES = [
+  NaN,
+  Infinity,
+  -Infinity,
+  0,
+  -0,
+  0.5,
+  -0.5,
+  1.5,
+  -1.5,
+  2.5,
+  -2.5,
+  0.49999999999999994,
+  2 ** 52 + 1,
+  1e308,
+  -5e-324,
+  // the edges of `real`, for fround
+  3.4028234663852886e38,
+  3.4028235677973366e38,
+  2 ** -149,
+  2 ** -150,
+  -(2 ** -150),
+  16777217,
+];
+const INTEGERS = [0, 1, -1, 7, -7, 255, 65536, 2147483647, -2147483648];
 
 const result = await compileProject({
   tsconfig: "tests/parity/tsconfig.json",
-  include: (file) => resolve(file) === FILE,
+  include: (file) => FILES.includes(resolve(file)),
   emit: { schema: "app" },
 });
-const module = (await import(FILE)) as Record<string, (...args: number[]) => number>;
 
 function literal(value: number, sql: string): string {
   if (sql === "integer") return `${value}`;
@@ -46,8 +63,8 @@ function grids(fn: ManifestFunction): number[][] {
   return rows;
 }
 
-function same(name: string, a: number, b: number): boolean {
-  return Object.is(a, b) || (SIGNED_ZERO_TIES.has(name) && a === b);
+function same(a: number, b: number): boolean {
+  return Object.is(a, b);
 }
 
 let db: Database;
@@ -63,7 +80,7 @@ test("compiles", () => {
 test("every Math function agrees with JavaScript on NaN, infinities and signed zeros", async () => {
   const failures: string[] = [];
   for (const fn of result.manifest.functions) {
-    const impl = module[fn.tsName]!;
+    const impl = ((await import(resolve(fn.module))) as Record<string, (...args: number[]) => number>)[fn.tsName]!;
     for (const args of grids(fn)) {
       let expected: number | "raise";
       try {
@@ -79,7 +96,7 @@ test("every Math function agrees with JavaScript on NaN, infinities and signed z
       } catch {
         actual = "raise";
       }
-      const ok = expected === "raise" || actual === "raise" ? expected === actual : same(fn.tsName, expected, actual);
+      const ok = expected === "raise" || actual === "raise" ? expected === actual : same(expected, actual);
       if (!ok)
         failures.push(
           `${fn.tsName}(${args.map((v) => (Object.is(v, -0) ? "-0" : v)).join(", ")}): TypeScript ${String(expected)}, SQL ${String(actual)}`,
