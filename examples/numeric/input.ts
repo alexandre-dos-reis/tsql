@@ -58,7 +58,17 @@ export function withVat(amount: Float): Float {
  * Written the long way (`for (let i = 1; i <= n; i = int(i + 1))`) this also
  * compiles, and `tsql check` says so, suggesting exactly this rewrite.
  */
-export function rangeSum(n: Integer): Integer {
+export function SumAdvice(n: Integer): Integer {
+  let total = 0;
+
+  for (let i = 0; i < n; i = int(i + 1)) {
+    total = int(total + i);
+  }
+
+  return total;
+}
+
+export function sumRange(n: Integer): Integer {
   let total = 0;
   for (const i of range(1, n % 1000)) {
     total = int(total + i);
