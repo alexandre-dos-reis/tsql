@@ -58,6 +58,47 @@ BEGIN
 END;
 $$;
 
+-- input.ts: SumAdvice()
+CREATE OR REPLACE FUNCTION app.sum_advice(
+  n integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  total integer;
+  i integer;
+BEGIN
+  total := 0;
+  i := 0;
+  WHILE i < n LOOP
+    total := total + i;
+    i := i + 1;
+  END LOOP;
+  RETURN total;
+END;
+$$;
+
+-- input.ts: sumRange()
+CREATE OR REPLACE FUNCTION app.sum_range(
+  n integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  total integer;
+BEGIN
+  total := 0;
+  FOR i IN 1..n % 1000 LOOP
+    total := total + i;
+  END LOOP;
+  RETURN total;
+END;
+$$;
+
 -- input.ts: withVat()
 CREATE OR REPLACE FUNCTION app.with_vat(
   amount double precision

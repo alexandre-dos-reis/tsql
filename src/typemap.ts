@@ -31,7 +31,7 @@ import {
   type Type,
   type UnionType,
 } from "typescript/unstable/async";
-import { CompileError } from "./errors.ts";
+import { CompileError, type CompileWarning } from "./errors.ts";
 import {
   arrayType,
   compositeType,
@@ -67,6 +67,11 @@ export interface TypeCtx {
   readonly mapping: Set<string>;
   /** Domains and enums discovered while mapping, keyed by SQL name, like `composites`. */
   readonly named: Map<string, NamedText>;
+  /**
+   * Accepted constructs the compiler can translate better, collected for the
+   * whole build. Never fatal, and only ever added with a rewrite to name.
+   */
+  readonly warnings: CompileWarning[];
   /**
    * The resolved paths of the files this build compiles.
    *
@@ -107,6 +112,9 @@ function isAuthoringModule(path: string): boolean {
 /** The name of the guard that makes `integer` arithmetic translatable. */
 export const INT_GUARD = "int";
 
+/** The name of the counted-loop helper that lowers to `FOR i IN a..b`. */
+export const RANGE_HELPER = "range";
+
 /**
  * Does this identifier refer to tsql's own `int` guard?
  *
@@ -116,10 +124,19 @@ export const INT_GUARD = "int";
  * against the name of the symbol it resolves to.
  */
 export async function isIntGuard(node: Node, ctx: TypeCtx): Promise<boolean> {
+  return isAuthoredHere(node, INT_GUARD, ctx);
+}
+
+/** Does this identifier refer to tsql's own `range` helper? Same question, same answer. */
+export async function isRangeHelper(node: Node, ctx: TypeCtx): Promise<boolean> {
+  return isAuthoredHere(node, RANGE_HELPER, ctx);
+}
+
+async function isAuthoredHere(node: Node, name: string, ctx: TypeCtx): Promise<boolean> {
   const local = await ctx.checker.getSymbolAtLocation(node);
   if (!local) return false;
   const declared = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
-  if (declared.name !== INT_GUARD) return false;
+  if (declared.name !== name) return false;
   return declared.declarations.some((d) => isAuthoringModule(d.path.replaceAll("\\", "/")));
 }
 

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * The CLI's own contract, which the library tests cannot see: which
@@ -281,6 +284,40 @@ describe("a refusal reads like a compiler diagnostic", () => {
     // `a === b` is seven characters, and all seven are underlined.
     expect(stderr).toMatch(/\|   return a === b;.*\n\s+\|\s{10}\^{7}\n/);
     expect(stderr).toContain("1 error(s). No SQL was written.");
+  });
+});
+
+describe("advice is reported without failing the build", () => {
+  /**
+   * The point of the channel: a counted loop guarding its own step is correct,
+   * so this must not look like an error. On stdout, so a CI step that treats
+   * any stderr as failure is not tripped by a suggestion; exit 0; and the ✓
+   * still printed.
+   */
+  test("check reports it on stdout, succeeds, and still lists the functions", async () => {
+    const { stdout, stderr, exitCode } = await run(["check", "tests/parity/loops.ts", ...PROJECT]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("warning: this counted loop can be `for (const i of range(0, int(limit - 1)))`");
+    expect(stdout).toContain("becomes PostgreSQL's own `FOR i IN 0..limit - 1`");
+    expect(stdout).toContain("✓ ok —");
+    expect(stdout).toContain("sum_of_odds");
+  });
+
+  test("compile reports it too, and still writes the migration", async () => {
+    const out = join(mkdtempSync(join(tmpdir(), "tsql-advice-")), "out.sql");
+    const { stdout, stderr, exitCode } = await run(["compile", "tests/parity/loops.ts", "--out", out, ...PROJECT]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    expect(stdout).toContain("warning: this counted loop can be");
+    expect(stdout).toContain(`✓ wrote ${out}`);
+    expect(readFileSync(out, "utf8")).toContain("WHILE");
+  });
+
+  test("a case with nothing to advise says nothing", async () => {
+    const { stdout, exitCode } = await run(["check", "tests/parity/rangeLoop.ts", ...PROJECT]);
+    expect(exitCode).toBe(0);
+    expect(stdout).not.toContain("warning:");
   });
 });
 

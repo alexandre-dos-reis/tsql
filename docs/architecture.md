@@ -123,7 +123,8 @@ wrote** (`mapTypeNode`) when there is one, so `count: Integer` stays `integer` i
 the `number` it resolves to; `mapInferredType` asks the checker when there is no annotation.
 
 - `Integer` and `Float` are aliases of `number` declared in
-  [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
+  [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard and the
+  `range` counted-loop helper (`isIntGuard`, `isRangeHelper`, both over one `isAuthoredHere`). All
   are recognised by name, but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
   the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
   would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
@@ -166,6 +167,11 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   by where the declaration lives, never by a list of names. A project symbol is split again by
   whether its type is callable, so a non-compiled function and a module-level value get different
   advice. `referenceMessage` words the refusal.
+
+[`CompileWarning`](../src/errors.ts) is the same carrier for an accepted construct with a better
+translation — collected on `TypeCtx.warnings`, surfaced as `CompileResult.warnings`, never fatal, and
+only ever raised with a rewrite to name. Both share one `formatDiagnostic`, so advice and a refusal are
+read the same way; only the underline colour differs.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler
@@ -213,7 +219,8 @@ compile on every change under the project. `parity` imports `runParity.ts` lazil
 
 [`index.ts`](../src/index.ts) is the package's only public entry point, and it is the *authoring*
 vocabulary — `Integer`, `Float`, `int` — not the compiler. The compiler is reached through the `tsql`
-command alone. That is deliberate: a compiled project type checks this module under `types: []` with
+command alone — `Integer`, `Float`, the `int` guard, the `range` loop helper and the int4 bounds.
+That is deliberate: a compiled project type checks this module under `types: []` with
 no DOM, so anything reachable from it that touched `process` or `node:path` would be a type error in
 every consumer's build. Keeping the root free of the compiler makes that structural.
 

@@ -69,6 +69,18 @@ describe("each case compiles to its .sql", () => {
       });
       expect(formatResult(result)).toBe("");
 
+      // Advice must be declared, one `Warns:` line per warning. The count is
+      // asserted as well as the fragments: checking only the fragments would
+      // let an extra, undeclared warning ride along in any case that already
+      // declared one — and undeclared advice is a build telling the author
+      // something nobody asked it to say.
+      const declared = [...readFileSync(path, "utf8").matchAll(/^ \* Warns: (.+)$/gm)].map((m) => m[1]!);
+      const warned = result.warnings.map((w) => w.message);
+      expect(warned.length, `declared ${declared.length} Warns:, got ${warned.length}:\n${warned.join("\n")}`).toBe(
+        declared.length,
+      );
+      for (const fragment of declared) expect(warned.join("\n")).toContain(fragment);
+
       // Each block as consecutive lines, the blocks in order.
       const emitted = lines(result.sql);
       let from = 0;

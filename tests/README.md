@@ -19,8 +19,8 @@ test file.
 
 | Folder | The case | What must happen |
 | --- | --- | --- |
-| `parity/` | `name.ts`, the functions, and `name.sql`, the SQL it must compile to | it compiles to that SQL, and every function agrees with its TypeScript on 200 random inputs |
-| `rejected/` | `name.ts`, a function outside the subset; its header says why, and the expected message on `Expected:` lines | the build refuses it with that message (and at the line marked `// ← rejected here`, if any) |
+| `parity/` | `name.ts`, the functions, and `name.sql`, the SQL it must compile to; any advice the compiler must offer on `Warns:` lines | it compiles to that SQL, emits exactly the declared advice and no more, and every function agrees with its TypeScript on 200 random inputs |
+| `rejected/` | `name.ts`, a function outside the subset; its header says why, and the expected message on `Expected:` lines — `Not expected:` for a fragment that must be *absent* | the build refuses it with that message (and at the line marked `// ← rejected here`, if any) |
 | `divergent/` | `name.ts` and `name.sql`, a hand-written TypeScript / SQL pair that disagrees | the parity harness reports the divergence |
 
 - **`parity/`** tests the compiler: accepted, translated as expected, and the SQL behaves like the

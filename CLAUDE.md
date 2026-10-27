@@ -137,6 +137,15 @@ Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, 
 per function so one bad function does not hide the rest. They carry file, line, column and the offending
 source line.
 
+`CompileWarning` is the same carrier for what the compiler **accepts but can translate better** —
+`CompileResult.warnings`, printed by `formatWarnings`, collected on `TypeCtx.warnings` during lowering,
+and never fatal: `ok` ignores it, `check` and `compile` print it on stdout and exit 0. Not an `Error`,
+because it is never thrown. **Only ever raised with a concrete rewrite to name.** Advice with no remedy
+describes a problem the author cannot act on, and advice naming the *wrong* rewrite is worse than none —
+which is why `tests/rejected/` can assert a message is absent (`Not expected:`) and every `tests/parity/`
+case must declare its advice (`Warns:`, count included), so stray advice fails the build. Today there is
+exactly one: a counted `for` already guarding its step, which could be a `range`.
+
 ## The central invariant
 
 **Lowering enforces every restriction; the emitter is a total function.** Any IR that exists is
@@ -308,7 +317,9 @@ raises on drift. The compiler creates types; it never rewrites them.
   outside the subset, so rejection tests exercise the translator rather than `tsc`. Each file opens with a
   comment saying why it is refused — with the SQL that would diverge, where that shows it best — and
   `Expected:` lines with the message the compiler must give; `// ← rejected here` marks the line it must
-  point at, where that matters.
+  point at, where that matters. `Not expected:` asserts a fragment is **absent** — presence alone cannot
+  catch a message that says too much, and where the compiler offers a rewrite, advice naming the wrong
+  one is worse than none and would satisfy every `Expected:` line in the file that provoked it.
 
 **Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
 `examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
@@ -336,7 +347,7 @@ test file. `tests/README.md` explains the three.
   field via `(result).field`, array and nested-object fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
   mutating function cannot pass. It also applies the migration twice and checks a drifted type is refused.
 - `tests/rejected.test.ts` compiles each case in `tests/rejected/` alone and checks the build fails with
-  every `Expected:` fragment, at the marked line if there is one.
+  every `Expected:` fragment and none of its `Not expected:` ones, at the marked line if there is one.
 - `tests/divergent.test.ts` is the negative control: each pair in `tests/divergent/` must be reported as
   a divergence, on both backends. Keep it working: a parity harness that cannot fail proves nothing.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
@@ -373,7 +384,11 @@ its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cann
   unary `-` yielding an `integer` must sit directly inside `int(...)`, one guard per operation, which
   lowering erases: it exists so TypeScript raises where PostgreSQL already raises past 32 bits, and
   the parity harness counts *both* sides raising as agreement (one side alone is still a divergence).
-  `%` and `/` are exempt. The guard does **not** cover the parameter boundary — PostgreSQL rejects an
+  `%` and `/` are exempt, and so is the step of `for (const i of range(a, b))` — the one counted loop
+  accepted unguarded, because it lowers to PostgreSQL's own `FOR i IN a..b`, whose counter stops at
+  the bound (`range` is inclusive, like `a..b`; `const` is required; it is legal only as a `for … of`
+  iterable; PL/pgSQL declares the variable, so it is not a `DECLARE` local).
+  The guard does **not** cover the parameter boundary — PostgreSQL rejects an
   out-of-`integer` argument as it binds it, where TypeScript carries on — which stays a documented
   divergence whose remedy is the caller's (`f(int(x))`). `docs/design.md` "Numbers" and its "Known
   divergence" carry the reasoning.

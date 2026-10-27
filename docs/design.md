@@ -244,10 +244,11 @@ directly inside `int(...)`, or the build fails. Three consequences follow:
   even when the sum would have fitted, so the two programs would differ in *where* they raise. Write
   `int(a + int(b * c))`.
 - **A compound assignment has nowhere to put it.** `total += 200` and `i++` are statements, so
-  `int(...)` cannot wrap them. They are refused in favour of `total = int(total + 200)` and
-  `i = int(i + 1)` — including a `for` step, since a `for` lowers to `WHILE` with the step as
+  `int(...)` cannot wrap them, and they are refused in favour of `total = int(total + 200)` and
+  `i = int(i + 1)`. A `for` step is included, since a `for` lowers to `WHILE` with the step as
   written and nothing proves `i < limit` bounds it (`i <= 2147483647` would overflow on the last
-  step).
+  step) — but for a counted loop the better answer is [`range`](#counted-loops), which the refusal
+  names, and which needs no guard at all.
 - **`%` and `/` are exempt.** A remainder is smaller than its divisor, so it cannot overflow;
   division already yields `double precision`. Neither needs a guard.
 
@@ -257,6 +258,67 @@ wanted, which is the point.
 
 `int` is recognised the same way `Integer` is — by asking which package declared it, never by name —
 so a consumer's own `int` is an ordinary uncompiled function, not something the compiler erases.
+
+### Counted loops
+
+A `for` lowers to `WHILE`, keeping its condition and its step exactly as written, so nothing in its
+shape proves the counter stays inside 32 bits — `i <= 2147483647` overflows on the last step. The step
+is also a statement, with nowhere to put a guard. Which would leave `i = int(i + 1)` as the only way
+to count, and that is a poor answer for the commonest loop there is.
+
+PostgreSQL already has the loop that is wanted, so the compiler accepts it as itself:
+
+```ts
+import { range, int, type Integer } from "@adr/tsql";
+
+export function rangeSum(n: Integer): Integer {
+  let total = 0;
+  for (const i of range(1, n)) {
+    total = int(total + i);
+  }
+  return total;
+}
+```
+
+```sql
+FOR i IN 1..n LOOP
+  total := total + i;
+END LOOP;
+```
+
+**`range(a, b)` includes both bounds**, because SQL's `a..b` does. It is the range PL/pgSQL means, not
+the half-open one other languages spell the same way, and the mapping is exact: both bounds are
+evaluated once, `b` below `a` iterates nothing in either language, and the counter **stops at `b`** —
+so it cannot leave 32 bits however large `b` is, which is what earns the step its exemption. That is a
+proof about a PostgreSQL construct, not an inference about the author's arithmetic.
+
+PL/pgSQL declares the loop variable itself, as an `integer` scoped to the loop, so it is deliberately
+not emitted into `DECLARE`. For the same reason the TypeScript one must be **`const`**: PL/pgSQL's
+belongs to its loop, and a reassignable one would promise something the SQL does not do. Requiring
+`const` also hands the check to `tsc`, as requiring `readonly` does for array parameters.
+
+Writing the loop the long way is still correct, and still compiles: `i = int(i + 1)` is exactly what
+the refusal of `i++` asks for. So the compiler does not refuse it a second time — it **advises**:
+
+```
+input.ts:53:26 - warning: this counted loop can be `for (const i of range(0, 9))`, which becomes
+PostgreSQL's own `FOR i IN 0..9` — its counter stops at the bound, so the step needs no `int(...)`
+guard. Compiles as written either way.
+```
+
+That is the only advice the compiler gives, and the bar it sets for any other: **a rewrite it can
+name**. Advice without a remedy describes a problem the author cannot act on, and advice naming the
+wrong remedy is worse than none — so every accepted case must declare the advice it provokes
+(`Warns:`, count included) and every refusal may declare what its message must *not* say
+(`Not expected:`). A build that volunteers opinions nobody asked it for is a build people learn to
+ignore.
+
+Two things it does not do. **The body is unaffected** — `total = int(total + i)` still needs its
+guard, because a sum can overflow even when the counter cannot. And `range` is **only** the iterable
+of a `for … of`; a sequence is not a value PostgreSQL can hold, so it cannot be stored, passed or
+returned. A strict condition has no inclusive upper bound of its own, so `i < limit` becomes
+`range(0, int(limit - 1))` — and the refusal of `i++` names exactly that rewrite, with the bounds the
+author wrote.
 
 ### Literals
 

@@ -33,25 +33,82 @@ export class CompileError extends Error {
   }
 
   static at(node: Node, message: string): CompileError {
-    const file = node.getSourceFile();
-    const start = node.getStart(file);
-    const { line, character } = file.getLineAndCharacterOfPosition(start);
-    const text = file.text.split("\n")[line];
-    // Underline the whole construct, up to the end of its first line.
-    const length = Math.min(node.end - start, (text ?? "").length - character);
-    return new CompileError(message, file.fileName, line + 1, character + 1, text, length);
+    const at = positionOf(node);
+    return new CompileError(message, at.fileName, at.line, at.column, at.sourceLine, at.length);
   }
 
   /** Like a tsc diagnostic: position, message, the source line with the construct underlined. */
   format(root = process.cwd(), paint: Paint = PLAIN): string {
-    const where = this.fileName.startsWith(root) ? this.fileName.slice(root.length + 1) : this.fileName;
-    const head = `${paint("cyan", where)}:${paint("yellow", String(this.line))}:${paint("yellow", String(this.column))} - ${this.message}`;
-    if (this.sourceLine === undefined) return head;
-    const gutter = paint("gray", `${String(this.line).padStart(5)} |`);
-    const blank = paint("gray", `${" ".repeat(5)} |`);
-    const underline = paint("red", "^".repeat(this.length));
-    return `${head}\n\n${gutter} ${this.sourceLine}\n${blank} ${" ".repeat(this.column - 1)}${underline}\n`;
+    return formatDiagnostic(this, root, paint, "red");
   }
+}
+
+/**
+ * A construct the compiler accepts but can translate better.
+ *
+ * Never fatal: `check` and `compile` report it and still succeed. The compiler
+ * only ever raises one when it has a concrete rewrite to name — advice without
+ * a remedy describes a problem the author cannot act on, and advice naming the
+ * wrong remedy is worse than none, which is why `tests/rejected/` can assert a
+ * message does *not* appear.
+ *
+ * Not an `Error`: it is never thrown, only collected.
+ */
+export class CompileWarning {
+  readonly message: string;
+  readonly fileName: string;
+  readonly line: number;
+  readonly column: number;
+  readonly sourceLine?: string;
+  readonly length: number;
+
+  constructor(message: string, fileName: string, line: number, column: number, sourceLine?: string, length = 1) {
+    this.message = message;
+    this.fileName = fileName;
+    this.line = line;
+    this.column = column;
+    this.sourceLine = sourceLine;
+    this.length = Math.max(1, length);
+  }
+
+  static at(node: Node, message: string): CompileWarning {
+    const at = positionOf(node);
+    return new CompileWarning(message, at.fileName, at.line, at.column, at.sourceLine, at.length);
+  }
+
+  format(root = process.cwd(), paint: Paint = PLAIN): string {
+    return formatDiagnostic(this, root, paint, "yellow");
+  }
+}
+
+interface Positioned {
+  readonly message: string;
+  readonly fileName: string;
+  readonly line: number;
+  readonly column: number;
+  readonly sourceLine?: string;
+  readonly length: number;
+}
+
+function positionOf(node: Node): Omit<Positioned, "message"> {
+  const file = node.getSourceFile();
+  const start = node.getStart(file);
+  const { line, character } = file.getLineAndCharacterOfPosition(start);
+  const text = file.text.split("\n")[line];
+  // Underline the whole construct, up to the end of its first line.
+  const length = Math.min(node.end - start, (text ?? "").length - character);
+  return { fileName: file.fileName, line: line + 1, column: character + 1, sourceLine: text, length };
+}
+
+/** One shape for both, so a refusal and a piece of advice are read the same way. */
+function formatDiagnostic(d: Positioned, root: string, paint: Paint, underlineColour: "red" | "yellow"): string {
+  const where = d.fileName.startsWith(root) ? d.fileName.slice(root.length + 1) : d.fileName;
+  const head = `${paint("cyan", where)}:${paint("yellow", String(d.line))}:${paint("yellow", String(d.column))} - ${d.message}`;
+  if (d.sourceLine === undefined) return head;
+  const gutter = paint("gray", `${String(d.line).padStart(5)} |`);
+  const blank = paint("gray", `${" ".repeat(5)} |`);
+  const underline = paint(underlineColour, "^".repeat(d.length));
+  return `${head}\n\n${gutter} ${d.sourceLine}\n${blank} ${" ".repeat(d.column - 1)}${underline}\n`;
 }
 
 /**

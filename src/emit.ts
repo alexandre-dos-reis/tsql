@@ -294,6 +294,14 @@ function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): 
         lines.push(`${indent}END LOOP;`);
         break;
 
+      case "forRange":
+        lines.push(
+          `${indent}FOR ${quoteIdentifier(statement.variable)} IN ${emitExpr(statement.from, q)}..${emitExpr(statement.to, q)} LOOP`,
+        );
+        lines.push(...emitBranch(statement.body, q, `${indent}  `));
+        lines.push(`${indent}END LOOP;`);
+        break;
+
       case "exit":
         lines.push(`${indent}EXIT;`);
         break;

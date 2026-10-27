@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { compileProject, formatResult, type CompileResult } from "./compile.ts";
+import { compileProject, formatResult, formatWarnings, type CompileResult } from "./compile.ts";
 import { ProjectNotFoundError } from "./errors.ts";
 import { err, out, painter } from "./style.ts";
 
@@ -123,6 +123,7 @@ projectCommand("compile", "type check, translate, and write the migration")
     const result = await compileFiles(command, files, options);
     await mkdir(dirname(options.out), { recursive: true });
     await writeFile(options.out, result.sql);
+    advise(result);
     say(`${out("green", "✓")} wrote ${out("bold", options.out)} — ${counts(result)}:`);
     say(listing(result));
     if (options.manifest) {
@@ -141,6 +142,7 @@ projectCommand("check", "type check and translate, writing nothing")
   .action(async (files: string[], options: CheckOptions, command: Command) => {
     if (options.watch) return watchCheck(command, files, options);
     const result = await compileFiles(command, files, options);
+    advise(result);
     say(`${out("green", "✓")} ok — ${counts(result)} compile, nothing written:`);
     say(listing(result));
   });
@@ -220,6 +222,16 @@ function counts(result: CompileResult): string {
 }
 
 /** What a build holds, one per line: functions, then the types they need, with their kind. */
+/**
+ * Advice, printed on success as well — it is never a failure, only a better
+ * way of writing something that already compiles. On stdout for that reason,
+ * so a CI step that treats stderr as failure is not tripped by it.
+ */
+function advise(result: CompileResult): void {
+  if (result.warnings.length === 0) return;
+  say(formatWarnings(result, process.cwd(), out));
+}
+
 function listing(result: CompileResult): string {
   const schema = result.manifest.schema;
   const qualify = (name: string) => out("cyan", schema ? `${schema}.${name}` : name);
@@ -345,6 +357,7 @@ async function watchCheck(command: Command, files: readonly string[], options: P
       say(`${stamp()} ${next ? `${out("bold", relative(process.cwd(), resolve(root, next)))} changed, checking again…` : "Checking…"}\n`);
       const attempt = await attemptCompile(command, files, options);
       if (attempt.ok) {
+        advise(attempt.result);
         say(`${out("green", "✓")} ok — ${counts(attempt.result)} compile, nothing written:`);
         say(listing(attempt.result));
       } else {

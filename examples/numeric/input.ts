@@ -1,4 +1,4 @@
-import { int, type Float, type Integer } from "@adr/tsql";
+import { int, range, type Float, type Integer } from "@adr/tsql";
 
 /**
  * The two numeric types, and the guard that makes integer arithmetic
@@ -46,4 +46,32 @@ export function asEuros(cents: Integer): Float {
 /** Doubles all the way down: same bits, same rounding, no guard. */
 export function withVat(amount: Float): Float {
   return amount * 1.2;
+}
+
+/**
+ * A counted loop is PostgreSQL's own: `FOR i IN 1..n LOOP`.
+ *
+ * `range` includes both bounds, as SQL's `a..b` does, and its counter stops at
+ * the upper one — so the *step* needs no guard however large `n` is. The sum
+ * still does: it can overflow when the counter cannot.
+ *
+ * Written the long way (`for (let i = 1; i <= n; i = int(i + 1))`) this also
+ * compiles, and `tsql check` says so, suggesting exactly this rewrite.
+ */
+export function SumAdvice(n: Integer): Integer {
+  let total = 0;
+
+  for (let i = 0; i < n; i = int(i + 1)) {
+    total = int(total + i);
+  }
+
+  return total;
+}
+
+export function sumRange(n: Integer): Integer {
+  let total = 0;
+  for (const i of range(1, n % 1000)) {
+    total = int(total + i);
+  }
+  return total;
 }

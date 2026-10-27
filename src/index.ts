@@ -78,3 +78,34 @@ export function int(value: number): Integer {
   }
   return value;
 }
+
+/**
+ * The integers from `a` to `b`, **both bounds included**, to iterate with
+ * `for (const i of range(a, b))`.
+ *
+ * This is SQL's range: the loop compiles to PostgreSQL's own counted loop,
+ *
+ * ```ts
+ * for (const i of range(1, n)) { … }   // FOR i IN 1..n LOOP … END LOOP;
+ * ```
+ *
+ * which is why it needs no {@link int} guard on its step. PL/pgSQL evaluates
+ * both bounds once and stops the counter at `b`, so the counter cannot leave
+ * 32 bits however large `b` is — where a hand-written `i++` could, and is
+ * refused for it. Arithmetic in the *body* is unaffected and still needs its
+ * guard: `sum = int(sum + i)` can overflow even when `i` cannot.
+ *
+ * `b` below `a` iterates nothing, in both languages.
+ *
+ * Only ever written as the iterable of a `for … of`; the compiler refuses it
+ * anywhere else, because a sequence is not a value PostgreSQL can hold.
+ *
+ * @throws RangeError if either bound is not a PostgreSQL `integer` — the
+ * assertion {@link int} makes, applied where the bounds enter the loop, so the
+ * TypeScript raises wherever PostgreSQL would have refused the bound.
+ */
+export function* range(a: Integer, b: Integer): Generator<Integer> {
+  const from = int(a);
+  const to = int(b);
+  for (let i = from; i <= to; i++) yield i;
+}

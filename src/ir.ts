@@ -272,6 +272,21 @@ export type StmtIR =
    * The variable is a local of the element type.
    */
   | { readonly kind: "foreach"; readonly variable: string; readonly array: ExprIR; readonly body: readonly StmtIR[] }
+  /**
+   * `FOR variable IN from..to LOOP … END LOOP;` — a `for (const i of range(a, b))`.
+   *
+   * PL/pgSQL declares the variable itself, as an `integer` scoped to the loop,
+   * so it is deliberately not a local in the `DECLARE` block. Both bounds are
+   * evaluated once and the counter stops at `to`, which is what makes the step
+   * safe without an `int(...)` guard.
+   */
+  | {
+      readonly kind: "forRange";
+      readonly variable: string;
+      readonly from: ExprIR;
+      readonly to: ExprIR;
+      readonly body: readonly StmtIR[];
+    }
   /** `EXIT;` — an unlabelled `break` out of the innermost loop. */
   | { readonly kind: "exit" }
   /** `CONTINUE;` — the next turn of the innermost loop. */
