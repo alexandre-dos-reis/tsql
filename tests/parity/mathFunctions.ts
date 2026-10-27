@@ -1,9 +1,10 @@
 import { int, type Float, type Integer } from "../../src/index";
 
 /**
- * The members of `Math` that are a PostgreSQL function under the same or another
- * name, with nothing rewritten: `abs`, `floor`, `ceil`, `trunc`, `sign`, `sqrt`,
- * `min` and `max`. The harness compares each against its TypeScript on 200
+ * The members of `Math` that map: `abs`, `floor`, `ceil`, `trunc`, `sign`, `sqrt`,
+ * `min` and `max` — a PostgreSQL function of the same value, except `min` of
+ * doubles, `sign` and `sqrt`, written another way to keep a NaN, a zero's sign
+ * or a negative root. The harness compares each against its TypeScript on 200
  * generated inputs, so a function PostgreSQL computed differently would fail here.
  */
 
@@ -37,9 +38,9 @@ export function mathSign(x: Float): Float {
   return Math.sign(x);
 }
 
-// `Math.sqrt` of a negative number is NaN, and PostgreSQL raises: guard the input.
+// A negative number gives NaN in both: PostgreSQL would raise, so it is answered NaN.
 export function mathSqrt(x: Float): Float {
-  return x >= 0 ? Math.sqrt(x) : 0;
+  return Math.sqrt(x);
 }
 
 export function mathMax(a: Float, b: Float): Float {
@@ -48,6 +49,16 @@ export function mathMax(a: Float, b: Float): Float {
 
 export function mathMinInt(a: Integer, b: Integer): Integer {
   return Math.min(a, b);
+}
+
+// Doubles: `-greatest(-a, -b)`, so a NaN is returned as `Math.min` does.
+export function mathMinFloat(a: Float, b: Float): Float {
+  return Math.min(a, b);
+}
+
+// A literal is negated at build time; an `Integer` is widened first.
+export function mathMinMixed(a: Integer, b: Float): Float {
+  return Math.min(a, b, 10);
 }
 
 export function mathClamp(x: Float, lo: Float, hi: Float): Float {

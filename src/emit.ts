@@ -105,6 +105,7 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       if (typeof expr.value === "boolean") return expr.value ? "true" : "false";
       // An enum's literal names its type: an untyped literal resolves to text in
       // a CASE or a COALESCE, which an enum is not.
+      if (typeof expr.value === "number" && Number.isNaN(expr.value)) return "'NaN'::double precision";
       if (typeof expr.value === "string") {
         return expr.type.named?.kind === "enum"
           ? `${quoteLiteral(expr.value)}::${q.scalar(expr.type)}`
@@ -129,8 +130,12 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "not":
       return `NOT ${emitExpr(expr.operand, q, PREC.not + 1)}`;
 
-    case "neg":
-      return `-${emitExpr(expr.operand, q, PREC.unary)}`;
+    case "neg": {
+      // `-` then `-` is a comment in SQL: `-(-x)` must not be written `--x`, nor
+      // the negation of a negative literal `--5`.
+      const operand = emitExpr(expr.operand, q, PREC.unary);
+      return operand.startsWith("-") ? `-(${operand})` : `-${operand}`;
+    }
 
     case "nullTest":
       return `${emitExpr(expr.operand, q, PREC.is + 1)} IS ${expr.negated ? "NOT NULL" : "NULL"}`;
@@ -203,7 +208,8 @@ function arrayTypeName(type: ArrayType, q: Qualifier): string {
 
 function numberLiteral(value: number): string {
   if (Number.isNaN(value) || !Number.isFinite(value)) {
-    // Unreachable: lowering rejects these, but be explicit rather than emit `NaN`.
+    // `NaN` is written by its own literal case (`emitExprInner`); an infinity is
+    // unreachable — lowering rejects it — but be explicit rather than emit it.
     throw new Error(`Cannot emit non-finite number: ${value}`);
   }
   return String(value);

@@ -49,7 +49,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN least(greatest(x, lo), hi);
+  RETURN -greatest(-greatest(x, lo), -hi);
 END;
 $$;
 
@@ -90,6 +90,19 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION app.math_min_float(
+  a double precision,
+  b double precision
+)
+RETURNS double precision
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN -greatest(-a, -b);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION app.math_min_int(
   a integer,
   b integer
@@ -103,6 +116,19 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION app.math_min_mixed(
+  a integer,
+  b double precision
+)
+RETURNS double precision
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN -greatest(-a::double precision, -b, -10);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION app.math_sign(
   x double precision
 )
@@ -111,7 +137,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN sign(x);
+  RETURN CASE WHEN x = 0 OR x = 'NaN'::double precision THEN x ELSE sign(x) END;
 END;
 $$;
 
@@ -123,7 +149,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN x >= 0 THEN sqrt(x) ELSE 0 END;
+  RETURN CASE WHEN x < 0 THEN 'NaN'::double precision ELSE sqrt(x) END;
 END;
 $$;
 

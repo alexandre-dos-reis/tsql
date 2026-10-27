@@ -8,8 +8,9 @@
  * the opposite of a denylist.
  *
  * A member is in the table only when PostgreSQL has a function that returns the
- * same double for every input the harness generates, with no rewrite — a name
- * and nothing else. `docs/design.md` ("Math") has the measurements behind each
+ * same double for every input measured — under its own name, or, for the two
+ * that answer a `NaN` differently, written another way that was measured too
+ * (`NanRule`). `docs/design.md` ("Math") has the measurements behind each
  * choice.
  */
 
@@ -23,10 +24,27 @@
  */
 export type MathShape = "same" | "float" | "widest";
 
+/**
+ * How a `NaN` argument is kept faithful, for the two members whose PostgreSQL
+ * function answers it differently:
+ *
+ * - `negated`: `min`. `LEAST` ignores a `NaN` (`PostgreSQL` orders it above
+ *   every number), where `Math.min` returns it. `-GREATEST(-a, -b)` returns it,
+ *   because `GREATEST` does and negation is exact. Only a `double precision`
+ *   argument can be `NaN`, so an all-`integer` call stays `LEAST`.
+ * - `passThrough`: `sign`. `sign('NaN')` is 0 where `Math.sign(NaN)` is `NaN`,
+ *   and `sign(-0)` is 0 where `Math.sign(-0)` is -0: a `NaN` or a zero is
+ *   returned as it is.
+ * - `negativeIsNaN`: `sqrt`. PostgreSQL raises on a negative argument where
+ *   `Math.sqrt` returns `NaN`, so a negative argument is answered `NaN`.
+ */
+export type NanRule = "negated" | "passThrough" | "negativeIsNaN";
+
 export interface MathFunction {
   /** The PostgreSQL function (or `GREATEST`/`LEAST`, which are expressions) it becomes. */
   readonly sql: string;
   readonly shape: MathShape;
+  readonly nan?: NanRule;
 }
 
 export const MATH_FUNCTIONS: Readonly<Record<string, MathFunction>> = {
@@ -34,9 +52,9 @@ export const MATH_FUNCTIONS: Readonly<Record<string, MathFunction>> = {
   ceil: { sql: "ceil", shape: "float" },
   floor: { sql: "floor", shape: "float" },
   max: { sql: "greatest", shape: "widest" },
-  min: { sql: "least", shape: "widest" },
-  sign: { sql: "sign", shape: "float" },
-  sqrt: { sql: "sqrt", shape: "float" },
+  min: { sql: "least", shape: "widest", nan: "negated" },
+  sign: { sql: "sign", shape: "float", nan: "passThrough" },
+  sqrt: { sql: "sqrt", shape: "float", nan: "negativeIsNaN" },
   trunc: { sql: "trunc", shape: "float" },
 };
 

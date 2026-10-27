@@ -169,7 +169,7 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   advice. `referenceMessage` words the refusal.
 - **`Math` calls**: `isMathGlobal` finds `Math` by the same provenance, and `lowerMathCall` looks the
   member up in [`math.ts`](../src/math.ts)'s closed table. A member that is there becomes a `builtin`
-  IR node — a PostgreSQL function called by its bare name, its arguments already widened — and one
+  IR node — a PostgreSQL function called by its bare name, its arguments already widened; `min` of doubles, `sign` and `sqrt` get the rewrite their `nan` rule in the table names — and one
   that is not is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only
   one that asks for the `int(...)` guard.
 

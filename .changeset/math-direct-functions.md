@@ -4,25 +4,20 @@
 
 Compile eight members of `Math`: `abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min` and `max`.
 
-Each is a PostgreSQL function that returns the same double for the same input,
-so the SQL is the call under its own name — `Math.floor(x)` is `floor(x)`,
-`Math.max(a, b)` is `greatest(a, b)` — with nothing rewritten. They were chosen by
-measuring every `Math` function on 40 016 finite inputs in V8, JavaScriptCore and
-PostgreSQL 18, bit by bit; these eight did not differ at all.
+Five are a PostgreSQL function under the same name (`Math.floor(x)` is
+`floor(x)`, `Math.max(a, b)` is `greatest(a, b)`). Three are written another way,
+because PostgreSQL answers a special value differently: `Math.min` of doubles is
+`-greatest(-a, -b)` (`LEAST` skips a `NaN`), `Math.sign` hands back a `NaN` or a
+zero as it is, and `Math.sqrt` of a negative number is `NaN` instead of an error.
+Every member was measured on 40 016 finite inputs in V8, JavaScriptCore and
+PostgreSQL 18, and on `NaN`, the infinities and both zeros with `Object.is`.
 
-`Math.abs` of an `Integer` needs `int(...)`, like unary `-` (`abs(-2147483648)`
-raises in PostgreSQL only). Arguments must be numbers that cannot be null, with
-no spread, and `Math.max()` with no argument is refused.
+`Math.abs` of an `Integer` needs `int(...)`, like unary `-`. Arguments must be
+numbers that cannot be null, with no spread, and `Math.max()` with no argument is
+refused. One residual: `Math.min`/`Math.max` of `0` and `-0` may return the other
+zero.
 
-Two differences remain, and are documented in `docs/design.md` ("Math"):
-`Math.sqrt` of a negative number is `NaN` in TypeScript and an error in
-PostgreSQL (the parity harness finds it; guard the input), and a `NaN` argument
-gives a different answer for `Math.min` (`LEAST` ignores it) and `Math.sign`
-(`sign('NaN')` is `0`) — the harness generates no `NaN`. The other six agree on
-NaN and the infinities. The sign of a zero can also differ, which the harness
-cannot see.
+An emitter fix rides along: `-(-x)` was written `--x`, which SQL reads as a comment.
 
-Every other member is still refused, now with its reason and the list that does
-compile: `round` (PostgreSQL rounds a tie to even), `random` (not pure), and the
-approximated functions (`sin`, `exp`, `pow`…), whose last bits differ between
-engines. The constants (`Math.PI`…) are unchanged.
+Every other member is still refused, with its reason: `round` (ties to even),
+`random` (not pure), and the approximated functions (`sin`, `exp`, `pow`…).

@@ -268,20 +268,23 @@ otherwise read it as `bigint`.
 
 ## Math
 
-Eight members of `Math` compile: `abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min` and `max`. Each is a PostgreSQL function that returns the same double for the same input, so the SQL is the call under its own name and nothing is rewritten (`min` and `max` are `LEAST` and `GREATEST`). The members are a closed table in [`src/math.ts`](../src/math.ts). `Math` itself is recognised by provenance, so a parameter or a module-level value called `Math` is not mistaken for it, and a member the table does not list is refused — anything `Math` grows later stays out until someone adds it.
+Eight members of `Math` compile: `abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min` and `max`. Each is a PostgreSQL function that returns the same double for the same input, so the SQL is the call under its own name (`min` and `max` are `LEAST` and `GREATEST`) — except three, where PostgreSQL answers a `NaN`, a negative root or a zero differently and the SQL is written another way, measured to give the same double (see the table). The members are a closed table in [`src/math.ts`](../src/math.ts). `Math` itself is recognised by provenance, so a parameter or a module-level value called `Math` is not mistaken for it, and a member the table does not list is refused — anything `Math` grows later stays out until someone adds it.
 
 | TypeScript | PostgreSQL | result |
 | --- | --- | --- |
 | `Math.abs(x)` | `abs(x)` | the argument's own type; an `Integer` needs [the guard](#the-int-guard) |
-| `Math.floor(x)`, `Math.ceil(x)`, `Math.trunc(x)`, `Math.sign(x)`, `Math.sqrt(x)` | `floor(x)`, `ceil(x)`, … | always `Float`; an `Integer` is widened first (`floor(x::double precision)`), so no overload is left for PostgreSQL to pick |
-| `Math.max(a, b, …)`, `Math.min(a, b, …)` | `greatest(a, b, …)`, `least(a, b, …)` | the widest of the arguments, each widened to it |
+| `Math.floor(x)`, `Math.ceil(x)`, `Math.trunc(x)` | `floor(x)`, `ceil(x)`, `trunc(x)` | always `Float`; an `Integer` is widened first (`floor(x::double precision)`), so no overload is left for PostgreSQL to pick |
+| `Math.sign(x)` | `CASE WHEN x = 0 OR x = 'NaN' THEN x ELSE sign(x) END` | `Float`; `sign('NaN')` is 0 and `sign(-0)` is 0, where JavaScript gives `NaN` and `-0` |
+| `Math.sqrt(x)` | `CASE WHEN x < 0 THEN 'NaN' ELSE sqrt(x) END` | `Float`; PostgreSQL raises on a negative, JavaScript gives `NaN` |
+| `Math.max(a, b, …)` | `greatest(a, b, …)` | the widest of the arguments, each widened to it |
+| `Math.min(a, b, …)` | `-greatest(-a, -b, …)`; `least` when every argument is an `Integer` | `LEAST` skips a `NaN` where `Math.min` returns it; `GREATEST` returns it, and negation is exact |
 
 ### Why these, and not the others
 
 This was measured, not assumed. Each function ran on 40 016 inputs (uniform over several ranges, ties, and the awkward values — `0.49999999999999994`, `2^52 + 1`) in Node 22 (V8), Bun 1.4.4 (JavaScriptCore) and PostgreSQL 18.6 through PGlite 0.5.11, and the results were compared bit by bit.
 
-- **The eight above: no difference at all on finite inputs**, between the two engines or with PostgreSQL. They are operations IEEE-754 defines exactly, so they do not depend on a platform's `libm` either. `NaN`, the infinities and the sign of zero are a separate check, in [What it cannot prove](#what-it-cannot-prove).
-- **`Math.round` differs on every tie.** PostgreSQL's `round(double precision)` sends a tie to the even neighbour (`round(2.5)` is 2), `Math.round` rounds it up (3): 9 955 of the 40 016 inputs. `floor(x) + CASE WHEN x - floor(x) >= 0.5 THEN 1 ELSE 0 END` agreed on all of them, while the obvious `floor(x + 0.5)` did not (it is wrong on `0.49999999999999994`). It is refused because the table only holds what needs no rewrite.
+- **The eight above: no difference at all on finite inputs** (with the three rewrites above), between the two engines or with PostgreSQL. They are operations IEEE-754 defines exactly, so they do not depend on a platform's `libm` either. `NaN`, the infinities and the sign of zero are a separate check, in [What it cannot prove](#what-it-cannot-prove).
+- **`Math.round` differs on every tie.** PostgreSQL's `round(double precision)` sends a tie to the even neighbour (`round(2.5)` is 2), `Math.round` rounds it up (3): 9 955 of the 40 016 inputs. `floor(x) + CASE WHEN x - floor(x) >= 0.5 THEN 1 ELSE 0 END` agreed on all of them, while the obvious `floor(x + 0.5)` did not (it is wrong on `0.49999999999999994`). It is refused for now: an exact rewrite exists, but it evaluates its argument several times and has not been added.
 - **`sin`, `cos`, `exp`, `log`, `pow`, `atan2` and the like cannot be promised.** ECMAScript only asks for an approximation, and V8 and JavaScriptCore already disagreed with each other on between 2 and 3 535 of the 40 016 inputs, depending on the function. PostgreSQL uses the platform's `libm`, so a third answer is possible, and which one depends on the machine. `Float` promises the same bits, and these cannot keep it. (PGlite is WebAssembly on musl, not a native PostgreSQL on glibc, so the PostgreSQL column of this measurement is indicative; the exact group above does not depend on it.)
 - **`Math.random`** is not pure; **`hypot`**, **`log2`**, **`log1p`** and **`expm1`** have no PostgreSQL function for `double precision`; **`fround`** would need a cast through `real`, and PostgreSQL raises on a value `real` cannot hold where `fround` returns `Infinity`.
 
@@ -295,9 +298,11 @@ Each refusal says which of these it is. The constants (`Math.PI`…) are still r
 
 ### What it cannot prove
 
-- **`Math.sqrt` of a negative number.** It is `NaN` in TypeScript and an error in PostgreSQL (`cannot take square root of a negative number`) — the same family as the overflow and underflow above. The harness finds it as soon as an input reaches it (it reports `PostgreSQL raised … where TypeScript returned …`), so the author closes it by guarding the input: `x >= 0 ? Math.sqrt(x) : 0`. The `CASE` that becomes does not evaluate `sqrt` on the branch that is not taken.
-- **A `NaN` argument to `Math.min` or `Math.sign`.** PostgreSQL treats `NaN` as equal to itself and greater than every number, so `LEAST('NaN', 1)` is `1` where `Math.min(NaN, 1)` is `NaN`; and `sign('NaN')` is `0` where `Math.sign(NaN)` is `NaN`. Measured with `NaN`, both infinities, `0`, `-0` and a few others as arguments: `abs`, `floor`, `ceil`, `trunc`, `sqrt` and `max` agree on every one of them (`max`: `GREATEST` also puts `NaN` above everything, as `Math.max` returns it). The same difference already holds for `<` and `===` on a `Float`. Inside a compiled function PostgreSQL raises where JavaScript would make a `NaN` (`0 / 0`, `sqrt` of a negative), so a `NaN` can only come from outside — a parameter, or arithmetic on an infinite one — and the harness never generates one (`noNaN`), so it does not see this. Validate the input if a caller might send one.
-- **The sign of a zero.** `Math.sign(-0)` is `-0` where `sign` gives `0`, and `Math.max(-0, 0)` is `0` where `GREATEST` gave `-0`. The harness compares with `===`, under which `-0` and `0` are equal, so it cannot tell them apart.
+`tests/specialValues.test.ts` — runs every function of `tests/parity/mathFunctions.ts` on `NaN`, both infinities, `0`, `-0` and a few extremes, compared with `Object.is`. The fast-check harness never draws those values (`noNaN`, finite range, `-0 === 0`), so this fixed grid is what covers the rewrites above. It passes, with one exception:
+
+- **The sign of a zero in `Math.min` / `Math.max`.** `Math.max(-0, 0)` is `0` and `Math.min(0, -0)` is `-0`; `GREATEST`/`LEAST` return whichever zero comes first. Only a signed zero from outside can reach it. The test compares those functions with `===` and says so.
+
+Inside a compiled function PostgreSQL raises where JavaScript makes a `NaN` or an infinity out of finite operands (`0 / 0`, overflow); that is the arithmetic section, not `Math`.
 
 ## Object types
 

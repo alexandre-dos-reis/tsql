@@ -1195,6 +1195,15 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
   return operand;
 }
 
+/** `-e`, undoing a negation rather than stacking one, and folding a numeric literal. */
+function negate(expr: ExprIR): ExprIR {
+  if (expr.kind === "neg") return expr.operand;
+  if (expr.kind === "lit" && typeof expr.value === "number" && !Number.isNaN(expr.value)) {
+    return { ...expr, value: -expr.value };
+  }
+  return { kind: "neg", operand: expr, type: expr.type as ScalarType };
+}
+
 /**
  * Is this the standard library's `Math`? Asked by provenance, like every other
  * global: a parameter, a local or a module-level value that happens to be
@@ -1282,7 +1291,26 @@ async function lowerMathCall(
     }
     case "float": {
       const type = scalarType("double precision");
-      return { kind: "builtin", sql: entry.sql, args: [coerce(args[0]!, type)], type };
+      const operand = args[0]!;
+      const call: ExprIR = { kind: "builtin", sql: entry.sql, args: [coerce(operand, type)], type };
+      // `sign('NaN')` is 0 where `Math.sign(NaN)` is `NaN`: hand a `NaN` back as it is.
+      // Only a double can hold one, so an `Integer` argument keeps the plain call.
+      const bool = scalarType("boolean");
+      const zero: ExprIR = { kind: "lit", value: 0, type };
+      if (entry.nan === "passThrough" && isExactly(operand.type, "double precision")) {
+        const nan: ExprIR = { kind: "lit", value: Number.NaN, type };
+        const isNan: ExprIR = { kind: "binary", op: "=", left: operand, right: nan, type: bool };
+        const isZero: ExprIR = { kind: "binary", op: "=", left: operand, right: zero, type: bool };
+        const cond: ExprIR = { kind: "binary", op: "or", left: isZero, right: isNan, type: bool };
+        return { kind: "case", cond, whenTrue: operand, whenFalse: call, type };
+      }
+      // `sqrt` of a negative raises in PostgreSQL where `Math.sqrt` is `NaN`.
+      if (entry.nan === "negativeIsNaN") {
+        const negative: ExprIR = { kind: "binary", op: "<", left: coerce(operand, type), right: zero, type: bool };
+        const nan: ExprIR = { kind: "lit", value: Number.NaN, type };
+        return { kind: "case", cond: negative, whenTrue: nan, whenFalse: call, type };
+      }
+      return call;
     }
     case "widest": {
       let type: PgType = args[0]!.type;
@@ -1290,7 +1318,14 @@ async function lowerMathCall(
         if (i > 0) type = unify(type, argument.type, node.arguments[i] as Node, `arguments of \`${label}\``);
       }
       const widest = scalarType((type as ScalarType).sql);
-      return { kind: "builtin", sql: entry.sql, args: args.map((a) => coerce(a, widest)), type: widest };
+      const widened = args.map((a) => coerce(a, widest));
+      // `LEAST` skips a `NaN` where `Math.min` returns it. `GREATEST` returns it
+      // (PostgreSQL orders `NaN` above every number), and negation is exact, so
+      // `min(a, b)` is `-greatest(-a, -b)`. All-`integer` calls cannot hold a `NaN`.
+      if (entry.nan === "negated" && isExactly(widest, "double precision")) {
+        return negate({ kind: "builtin", sql: "greatest", args: widened.map(negate), type: widest });
+      }
+      return { kind: "builtin", sql: entry.sql, args: widened, type: widest };
     }
   }
 }
