@@ -173,6 +173,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | a named `interface` or object `type` | a composite type; a field of a named object type is a column of its composite |
 | `readonly T[]` | `t[]` |
 | `a / b` | always `double precision`, as in TypeScript |
+| `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or SQL written to match it |
 | `` `${a}-${b}` ``, `??`, `c ? a : b` | `\|\|`, `COALESCE`, `CASE` |
 
 ## What's supported
@@ -192,7 +193,7 @@ created at all.
 Each of these is refused with a message saying what to write instead. Most are refused because the
 SQL would *quietly* give a different answer:
 
-- **Anything outside the function**: `Math`, `Date`, `JSON`, `fetch`, imported packages, `async`.
+- **Anything outside the function**: `Date`, `JSON`, `fetch`, imported packages, `async`, and every `Math` member not listed above (`random`, `sin`, `exp`, `pow`…).
 - **Truthiness** (`if (name)`), loose equality (`==`), `&&`/`||` on non-booleans.
 - **`<` on strings** — the database orders by collation, TypeScript by UTF-16.
 - **Mutation**: of a parameter, an object field or an array — PL/pgSQL passes by value.

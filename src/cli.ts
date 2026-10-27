@@ -161,7 +161,8 @@ projectCommand("parity", "prove the SQL agrees with the TypeScript, writing noth
     const runs = integerOption("runs", options.runs, 1);
     const seed = integerOption("seed", options.seed);
     const dbUrl = options.dbUrl;
-    if (dbUrl !== undefined && !/^postgres(ql)?:\/\//.test(dbUrl)) fail("--db-url expects a postgres:// or postgresql:// URL.");
+    if (dbUrl !== undefined && !/^postgres(ql)?:\/\//.test(dbUrl))
+      fail("--db-url expects a postgres:// or postgresql:// URL.");
 
     const result = await compileFiles(command, files, options);
 
@@ -177,7 +178,9 @@ projectCommand("parity", "prove the SQL agrees with the TypeScript, writing noth
       onOutcome: ({ fn, error }) => {
         const sqlName = schema ? `${schema}.${fn.sqlName}` : fn.sqlName;
         if (error) {
-          complain(`${err("red", "✗")} ${err("bold", `${fn.tsName}()`)} vs ${err("bold", `${sqlName}()`)}\n${error.replace(/^/gm, "    ")}`);
+          complain(
+            `${err("red", "✗")} ${err("bold", `${fn.tsName}()`)} vs ${err("bold", `${sqlName}()`)}\n${error.replace(/^/gm, "    ")}`,
+          );
         } else {
           say(`${out("green", "✓")} ${fn.tsName}() agrees with ${sqlName}()`);
         }
@@ -190,7 +193,9 @@ projectCommand("parity", "prove the SQL agrees with the TypeScript, writing noth
     const failed = outcomes.filter((o) => o.error !== undefined).length;
     const took = out("dim", `(${((performance.now() - started) / 1000).toFixed(1)}s)`);
     if (failed > 0) {
-      complain(`\n${err(["bold", "red"], `${failed} of ${outcomes.length} function(s) diverge from their TypeScript.`)} ${took}`);
+      complain(
+        `\n${err(["bold", "red"], `${failed} of ${outcomes.length} function(s) diverge from their TypeScript.`)} ${took}`,
+      );
       process.exit(1);
     }
     say(
@@ -223,7 +228,10 @@ function counts(result: CompileResult): string {
 function listing(result: CompileResult): string {
   const schema = result.manifest.schema;
   const qualify = (name: string) => out("cyan", schema ? `${schema}.${name}` : name);
-  const lines = result.functions.map((fn) => fn.sqlName).sort().map((name) => `    ${qualify(name)}()`);
+  const lines = result.functions
+    .map((fn) => fn.sqlName)
+    .sort()
+    .map((name) => `    ${qualify(name)}()`);
   const types = [
     ...result.named.map((t) => ({ name: t.sqlName, kind: t.kind })),
     ...result.composites.map((t) => ({ name: t.sqlName, kind: "composite" })),
@@ -237,7 +245,9 @@ function requireFiles(command: Command, files: readonly string[]): void {
   // The migration is written from the files named, so quietly compiling whatever
   // the project happened to contain would overwrite it with more than was asked for.
   if (files.length === 0) {
-    complain(`${err(["bold", "red"], "tsql:")} \`${command.name()}\` needs at least one file.\n\n${command.helpInformation({ error: true })}`);
+    complain(
+      `${err(["bold", "red"], "tsql:")} \`${command.name()}\` needs at least one file.\n\n${command.helpInformation({ error: true })}`,
+    );
     process.exit(1);
   }
 }
@@ -284,7 +294,11 @@ async function attemptCompile(command: Command, files: readonly string[], option
  * The compile every command starts with. Exits with the diagnostics when the
  * functions do not compile, so a command's action only ever sees a successful build.
  */
-async function compileFiles(command: Command, files: readonly string[], options: ProjectOptions): Promise<CompileResult> {
+async function compileFiles(
+  command: Command,
+  files: readonly string[],
+  options: ProjectOptions,
+): Promise<CompileResult> {
   requireFiles(command, files);
   const attempt = await attemptCompile(command, files, options);
   if (attempt.ok) return attempt.result;
@@ -342,7 +356,9 @@ async function watchCheck(command: Command, files: readonly string[], options: P
       // Clear the screen and the scrollback, as `tsc --watch` does; a pipe or a
       // log keeps every round instead.
       if (process.stdout.isTTY) process.stdout.write("\u001b[2J\u001b[3J\u001b[H");
-      say(`${stamp()} ${next ? `${out("bold", relative(process.cwd(), resolve(root, next)))} changed, checking again…` : "Checking…"}\n`);
+      say(
+        `${stamp()} ${next ? `${out("bold", relative(process.cwd(), resolve(root, next)))} changed, checking again…` : "Checking…"}\n`,
+      );
       const attempt = await attemptCompile(command, files, options);
       if (attempt.ok) {
         say(`${out("green", "✓")} ok — ${counts(attempt.result)} compile, nothing written:`);

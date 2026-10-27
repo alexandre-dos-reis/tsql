@@ -89,6 +89,12 @@ interface Qualifier {
   scalar(type: ScalarType): string;
 }
 
+/** An operand of a `::` cast: an atom, and a negative literal in parentheses. */
+function castOperand(expr: ExprIR, q: Qualifier): string {
+  const text = emitExpr(expr, q, PREC.atom);
+  return text.startsWith("-") ? `(${text})` : text;
+}
+
 function emitExpr(expr: ExprIR, q: Qualifier, minPrecedence = 0): string {
   const precedence = precedenceOf(expr);
   const text = emitExprInner(expr, q, precedence);
@@ -105,6 +111,10 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       if (typeof expr.value === "boolean") return expr.value ? "true" : "false";
       // An enum's literal names its type: an untyped literal resolves to text in
       // a CASE or a COALESCE, which an enum is not.
+      if (typeof expr.value === "number" && Number.isNaN(expr.value)) return "'NaN'::double precision";
+      if (expr.value === Infinity) return "'Infinity'::double precision";
+      if (expr.value === -Infinity) return "'-Infinity'::double precision";
+      if (Object.is(expr.value, -0)) return "'-0'::double precision";
       if (typeof expr.value === "string") {
         return expr.type.named?.kind === "enum"
           ? `${quoteLiteral(expr.value)}::${q.scalar(expr.type)}`
@@ -129,8 +139,12 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "not":
       return `NOT ${emitExpr(expr.operand, q, PREC.not + 1)}`;
 
-    case "neg":
-      return `-${emitExpr(expr.operand, q, PREC.unary)}`;
+    case "neg": {
+      // `-` then `-` is a comment in SQL: `-(-x)` must not be written `--x`, nor
+      // the negation of a negative literal `--5`.
+      const operand = emitExpr(expr.operand, q, PREC.unary);
+      return operand.startsWith("-") ? `-(${operand})` : `-${operand}`;
+    }
 
     case "nullTest":
       return `${emitExpr(expr.operand, q, PREC.is + 1)} IS ${expr.negated ? "NOT NULL" : "NULL"}`;
@@ -153,6 +167,22 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
 
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
+
+    case "bind":
+      return `(SELECT ${emitExpr(expr.body, q)} FROM (SELECT ${emitExpr(expr.value, q)} AS ${quoteIdentifier(expr.name)}) AS t)`;
+
+    // A negative literal is `-5`: `-5::bit(32)` would negate the cast, so it is wrapped.
+    case "clz32":
+      return `COALESCE(NULLIF(position('1' IN ${castOperand(expr.operand, q)}::bit(32)), 0) - 1, 32)`;
+
+    case "imul":
+      return `(((${castOperand(expr.left, q)}::bigint * ${castOperand(expr.right, q)}::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer`;
+
+    case "toReal":
+      return `${castOperand(expr.operand, q)}::real::double precision`;
+
+    case "builtin":
+      return `${expr.sql}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 
     case "field":
       // `(sub).plan` — the parentheses are required: `sub.plan` would be read
@@ -200,7 +230,8 @@ function arrayTypeName(type: ArrayType, q: Qualifier): string {
 
 function numberLiteral(value: number): string {
   if (Number.isNaN(value) || !Number.isFinite(value)) {
-    // Unreachable: lowering rejects these, but be explicit rather than emit `NaN`.
+    // `NaN` is written by its own literal case (`emitExprInner`); an infinity is
+    // unreachable — lowering rejects it — but be explicit rather than emit it.
     throw new Error(`Cannot emit non-finite number: ${value}`);
   }
   return String(value);

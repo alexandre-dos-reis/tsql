@@ -2,7 +2,7 @@
 
 ## Global objects :
 - console.log -> raise ...
-- Math
+- Math (done: everything that can return the same double as JavaScript — see `docs/design.md`; what is left is refused on purpose: `sin`, `exp`, `pow`… differ between engines)
 - Date
 - String
 - Number

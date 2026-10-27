@@ -68,6 +68,7 @@ import {
   type StmtIR,
 } from "./ir.ts";
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
+import { mathConstant, mathFunction, unsupportedMathMessage } from "./math.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -93,6 +94,8 @@ interface State extends TypeCtx {
   readonly used: Set<string>;
   readonly returns: PgType;
   readonly targets: Target[];
+  /** Names for the values a rewrite binds once (`bind`), numbered per function. */
+  readonly temps: { count: number };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -183,6 +186,7 @@ export async function lowerFunction(
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
     targets: [],
+    temps: { count: 0 },
   };
 
   const { fn } = exported;
@@ -1029,7 +1033,7 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType, guarded 
       return lowerArrayLiteral(node as ArrayLiteralExpression, s, expected);
 
     case SyntaxKind.CallExpression:
-      return lowerCall(node as CallExpression, s);
+      return lowerCall(node as CallExpression, s, guarded);
 
     case SyntaxKind.ObjectLiteralExpression:
       return lowerObjectLiteral(node as ObjectLiteralExpression, s);
@@ -1127,11 +1131,12 @@ async function lowerConditional(node: ConditionalExpression, s: State, expected?
   return { kind: "case", cond, whenTrue: coerce(whenTrue, type), whenFalse: coerce(whenFalse, type), type };
 }
 
-async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
+async function lowerCall(node: CallExpression, s: State, guarded = false): Promise<ExprIR> {
   if (node.expression.kind === SyntaxKind.PropertyAccessExpression) {
     const access = node.expression as PropertyAccessExpression;
     const array = await arrayOperand(access.expression, s);
     if (array) return lowerArrayMethod(node, access, array, s);
+    if (await isMathGlobal(access.expression, s)) return lowerMathCall(node, access, s, guarded);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
@@ -1191,6 +1196,270 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
     );
   }
   return operand;
+}
+
+/** `-e`, undoing a negation rather than stacking one, and folding a numeric literal. */
+function negate(expr: ExprIR): ExprIR {
+  if (expr.kind === "neg") return expr.operand;
+  if (expr.kind === "lit" && typeof expr.value === "number" && !Number.isNaN(expr.value)) {
+    return { ...expr, value: -expr.value };
+  }
+  return { kind: "neg", operand: expr, type: expr.type as ScalarType };
+}
+
+/**
+ * How much work an expression is to run, counted in nodes — or `Infinity` when it
+ * is not just arithmetic on values (a call to a compiled function, a `bind`…).
+ */
+function weight(expr: ExprIR): number {
+  switch (expr.kind) {
+    case "ref":
+    case "lit":
+      return 1;
+    case "field":
+    case "cast":
+    case "neg":
+      return 1 + weight(expr.operand);
+    case "binary":
+      return 1 + weight(expr.left) + weight(expr.right);
+    case "builtin":
+      return 1 + expr.args.reduce((sum, arg) => sum + weight(arg), 0);
+    default:
+      return Infinity;
+  }
+}
+
+/**
+ * The most an argument may weigh and still be written again where a rewrite reads
+ * it several times. Measured (PGlite, 200 000 calls): repeating `abs(a)` costs
+ * what `abs(a)` costs once, 2.6 µs a call, while binding it in a sub-select costs
+ * 8.2 µs, because PL/pgSQL no longer evaluates it as a simple expression.
+ */
+const REPEATABLE = 6;
+
+/**
+ * Runs `body` on `value` read several times without running it several times:
+ * written again where that costs nothing (a name, a literal, a few operations on
+ * them), bound to a name otherwise (`bind`) — a call to a compiled function, or an
+ * expression big enough that repeating it would swell the SQL.
+ */
+function once(value: ExprIR, s: State, body: (atom: ExprIR) => ExprIR): ExprIR {
+  if (weight(value) <= REPEATABLE) return body(value);
+  const name = `_tsql_${++s.temps.count}`;
+  const inner = body({ kind: "ref", sqlName: name, type: value.type });
+  return { kind: "bind", name, value, body: inner, type: inner.type };
+}
+
+const DOUBLE = scalarType("double precision");
+const BOOLEAN = scalarType("boolean");
+const num = (value: number): ExprIR => ({ kind: "lit", value, type: DOUBLE });
+const test = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: BOOLEAN });
+const arith = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: DOUBLE });
+const fn = (sql: string, ...args: ExprIR[]): ExprIR => ({ kind: "builtin", sql, args, type: DOUBLE });
+const pick = (cond: ExprIR, whenTrue: ExprIR, whenFalse: ExprIR): ExprIR => ({
+  kind: "case",
+  cond,
+  whenTrue,
+  whenFalse,
+  type: DOUBLE,
+});
+
+/** The edges of `real`: its largest value, and the point from which rounding goes to infinity. */
+const REAL_MAX = (2 - 2 ** -23) * 2 ** 127;
+const REAL_OVERFLOW = REAL_MAX + 2 ** 103;
+/** Half the smallest `real`: at or below it, rounding goes to zero. */
+const REAL_UNDERFLOW = 2 ** -150;
+
+/** `Math.round(x)`: ties go up, and a result of -0 is kept for -0.5 ≤ x < 0. */
+function roundRule(x: ExprIR): ExprIR {
+  const floor = fn("floor", x);
+  const up = arith("+", floor, num(1));
+  const isTie = test(">=", arith("-", x, floor), num(0.5));
+  const negativeZero = test("and", test("=", up, num(0)), test("<", x, num(0)));
+  return pick(isTie, pick(negativeZero, num(-0), up), floor);
+}
+
+/** `Math.fround(x)`: the nearest `real`, with `Infinity` and `0` where PostgreSQL's cast raises. */
+function froundRule(x: ExprIR): ExprIR {
+  const magnitude = fn("abs", x);
+  const asIs = test(
+    "or",
+    test("or", test("=", x, num(NaN)), test("=", x, num(0))),
+    test("=", magnitude, num(Infinity)),
+  );
+  const cast: ExprIR = { kind: "toReal", operand: x, type: DOUBLE };
+  return pick(
+    asIs,
+    x,
+    pick(
+      test(">=", magnitude, num(REAL_OVERFLOW)),
+      arith("*", fn("sign", x), num(Infinity)),
+      pick(test("<=", magnitude, num(REAL_UNDERFLOW)), arith("*", fn("sign", x), num(0)), cast),
+    ),
+  );
+}
+
+/** Is this zero the negative one? `atan2(-0, -1)` is -π, `atan2(0, -1)` is π. */
+const isNegativeZero = (x: ExprIR): ExprIR => test("<", fn("atan2", x, num(-1)), num(0));
+
+/** `Math.max(a, b)` / `Math.min(a, b)` on doubles, `NaN` and the order of the two zeros included. */
+function extremumRule(rule: "min" | "max", a: ExprIR, b: ExprIR): ExprIR {
+  const bothZero = test("and", test("=", a, num(0)), test("=", b, num(0)));
+  if (rule === "max") {
+    return pick(
+      bothZero,
+      pick(test("and", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)),
+      fn("greatest", a, b),
+    );
+  }
+  return pick(bothZero, pick(test("or", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)), {
+    kind: "neg",
+    operand: fn("greatest", negate(a), negate(b)),
+    type: DOUBLE,
+  });
+}
+
+/**
+ * Is this the standard library's `Math`? Asked by provenance, like every other
+ * global: a parameter, a local or a module-level value that happens to be
+ * called `Math` is not it.
+ */
+async function isMathGlobal(node: Expression, s: State): Promise<boolean> {
+  if (node.kind !== SyntaxKind.Identifier || (node as Identifier).text !== "Math") return false;
+  if (s.scope.has("Math")) return false;
+  return (await classifyReference("Math", node, s)).kind === "runtime-global";
+}
+
+/**
+ * `Math.floor(x)`, `Math.max(a, b)` … for the members whose PostgreSQL
+ * function is the same one under another name (`src/math.ts`).
+ *
+ * Nothing is rewritten: the emitted SQL is the call, with its arguments widened
+ * so that no overload decision is left to PostgreSQL. What lowering has to
+ * prove is therefore only that the two sides cannot disagree on the arguments:
+ *
+ * - **Every argument is a number that cannot be null.** `GREATEST` and `LEAST`
+ *   skip NULLs where `Math.max` and `Math.min` have no such thing, and
+ *   TypeScript has already refused a `null` here, so a nullable argument means
+ *   the two languages no longer see the same program.
+ * - **`abs` of an `integer` needs the guard.** `abs(-2147483648)` is the one
+ *   input that overflows, and it overflows in PostgreSQL only — the same
+ *   asymmetry as unary `-`, closed the same way: `int(Math.abs(x))`.
+ * - **No spread, no empty call.** `Math.max(...xs)` is an array in disguise, and
+ *   `Math.max()` is `-Infinity`.
+ *
+ * What it does not prove, and cannot: `sqrt` of a negative number raises in
+ * PostgreSQL and is `NaN` in JavaScript. Both are recorded in `docs/design.md`
+ * ("Math"); the harness finds the divergence when an input reaches it.
+ */
+async function lowerMathCall(
+  node: CallExpression,
+  access: PropertyAccessExpression,
+  s: State,
+  guarded: boolean,
+): Promise<ExprIR> {
+  const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const entry = mathFunction(member);
+  if (!entry) throw CompileError.at(access, unsupportedMathMessage(member));
+  const label = `Math.${member}`;
+
+  for (const argument of node.arguments) {
+    if (argument.kind === SyntaxKind.SpreadElement) {
+      throw CompileError.at(
+        argument,
+        `\`${label}\` does not take a spread argument: how many values it gets is not known at build time, and an empty one makes \`Math.max\` return -Infinity. Pass the values one by one.`,
+      );
+    }
+  }
+  const arity = entry.arity ?? 1;
+  if (entry.shape === "widest" ? node.arguments.length === 0 : node.arguments.length !== arity) {
+    throw CompileError.at(
+      node,
+      entry.shape === "widest"
+        ? `\`${label}()\` with no argument is ${member === "max" ? "-Infinity" : "Infinity"}, which has no SQL equivalent. Pass at least one number.`
+        : `\`${label}\` takes exactly ${arity === 1 ? "one argument" : `${arity} arguments`}, got ${node.arguments.length}.`,
+    );
+  }
+
+  const args: ExprIR[] = [];
+  for (const argument of node.arguments) {
+    const lowered = await lowerExpr(argument as Expression, s);
+    if (!isScalar(lowered.type) || !isNumeric(lowered.type) || lowered.type.nullable) {
+      throw CompileError.at(
+        argument as Node,
+        `\`${label}\` needs numbers that cannot be null, not \`${describe(lowered.type)}${lowered.type.nullable ? " | null" : ""}\`.`,
+      );
+    }
+    if (entry.shape === "int32" && !isExactly(lowered.type, "integer")) {
+      throw CompileError.at(
+        argument as Node,
+        `\`${label}\` takes \`Integer\` arguments: it works on a 32-bit pattern, and a \`Float\` would first be truncated and wrapped modulo 2^32 (\`NaN\` and the infinities to 0), which tsql does not reproduce.`,
+      );
+    }
+    args.push(lowered);
+  }
+
+  switch (entry.shape) {
+    case "same": {
+      const operand = args[0]!;
+      if (isExactly(operand.type, "integer") && !guarded) {
+        throw CompileError.at(
+          node,
+          `\`${label}\` of an \`Integer\` can overflow 32 bits — \`${label}(${INT4_MIN})\` is ${-INT4_MIN} — which PostgreSQL refuses (\`integer out of range\`) where TypeScript returns it. ` +
+            `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise, or pass a \`Float\`.`,
+        );
+      }
+      return { kind: "builtin", sql: entry.sql!, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
+    }
+    case "float": {
+      const operand = args[0]!;
+      // An `Integer` has no NaN, no infinity and no negative zero, but it is widened
+      // first, so the rules below read a double either way.
+      const x = coerce(operand, DOUBLE);
+      switch (entry.rule) {
+        case "round":
+          return once(x, s, roundRule);
+        case "fround":
+          return once(x, s, froundRule);
+        case "sqrt":
+          // PostgreSQL raises on a negative argument where `Math.sqrt` is `NaN`.
+          return once(x, s, (a) => pick(test("<", a, num(0)), num(NaN), fn("sqrt", a)));
+        case "sign":
+          // `sign('NaN')` and `sign(-0)` are 0: hand a `NaN` or a zero back as it is.
+          // An `Integer` has neither.
+          return isExactly(operand.type, "integer")
+            ? fn("sign", x)
+            : once(x, s, (a) => pick(test("or", test("=", a, num(0)), test("=", a, num(NaN))), a, fn("sign", a)));
+        default:
+          return fn(entry.sql!, x);
+      }
+    }
+    case "widest": {
+      let type: PgType = args[0]!.type;
+      for (const [i, argument] of args.entries()) {
+        if (i > 0) type = unify(type, argument.type, node.arguments[i] as Node, `arguments of \`${label}\``);
+      }
+      const widest = scalarType((type as ScalarType).sql);
+      const widened = args.map((a) => coerce(a, widest));
+      // Integers have neither a NaN nor a negative zero: the PostgreSQL function is exact.
+      if (!isExactly(widest, "double precision")) {
+        return { kind: "builtin", sql: entry.sql!, args: widened, type: widest };
+      }
+      // Pairwise, left to right, as `Math.max(a, b, c)` is `max(max(a, b), c)`.
+      const rule = entry.rule as "min" | "max";
+      let result = widened[0]!;
+      for (const next of widened.slice(1)) {
+        const left = result;
+        result = once(left, s, (a) => once(next, s, (b) => extremumRule(rule, a, b)));
+      }
+      return result;
+    }
+    case "int32": {
+      const integer = scalarType("integer");
+      if (entry.rule === "clz32") return { kind: "clz32", operand: args[0]!, type: integer };
+      return { kind: "imul", left: args[0]!, right: args[1]!, type: integer };
+    }
+  }
 }
 
 /**
@@ -1388,6 +1657,12 @@ async function resolveAccess(node: Expression, s: State): Promise<ResolvedAccess
  */
 async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   const operand = (node as PropertyAccessExpression).expression;
+  // `Math.PI` and the other constants: the double itself, as a literal.
+  if (node.kind === SyntaxKind.PropertyAccessExpression && (await isMathGlobal(operand, s))) {
+    const name = (node as PropertyAccessExpression).name;
+    const value = name.kind === SyntaxKind.Identifier ? mathConstant((name as Identifier).text) : undefined;
+    if (value !== undefined) return { kind: "lit", value, type: DOUBLE };
+  }
   const array = await arrayOperand(operand, s);
   if (array) {
     if (node.kind === SyntaxKind.ElementAccessExpression) {

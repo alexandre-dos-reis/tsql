@@ -234,6 +234,17 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
+The one table of names runs the other way, and is closed: `src/math.ts` lists the members of `Math` that
+*compile* (`abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul`, plus the
+constants) — a PostgreSQL function under its own name, or SQL written to return the same double (`rule`) —
+measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
+and a member not in the table is refused, so what `Math` grows stays out. Before adding a member, measure it
+against PostgreSQL (`docs/design.md`, "Math"), on the special values as well: the ones whose last bits are
+platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A rewrite that reads its argument more than once
+writes it again when it is a few operations on names and binds it (`once` in `lower.ts`, the `bind` IR node) when it is heavy
+or calls a compiled function. `clz32`, `imul` and `toReal` are IR nodes of their own for the types (`bit(32)`, `bigint`, `real`) no
+value of the language has.
+
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).

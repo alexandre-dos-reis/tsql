@@ -1,13 +1,14 @@
 /**
- * Rejected: `Math.max`, a JavaScript runtime global.
+ * Rejected: `Number.isInteger`, a JavaScript runtime global.
  *
- * Nothing from the JavaScript runtime exists inside PostgreSQL. A hand-picked SQL
- * equivalent is not always the same function either: `GREATEST(a, b)` ignores
- * NULLs where `Math.max` would not, and the two disagree on NaN. Write the
- * comparison explicitly: `return a > b ? a : b;`.
+ * Nothing from the JavaScript runtime exists inside PostgreSQL, and a global is
+ * refused as a class rather than mapped one by one. (A few members of `Math`
+ * are the exception, because PostgreSQL has the same function: see
+ * `mathRound.ts` for one that is not.) Write the check out, or pass the answer
+ * in as a parameter.
  *
- * Expected: `Math.max` is a JavaScript runtime global
+ * Expected: `Number.isInteger` is a JavaScript runtime global
  */
-export function biggest(a: number, b: number): number {
-  return Math.max(a, b);
+export function isWhole(n: number): boolean {
+  return Number.isInteger(n);
 }

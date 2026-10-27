@@ -336,7 +336,37 @@ export type ExprIR =
       readonly type: PgType;
     }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
+  /**
+   * A PostgreSQL built-in, called by its bare name — `Math.floor(x)` is
+   * `floor(x)`. Unlike `call` it is not one of the compiled functions, so it is
+   * never schema-qualified. Lowering has already widened every argument, so the
+   * emitter prints it as written.
+   */
+  | { readonly kind: "builtin"; readonly sql: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
+  /**
+   * `(SELECT body FROM (SELECT value AS name) AS t)` — `value` evaluated once and
+   * named for `body`, which reads it with a `ref` of the same `name`. It exists so
+   * a rewrite that needs its argument several times (`Math.round`) does not run a
+   * costly or repeated expression several times.
+   */
+  | {
+      readonly kind: "bind";
+      readonly name: string;
+      readonly value: ExprIR;
+      readonly body: ExprIR;
+      readonly type: PgType;
+    }
+  /**
+   * `Math.clz32(x)`: the leading zero bits of the 32-bit pattern of an `integer`.
+   * Named rather than built from smaller nodes because it needs `bit(32)`, a type no
+   * value of this language has — like `arrayLength`, the emitter knows its text.
+   */
+  | { readonly kind: "clz32"; readonly operand: ExprIR; readonly type: ScalarType }
+  /** `Math.imul(a, b)`: the product of two `integer`s wrapped to 32 bits, computed in `bigint` inside the expression. */
+  | { readonly kind: "imul"; readonly left: ExprIR; readonly right: ExprIR; readonly type: ScalarType }
+  /** `Math.fround(x)` for a finite `x` inside the range of `real`: `x::real::double precision`. */
+  | { readonly kind: "toReal"; readonly operand: ExprIR; readonly type: ScalarType }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
   | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
   /**
