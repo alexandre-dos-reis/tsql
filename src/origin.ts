@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { Path } from "typescript/unstable/ast";
-import type { Project } from "typescript/unstable/async";
+import type { PathKey } from "typescript/ast";
+import type { Project } from "typescript/async";
 
 /**
  * Where a declaration lives.
@@ -13,7 +13,7 @@ import type { Project } from "typescript/unstable/async";
  */
 export type Origin = "default-library" | "external-library" | "project" | "unknown";
 
-export async function originOfPath(path: Path, project: Project): Promise<Origin> {
+export async function originOfPath(path: PathKey, project: Project): Promise<Origin> {
   const metadata = await project.program.getSourceFileMetadataByPath(path);
   if (!metadata) return "unknown";
   if (metadata.isDefaultLibrary) return "default-library";

@@ -1,4 +1,4 @@
-import type { Node } from "typescript/unstable/ast";
+import type { Node } from "typescript/ast";
 import { painter, type Paint } from "./style.ts";
 
 const PLAIN = painter(false);

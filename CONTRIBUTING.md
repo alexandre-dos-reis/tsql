@@ -9,7 +9,7 @@ the compiler is put together, file by file; [`docs/design.md`](docs/design.md) e
 | Tool | Version | Role |
 | --- | --- | --- |
 | Bun | 1.4.4 | runtime, package manager, test runner, type checker |
-| TypeScript | 7.0.2 (peer) | the compiler API the translator reads, and the native checker it drives |
+| TypeScript | 7.1.0-beta (peer) | the compiler API the translator reads, and the native checker it drives |
 | PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
 | fast-check | 4.10.2 | input generation for parity tests |
 | oxfmt | 0.74.0 | formatter (`bun run format`) |
@@ -18,8 +18,8 @@ the compiler is put together, file by file; [`docs/design.md`](docs/design.md) e
 
 Three things worth knowing about TypeScript 7:
 
-- **Use the async API.** `typescript/unstable/sync` reads `stdout._handle.fd` off the spawned compiler process, which Bun does not expose, so it throws on construction. `typescript/unstable/async` speaks the same protocol over ordinary streams and works on Bun and Node alike. The AST is in process — traversal, `getText()` and positions are synchronous — so only checker queries are awaited.
-- **It is `unstable/` on purpose.** The peer range is `~7.0.2` — patches only, because these subpaths may move between 7.x minors.
+- **Use the async API.** `typescript/sync` reads `stdout._handle.fd` off the spawned compiler process, which Bun does not expose, so it throws on construction. `typescript/async` speaks the same protocol over ordinary streams and works on Bun and Node alike. The AST is in process — traversal, `getText()` and positions are synchronous — so only checker queries are awaited.
+- **The API left `unstable/` in 7.1.** The entry points are now `typescript/ast`, `typescript/async` and `typescript/sync`. The peer range is `~7.1.0-beta` (7.1.x once final) while the beta may still change before the release candidate; 7.0.x does not have these paths.
 - **The checker is a separate 23 MB native executable**, which arrives with the consumer's own `typescript` install. `src/tscPath.ts` locates it and passes it as `tsserverPath`, and insists its `lib.*.d.ts` files sit beside it — handed an executable without them, the native compiler *hangs* rather than erroring.
 
 `bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is why `typecheck` passes `--no-script`.

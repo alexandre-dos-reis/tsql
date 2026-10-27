@@ -1,5 +1,5 @@
-import type { Node } from "typescript/unstable/ast";
-import { SignatureKind, SymbolFlags, type Symbol as TsSymbol } from "typescript/unstable/async";
+import type { Node } from "typescript/ast";
+import { SignatureKind, SymbolFlags, type Symbol as TsSymbol } from "typescript/async";
 import { resolve } from "node:path";
 import { originOfPath, packageName } from "./origin.ts";
 import type { TypeCtx } from "./typemap.ts";

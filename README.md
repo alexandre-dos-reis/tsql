@@ -57,7 +57,7 @@ translate *exactly* is a build error, never a guess.
 **1. Install** — Node 22.18+ or Bun, with TypeScript 7 as a peer:
 
 ```bash
-npm i -D @adr/tsql typescript@~7.0.2     # or: bun add -d @adr/tsql typescript@~7.0.2
+npm i -D @adr/tsql typescript@~7.1.0-beta     # or: bun add -d @adr/tsql typescript@~7.1.0-beta
 ```
 
 **2. Write a function**, `functions/billing.ts`:
@@ -264,8 +264,8 @@ column, and `REINDEX` an expression index. A trigger has none of these problems.
 ## Status
 
 Pre-1.0: a minor version may change defaults or the generated SQL, and says so in the
-[changelog](CHANGELOG.md). TypeScript is pinned to `~7.0.2` because tsql reads its `unstable/` compiler
-API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and through PGlite.
+[changelog](CHANGELOG.md). TypeScript is pinned to `~7.1.0-beta` (7.1.x once stable) because tsql reads the compiler
+API, whose beta may still change before 7.1 is final. Tested on PostgreSQL 18, in CI and through PGlite.
 
 ## Learn more
 

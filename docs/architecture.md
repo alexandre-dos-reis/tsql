@@ -41,9 +41,9 @@ cases sets `FORCED_OPTIONS` on top — `strict` (without it `null` slips into ev
 equality would lower wrongly), `noEmit`, `types: []` and `lib: ["ESNext"]` — so no tsconfig can turn
 them off. TypeScript 7 is the native Go compiler, driven as a **separate process**:
 
-- `typescript/unstable/ast` gives nodes, `SyntaxKind`, positions — synchronous, in process.
-- `typescript/unstable/async` gives the `Project` and its `Checker` — every query is awaited,
-  because it crosses the process boundary. (`unstable/sync` does not work under Bun.)
+- `typescript/ast` gives nodes, `SyntaxKind`, positions — synchronous, in process.
+- `typescript/async` gives the `Project` and its `Checker` — every query is awaited,
+  because it crosses the process boundary. (`typescript/sync` still does not work under Bun.)
 
 The native executable belongs to the user's own `typescript` install;
 [`tscPath.ts`](../src/tscPath.ts) finds it (`findTscPath`) and refuses one without its

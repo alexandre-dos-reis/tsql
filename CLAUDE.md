@@ -91,16 +91,17 @@ work, so neither is installed twice. Each example must define `tsql:check`,
 
 ## TypeScript 7 compiler API
 
-The compiler reads TypeScript 7 (the native Go port), where `import ts from "typescript"` no longer
-exists. The API lives in two subpaths, both `unstable/`, which is why the version is pinned exactly
-(`"typescript": "7.0.2"`, no caret):
+The compiler reads TypeScript 7.1 (the native Go port), where `import ts from "typescript"` no longer
+exists. The API left `unstable/` in 7.1 and lives in subpaths, pinned exactly while 7.1 is a beta
+(`"typescript": "7.1.0-beta"`, no caret) because the beta may still change before the release candidate:
 
-- `typescript/unstable/ast` — nodes, `SyntaxKind`, `getText()`, positions. **Synchronous**, in process.
-- `typescript/unstable/async` — `API`, `Project`, `Checker`, diagnostics. **Every checker query is awaited**,
-  because it crosses a process boundary.
+- `typescript/ast` — nodes, `SyntaxKind`, `getText()`, positions, `PathKey`. **Synchronous**, in process.
+- `typescript/async` — `API`, `Project`, `Checker`, diagnostics. **Every checker query is awaited**,
+  because it crosses a process boundary. `api.createSnapshot({ openProjects })` opens the project
+  (`updateSnapshot` is private now) and `snapshot.getProjects()` is synchronous.
 
-Never switch to `typescript/unstable/sync`: it reads `stdout._handle.fd` off the spawned compiler
-process, which Bun does not expose, so it throws on construction. `src/program.ts` is the only file
+Never switch to `typescript/sync`: it reads `stdout._handle.fd` off the spawned compiler
+process, which Bun does not expose, so it throws on construction (re-checked on 7.1.0-beta, Bun 1.4.4). `src/program.ts` is the only file
 that touches the API surface directly.
 
 The API drives a **separate 23 MB native executable**, which comes from the consumer's own
@@ -168,10 +169,10 @@ bun run release     # changeset publish
   231 MB per release, permanently, to solve a problem (no JavaScript runtime present) that nobody
   installing from npm has. Do not reintroduce it for npm; a GitHub Release artifact is the right home
   if a standalone download is ever wanted.
-- **`typescript` is a `peerDependency` (`~7.0.2`), never a dependency.** The checker must be the one
+- **`typescript` is a `peerDependency` (`~7.1.0-beta`), never a dependency.** The checker must be the one
   that agrees with the consumer's own code; a copy resolved under this package would be a different
-  one, with its own `lib.*.d.ts` and its own native executable. Patch range only, because the
-  `unstable/` subpaths may move between 7.x minors. Its only runtime
+  one, with its own `lib.*.d.ts` and its own native executable. Patch range only while the 7.1 API is a beta;
+  7.0.x does not have the non-`unstable` subpaths. Its only runtime
   dependencies are `commander` (the CLI, itself dependency-free) and `fast-check`,
   `@electric-sql/pglite` and `postgres`, for the parity harness and `tsql parity`, which
   `tests/packaging.test.ts` asserts.
