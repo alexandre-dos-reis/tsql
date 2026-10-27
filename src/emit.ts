@@ -71,9 +71,6 @@ function precedenceOf(expr: ExprIR): number {
       return PREC.is;
     case "neg":
       return PREC.unary;
-    // The text of a template is any expression: parenthesised unless it is a call.
-    case "template":
-      return expr.atomic ? PREC.atom : PREC.or;
     case "arrayLiteral":
       return expr.parts.length > 1 ? PREC.concat : PREC.atom;
     default:
@@ -90,6 +87,12 @@ interface Qualifier {
   (sqlName: string): string;
   type(composite: CompositeType): string;
   scalar(type: ScalarType): string;
+}
+
+/** An operand of a `::` cast: an atom, and a negative literal in parentheses. */
+function castOperand(expr: ExprIR, q: Qualifier): string {
+  const text = emitExpr(expr, q, PREC.atom);
+  return text.startsWith("-") ? `(${text})` : text;
 }
 
 function emitExpr(expr: ExprIR, q: Qualifier, minPrecedence = 0): string {
@@ -168,13 +171,15 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "bind":
       return `(SELECT ${emitExpr(expr.body, q)} FROM (SELECT ${emitExpr(expr.value, q)} AS ${quoteIdentifier(expr.name)}) AS t)`;
 
-    case "template":
-      // A negative literal is `-5`: `-5::bit(32)` would negate the cast, so it is wrapped.
-      return expr.sql.replace(/\{(\d+)\}/g, (_, i) => {
-        const arg = expr.args[Number(i)]!;
-        const text = emitExpr(arg, q, PREC.atom);
-        return text.startsWith("-") ? `(${text})` : text;
-      });
+    // A negative literal is `-5`: `-5::bit(32)` would negate the cast, so it is wrapped.
+    case "clz32":
+      return `COALESCE(NULLIF(position('1' IN ${castOperand(expr.operand, q)}::bit(32)), 0) - 1, 32)`;
+
+    case "imul":
+      return `(((${castOperand(expr.left, q)}::bigint * ${castOperand(expr.right, q)}::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer`;
+
+    case "toReal":
+      return `${castOperand(expr.operand, q)}::real::double precision`;
 
     case "builtin":
       return `${expr.sql}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;

@@ -358,18 +358,15 @@ export type ExprIR =
       readonly type: PgType;
     }
   /**
-   * SQL written out in lowering, with `{0}`, `{1}`… standing for `args`: for the
-   * few rewrites that need a type the IR does not have (`bigint`, `real`, `bit(32)`)
-   * only inside one expression, never as the type of a value. `atomic` says the text
-   * is a single term (a call, a parenthesised expression), so it needs no parentheses.
+   * `Math.clz32(x)`: the leading zero bits of the 32-bit pattern of an `integer`.
+   * Named rather than built from smaller nodes because it needs `bit(32)`, a type no
+   * value of this language has — like `arrayLength`, the emitter knows its text.
    */
-  | {
-      readonly kind: "template";
-      readonly sql: string;
-      readonly args: readonly ExprIR[];
-      readonly atomic: boolean;
-      readonly type: ScalarType;
-    }
+  | { readonly kind: "clz32"; readonly operand: ExprIR; readonly type: ScalarType }
+  /** `Math.imul(a, b)`: the product of two `integer`s wrapped to 32 bits, computed in `bigint` inside the expression. */
+  | { readonly kind: "imul"; readonly left: ExprIR; readonly right: ExprIR; readonly type: ScalarType }
+  /** `Math.fround(x)` for a finite `x` inside the range of `real`: `x::real::double precision`. */
+  | { readonly kind: "toReal"; readonly operand: ExprIR; readonly type: ScalarType }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
   | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
   /**

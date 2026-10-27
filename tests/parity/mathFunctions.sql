@@ -137,7 +137,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_2 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_2, -1) < 0 AND atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(_tsql_2, c) END FROM (SELECT (SELECT CASE WHEN a = 0 AND _tsql_1 = 0 THEN CASE WHEN atan2(a, -1) < 0 AND atan2(_tsql_1, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(a, _tsql_1) END FROM (SELECT abs(b) AS _tsql_1) AS t) AS _tsql_2) AS t);
+  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 AND atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(_tsql_1, c) END FROM (SELECT CASE WHEN a = 0 AND abs(b) = 0 THEN CASE WHEN atan2(a, -1) < 0 AND atan2(abs(b), -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(a, abs(b)) END AS _tsql_1) AS t);
 END;
 $$;
 
@@ -190,7 +190,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_2 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_2, -1) < 0 OR atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_2, -c) END FROM (SELECT (SELECT CASE WHEN a = 0 AND _tsql_1 = 0 THEN CASE WHEN atan2(a, -1) < 0 OR atan2(_tsql_1, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-a, -_tsql_1) END FROM (SELECT abs(b) AS _tsql_1) AS t) AS _tsql_2) AS t);
+  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 OR atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_1, -c) END FROM (SELECT CASE WHEN a = 0 AND abs(b) = 0 THEN CASE WHEN atan2(a, -1) < 0 OR atan2(abs(b), -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-a, -abs(b)) END AS _tsql_1) AS t);
 END;
 $$;
 
@@ -214,7 +214,19 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 - floor(_tsql_1) >= 0.5::double precision THEN CASE WHEN floor(_tsql_1) + 1 = 0 AND _tsql_1 < 0 THEN '-0'::double precision ELSE floor(_tsql_1) + 1 END ELSE floor(_tsql_1) END FROM (SELECT abs(a) AS _tsql_1) AS t);
+  RETURN CASE WHEN abs(a) - floor(abs(a)) >= 0.5::double precision THEN CASE WHEN floor(abs(a)) + 1 = 0 AND abs(a) < 0 THEN '-0'::double precision ELSE floor(abs(a)) + 1 END ELSE floor(abs(a)) END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.math_round_called(
+  a double precision
+)
+RETURNS double precision
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  RETURN (SELECT CASE WHEN _tsql_1 - floor(_tsql_1) >= 0.5::double precision THEN CASE WHEN floor(_tsql_1) + 1 = 0 AND _tsql_1 < 0 THEN '-0'::double precision ELSE floor(_tsql_1) + 1 END ELSE floor(_tsql_1) END FROM (SELECT app.math_abs_float(a) AS _tsql_1) AS t);
 END;
 $$;
 

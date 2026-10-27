@@ -1207,27 +1207,44 @@ function negate(expr: ExprIR): ExprIR {
   return { kind: "neg", operand: expr, type: expr.type as ScalarType };
 }
 
-/** Can this be written again without running anything twice? */
-function isAtom(expr: ExprIR): boolean {
+/**
+ * How much work an expression is to run, counted in nodes — or `Infinity` when it
+ * is not just arithmetic on values (a call to a compiled function, a `bind`…).
+ */
+function weight(expr: ExprIR): number {
   switch (expr.kind) {
     case "ref":
     case "lit":
-      return true;
+      return 1;
     case "field":
     case "cast":
-      return isAtom(expr.operand);
+    case "neg":
+      return 1 + weight(expr.operand);
+    case "binary":
+      return 1 + weight(expr.left) + weight(expr.right);
+    case "builtin":
+      return 1 + expr.args.reduce((sum, arg) => sum + weight(arg), 0);
     default:
-      return false;
+      return Infinity;
   }
 }
 
 /**
- * Runs `body` on `value`, evaluated once: written again where it is an atom, bound
- * to a name otherwise (`bind`), so a rewrite that reads its argument several times
- * does not repeat a costly expression.
+ * The most an argument may weigh and still be written again where a rewrite reads
+ * it several times. Measured (PGlite, 200 000 calls): repeating `abs(a)` costs
+ * what `abs(a)` costs once, 2.6 µs a call, while binding it in a sub-select costs
+ * 8.2 µs, because PL/pgSQL no longer evaluates it as a simple expression.
+ */
+const REPEATABLE = 6;
+
+/**
+ * Runs `body` on `value` read several times without running it several times:
+ * written again where that costs nothing (a name, a literal, a few operations on
+ * them), bound to a name otherwise (`bind`) — a call to a compiled function, or an
+ * expression big enough that repeating it would swell the SQL.
  */
 function once(value: ExprIR, s: State, body: (atom: ExprIR) => ExprIR): ExprIR {
-  if (isAtom(value)) return body(value);
+  if (weight(value) <= REPEATABLE) return body(value);
   const name = `_tsql_${++s.temps.count}`;
   const inner = body({ kind: "ref", sqlName: name, type: value.type });
   return { kind: "bind", name, value, body: inner, type: inner.type };
@@ -1270,7 +1287,7 @@ function froundRule(x: ExprIR): ExprIR {
     test("or", test("=", x, num(NaN)), test("=", x, num(0))),
     test("=", magnitude, num(Infinity)),
   );
-  const cast: ExprIR = { kind: "template", sql: "{0}::real::double precision", args: [x], atomic: true, type: DOUBLE };
+  const cast: ExprIR = { kind: "toReal", operand: x, type: DOUBLE };
   return pick(
     asIs,
     x,
@@ -1439,22 +1456,8 @@ async function lowerMathCall(
     }
     case "int32": {
       const integer = scalarType("integer");
-      if (entry.rule === "clz32") {
-        return {
-          kind: "template",
-          sql: "COALESCE(NULLIF(position('1' IN {0}::bit(32)), 0) - 1, 32)",
-          args,
-          atomic: true,
-          type: integer,
-        };
-      }
-      return {
-        kind: "template",
-        sql: "((({0}::bigint * {1}::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer",
-        args,
-        atomic: true,
-        type: integer,
-      };
+      if (entry.rule === "clz32") return { kind: "clz32", operand: args[0]!, type: integer };
+      return { kind: "imul", left: args[0]!, right: args[1]!, type: integer };
     }
   }
 }

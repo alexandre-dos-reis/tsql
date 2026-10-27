@@ -75,7 +75,12 @@ export function mathRound(x: Float): Float {
   return Math.round(x);
 }
 
-// The argument is not a name: it is computed once, then read several times.
+// A call to a compiled function is not repeated: it is bound once and read several times.
+export function mathRoundCalled(a: Float): Float {
+  return Math.round(mathAbsFloat(a));
+}
+
+// A few operations on names are cheap to write again, so they are not bound.
 export function mathRoundAbs(a: Float): Float {
   return Math.round(Math.abs(a));
 }

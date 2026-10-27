@@ -11,7 +11,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND 3.141592653589793::double precision = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 OR atan2(3.141592653589793::double precision, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_1, -3.141592653589793::double precision) END FROM (SELECT abs(r) AS _tsql_1) AS t);
+  RETURN CASE WHEN abs(r) = 0 AND 3.141592653589793::double precision = 0 THEN CASE WHEN atan2(abs(r), -1) < 0 OR atan2(3.141592653589793::double precision, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-abs(r), -3.141592653589793::double precision) END;
 END;
 $$;
 

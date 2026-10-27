@@ -283,7 +283,7 @@ Every member of `Math` whose result can be the **same double** as JavaScript's, 
 | `Math.clz32(x)`, `Math.imul(a, b)` | `position('1' IN x::bit(32))`, a `bigint` product wrapped to 32 bits | `Integer` arguments only: a `Float` would first be truncated and wrapped modulo 2^32, which tsql does not reproduce |
 | `Math.PI`, `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `SQRT2`, `SQRT1_2` | a `double precision` literal | read from `Math` itself, so the bits are JavaScript's |
 
-An argument that a rewrite reads several times is evaluated once: written again when it is a name, a literal or a field of one, bound by `(SELECT … FROM (SELECT <argument> AS _tsql_1) AS t)` otherwise (`bind` in the IR).
+An argument that a rewrite reads several times is evaluated once. A few operations on names (up to six nodes: `abs(a)`, `a + b`) are simply written again, which costs nothing — measured on PGlite, 200 000 calls, `round(abs(a))` repeated inline runs in 2.6 µs, like `abs(a)` alone. Anything heavier, or a call to a compiled function, is bound by `(SELECT … FROM (SELECT <argument> AS _tsql_1) AS t)` (`bind` in the IR), which PL/pgSQL no longer evaluates as a simple expression (8.2 µs for the same call). `clz32`, `imul` and `fround`'s cast are IR nodes of their own (`clz32`, `imul`, `toReal`), because they need `bit(32)`, `bigint` and `real`, types no value of the language has; like `arrayLength`, the emitter knows their text.
 
 ### Why these, and not the others
 
