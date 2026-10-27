@@ -21,7 +21,7 @@ import {
   type TypeReferenceNode,
   type VariableDeclaration,
   type UnionTypeNode,
-} from "typescript/unstable/ast";
+} from "typescript/ast";
 import {
   SymbolFlags,
   TypeFlags,
@@ -30,7 +30,7 @@ import {
   type Symbol as TsSymbol,
   type Type,
   type UnionType,
-} from "typescript/unstable/async";
+} from "typescript/async";
 import { CompileError } from "./errors.ts";
 import {
   arrayType,

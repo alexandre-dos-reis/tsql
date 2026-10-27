@@ -1,4 +1,4 @@
-import { API, DiagnosticCategory, type Project } from "typescript/unstable/async";
+import { API, DiagnosticCategory, type Project } from "typescript/async";
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +8,7 @@ import { describeSearch, findTscPath } from "./tscPath.ts";
 /**
  * Thin wrapper over the TypeScript 7 compiler API.
  *
- * Note this is the *async* API (`typescript/unstable/async`). The sync variant
+ * Note this is the *async* API (`typescript/async`). The sync variant
  * reads `stdout._handle.fd` off the spawned compiler's pipe, which Bun does not
  * expose, so it throws under Bun. The async API talks the same JSON-RPC
  * protocol over ordinary streams and works on both runtimes.
@@ -93,8 +93,8 @@ export async function openProject(source: ProjectSource): Promise<OpenProject> {
 
   const api = new API({ cwd: process.cwd(), tsserverPath });
   try {
-    const snapshot = await api.updateSnapshot({ openProjects: [configFileName] });
-    const project = (await snapshot.getProjects()).find((p) => p.configFileName === configFileName);
+    const snapshot = await api.createSnapshot({ openProjects: [configFileName] });
+    const project = snapshot.getProjects().find((p) => p.configFileName === configFileName);
     if (!project) throw new Error(`Could not open TypeScript project: ${userConfig ?? files.join(", ")}`);
     return {
       api,

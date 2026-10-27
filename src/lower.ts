@@ -37,7 +37,7 @@ import {
   type VariableDeclarationList,
   type VariableStatement,
   type WhileStatement,
-} from "typescript/unstable/ast";
+} from "typescript/ast";
 import { CompileError } from "./errors.ts";
 import {
   describe,

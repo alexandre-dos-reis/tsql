@@ -68,10 +68,10 @@
     "@changesets/cli": "^3.0.3",
     "@types/bun": "1.4.4",
     "oxfmt": "0.74.0",
-    "typescript": "7.0.2"
+    "typescript": "7.1.0-beta"
   },
   "peerDependencies": {
-    "typescript": "~7.0.2"
+    "typescript": "~7.1.0-beta"
   },
   "engines": {
     "node": ">=22.18.0"

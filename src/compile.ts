@@ -6,7 +6,7 @@ import {
   type Identifier,
   type SourceFile,
   type VariableStatement,
-} from "typescript/unstable/ast";
+} from "typescript/ast";
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
 import type { Paint } from "./style.ts";
