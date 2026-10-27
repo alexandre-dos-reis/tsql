@@ -154,6 +154,9 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 
+    case "builtin":
+      return `${expr.sql}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
+
     case "field":
       // `(sub).plan` — the parentheses are required: `sub.plan` would be read
       // as a column reference on a table called `sub`.

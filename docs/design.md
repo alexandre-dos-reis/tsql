@@ -102,7 +102,7 @@ functions/billing.ts:2:7 - An `if` condition must be a boolean, not `text`.
       |       ^
 ```
 
-A few others: a `switch` without `default` (PostgreSQL does not enforce a union's values, so the `CASE` could match nothing), `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.max()` (there is no JavaScript runtime in your database), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
+A few others: a `switch` without `default` (PostgreSQL does not enforce a union's values, so the `CASE` could match nothing), `a < b` on strings (PostgreSQL would order by collation, TypeScript by UTF-16), `%` on a float (no such operator in PostgreSQL), `Math.round` (PostgreSQL rounds a tie to the even neighbour, JavaScript rounds it up), mutating a field of a parameter (PL/pgSQL passes by value, so the change would vanish). [The full list is below.](#rejected-at-build-time)
 
 ## Semantics that are decided, not inferred
 
@@ -265,6 +265,39 @@ integer up to 2^53 fits in a double) but has no `integer` to live in, so where o
 refused outright rather than reported as a narrowing — it is out of range, not merely fractional.
 In a `Float` position it is emitted `3000000000::double precision`, because PostgreSQL would
 otherwise read it as `bigint`.
+
+## Math
+
+Eight members of `Math` compile: `abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min` and `max`. Each is a PostgreSQL function that returns the same double for the same input, so the SQL is the call under its own name and nothing is rewritten (`min` and `max` are `LEAST` and `GREATEST`). The members are a closed table in [`src/math.ts`](../src/math.ts). `Math` itself is recognised by provenance, so a parameter or a module-level value called `Math` is not mistaken for it, and a member the table does not list is refused — anything `Math` grows later stays out until someone adds it.
+
+| TypeScript | PostgreSQL | result |
+| --- | --- | --- |
+| `Math.abs(x)` | `abs(x)` | the argument's own type; an `Integer` needs [the guard](#the-int-guard) |
+| `Math.floor(x)`, `Math.ceil(x)`, `Math.trunc(x)`, `Math.sign(x)`, `Math.sqrt(x)` | `floor(x)`, `ceil(x)`, … | always `Float`; an `Integer` is widened first (`floor(x::double precision)`), so no overload is left for PostgreSQL to pick |
+| `Math.max(a, b, …)`, `Math.min(a, b, …)` | `greatest(a, b, …)`, `least(a, b, …)` | the widest of the arguments, each widened to it |
+
+### Why these, and not the others
+
+This was measured, not assumed. Each function ran on 40 016 inputs (uniform over several ranges, ties, and the awkward values — `0.49999999999999994`, `2^52 + 1`) in Node 22 (V8), Bun 1.4.4 (JavaScriptCore) and PostgreSQL 18.6 through PGlite 0.5.11, and the results were compared bit by bit.
+
+- **The eight above: no difference at all**, between the two engines or with PostgreSQL. They are operations IEEE-754 defines exactly, so they do not depend on a platform's `libm` either.
+- **`Math.round` differs on every tie.** PostgreSQL's `round(double precision)` sends a tie to the even neighbour (`round(2.5)` is 2), `Math.round` rounds it up (3): 9 955 of the 40 016 inputs. `floor(x) + CASE WHEN x - floor(x) >= 0.5 THEN 1 ELSE 0 END` agreed on all of them, while the obvious `floor(x + 0.5)` did not (it is wrong on `0.49999999999999994`). It is refused because the table only holds what needs no rewrite.
+- **`sin`, `cos`, `exp`, `log`, `pow`, `atan2` and the like cannot be promised.** ECMAScript only asks for an approximation, and V8 and JavaScriptCore already disagreed with each other on between 2 and 3 535 of the 40 016 inputs, depending on the function. PostgreSQL uses the platform's `libm`, so a third answer is possible, and which one depends on the machine. `Float` promises the same bits, and these cannot keep it. (PGlite is WebAssembly on musl, not a native PostgreSQL on glibc, so the PostgreSQL column of this measurement is indicative; the exact group above does not depend on it.)
+- **`Math.random`** is not pure; **`hypot`**, **`log2`**, **`log1p`** and **`expm1`** have no PostgreSQL function for `double precision`; **`fround`** would need a cast through `real`, and PostgreSQL raises on a value `real` cannot hold where `fround` returns `Infinity`.
+
+Each refusal says which of these it is. The constants (`Math.PI`…) are still refused: they are values, not calls, and are left for a later change.
+
+### What lowering proves
+
+- **Every argument is a number that cannot be null.** `GREATEST` and `LEAST` skip NULLs where `Math.max` and `Math.min` have no such thing. TypeScript already refuses a `null` there, so a nullable argument means the two languages no longer see the same program.
+- **`abs` of an `Integer` needs `int(...)`.** `abs(-2147483648)` is the one input that overflows, and only in PostgreSQL, where it raises `integer out of range` while `Math.abs` returns 2147483648. It is the same asymmetry as unary `-`, closed the same way: `int(Math.abs(x))`.
+- **No spread, no empty call.** `Math.max(...xs)` supplies a number of arguments unknown at build time, and `Math.max()` is `-Infinity`.
+
+### What it cannot prove
+
+- **`Math.sqrt` of a negative number.** It is `NaN` in TypeScript and an error in PostgreSQL (`cannot take square root of a negative number`) — the same family as the overflow and underflow above. The harness finds it as soon as an input reaches it (it reports `PostgreSQL raised … where TypeScript returned …`), so the author closes it by guarding the input: `x >= 0 ? Math.sqrt(x) : 0`. The `CASE` that becomes does not evaluate `sqrt` on the branch that is not taken.
+- **A `NaN` argument to `Math.min`.** PostgreSQL treats `NaN` as equal to itself and greater than every number, so `LEAST('NaN', 1)` is `1` where `Math.min(NaN, 1)` is `NaN`. (`Math.max` agrees: both give `NaN`.) The same difference already holds for `<` and `===` on a `Float`. Inside a compiled function PostgreSQL raises where JavaScript would make a `NaN` (`0 / 0`, `sqrt` of a negative), so a `NaN` can only come from outside — a parameter, or arithmetic on an infinite one — and the harness never generates one (`noNaN`), so it does not see this. Validate the input if a caller might send one.
+- **The sign of a zero.** `Math.ceil(-0.5)` is `-0`; the harness compares with `===`, under which `-0` and `0` are equal, so it cannot tell them apart.
 
 ## Object types
 
@@ -732,7 +765,8 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 
 | Rejected | Reported as |
 | --- | --- |
-| `Math.max(a, b)`, `Math.PI`, `JSON.stringify(x)` | `` `Math.max` is a JavaScript runtime global and has no PL/pgSQL equivalent `` |
+| `Math.PI`, `JSON.stringify(x)`, `Number.isInteger(n)` | `` `Math.PI` is a JavaScript runtime global and has no PL/pgSQL equivalent `` |
+| `Math.round(x)`, `Math.sin(x)`, `Math.random()`, `Math.max(...xs)` | `` `Math.round` is not supported: … Supported: Math.abs, Math.ceil, … `` — the reason, and the members that do compile (see [Math](#math)) |
 | `new Date().getTime()` | `` `Date` is a JavaScript runtime global … `` |
 | `Infinity`, `NaN`, `undefined`, `globalThis` | the specific alternative, e.g. `` PostgreSQL spells it `'Infinity'::double precision` `` |
 | `fc.sample(…)` from an imported package | `` `fc` comes from a package (`fast-check`), which cannot run inside PostgreSQL `` |
@@ -742,7 +776,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | calling a function exported from a file this build does not include | `` `double` is exported from `helpers.ts`, which this build does not include `` — a migration is written from exactly the files named, so the call would reach a function it does not create |
 | a module-level value, `const rate = 0.2` read from a function | `` `rate` is a value declared outside the function `` — inlining it would freeze a copy in the database that the TypeScript could later change, and the parity harness would keep agreeing because it imports the same module |
 
-This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. A symbol declared in the project is then split by whether it is *callable* — a non-compiled function is told to be exported, a value is told to become a parameter — asked of its type, so a `function` declaration and a `const` bound to an arrow answer alike. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`).
+This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. A symbol declared in the project is then split by whether it is *callable* — a non-compiled function is told to be exported, a value is told to become a parameter — asked of its type, so a `function` declaration and a `const` bound to an arrow answer alike. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`). The one exception to "no list of names" runs the other way: [the members of `Math` that do compile](#math) are a closed table, and `Math` itself is still found by provenance (`tests/rejected/mathLookalike.ts`).
 
 Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: tsql always type checks with `"types": []` and `lib: ["ESNext"]`, whatever a tsconfig says, so they are type errors before the translator runs. It imposes `strict` the same way: without `strictNullChecks`, TypeScript lets `null` into every type, and a nullable comparison would lower to `=` instead of `IS NOT DISTINCT FROM`.
 

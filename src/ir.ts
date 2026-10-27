@@ -336,6 +336,13 @@ export type ExprIR =
       readonly type: PgType;
     }
   | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
+  /**
+   * A PostgreSQL built-in, called by its bare name — `Math.floor(x)` is
+   * `floor(x)`. Unlike `call` it is not one of the compiled functions, so it is
+   * never schema-qualified. Lowering has already widened every argument, so the
+   * emitter prints it as written.
+   */
+  | { readonly kind: "builtin"; readonly sql: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
   | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }

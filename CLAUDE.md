@@ -234,6 +234,13 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
+The one table of names runs the other way, and is closed: `src/math.ts` lists the members of `Math` that
+*compile* (`abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min`, `max`) — a PostgreSQL function under its
+own name, nothing rewritten, measured to return the same double. `Math` itself is still found by provenance,
+and a member not in the table is refused, so what `Math` grows stays out. Before adding a member, measure it
+against PostgreSQL (`docs/design.md`, "Math"): the ones that need a rewrite (`round`) or whose last bits are
+platform-defined (`sin`, `exp`, `pow`…) are refused on purpose.
+
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).

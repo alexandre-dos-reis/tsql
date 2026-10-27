@@ -68,6 +68,7 @@ import {
   type StmtIR,
 } from "./ir.ts";
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
+import { mathFunction, unsupportedMathMessage } from "./math.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -1029,7 +1030,7 @@ async function lowerExpr(node: Expression, s: State, expected?: PgType, guarded 
       return lowerArrayLiteral(node as ArrayLiteralExpression, s, expected);
 
     case SyntaxKind.CallExpression:
-      return lowerCall(node as CallExpression, s);
+      return lowerCall(node as CallExpression, s, guarded);
 
     case SyntaxKind.ObjectLiteralExpression:
       return lowerObjectLiteral(node as ObjectLiteralExpression, s);
@@ -1127,11 +1128,12 @@ async function lowerConditional(node: ConditionalExpression, s: State, expected?
   return { kind: "case", cond, whenTrue: coerce(whenTrue, type), whenFalse: coerce(whenFalse, type), type };
 }
 
-async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
+async function lowerCall(node: CallExpression, s: State, guarded = false): Promise<ExprIR> {
   if (node.expression.kind === SyntaxKind.PropertyAccessExpression) {
     const access = node.expression as PropertyAccessExpression;
     const array = await arrayOperand(access.expression, s);
     if (array) return lowerArrayMethod(node, access, array, s);
+    if (await isMathGlobal(access.expression, s)) return lowerMathCall(node, access, s, guarded);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
@@ -1191,6 +1193,106 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
     );
   }
   return operand;
+}
+
+/**
+ * Is this the standard library's `Math`? Asked by provenance, like every other
+ * global: a parameter, a local or a module-level value that happens to be
+ * called `Math` is not it.
+ */
+async function isMathGlobal(node: Expression, s: State): Promise<boolean> {
+  if (node.kind !== SyntaxKind.Identifier || (node as Identifier).text !== "Math") return false;
+  if (s.scope.has("Math")) return false;
+  return (await classifyReference("Math", node, s)).kind === "runtime-global";
+}
+
+/**
+ * `Math.floor(x)`, `Math.max(a, b)` … for the members whose PostgreSQL
+ * function is the same one under another name (`src/math.ts`).
+ *
+ * Nothing is rewritten: the emitted SQL is the call, with its arguments widened
+ * so that no overload decision is left to PostgreSQL. What lowering has to
+ * prove is therefore only that the two sides cannot disagree on the arguments:
+ *
+ * - **Every argument is a number that cannot be null.** `GREATEST` and `LEAST`
+ *   skip NULLs where `Math.max` and `Math.min` have no such thing, and
+ *   TypeScript has already refused a `null` here, so a nullable argument means
+ *   the two languages no longer see the same program.
+ * - **`abs` of an `integer` needs the guard.** `abs(-2147483648)` is the one
+ *   input that overflows, and it overflows in PostgreSQL only — the same
+ *   asymmetry as unary `-`, closed the same way: `int(Math.abs(x))`.
+ * - **No spread, no empty call.** `Math.max(...xs)` is an array in disguise, and
+ *   `Math.max()` is `-Infinity`.
+ *
+ * What it does not prove, and cannot: `sqrt` of a negative number raises in
+ * PostgreSQL and is `NaN` in JavaScript. Both are recorded in `docs/design.md`
+ * ("Math"); the harness finds the divergence when an input reaches it.
+ */
+async function lowerMathCall(
+  node: CallExpression,
+  access: PropertyAccessExpression,
+  s: State,
+  guarded: boolean,
+): Promise<ExprIR> {
+  const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const entry = mathFunction(member);
+  if (!entry) throw CompileError.at(access, unsupportedMathMessage(member));
+  const label = `Math.${member}`;
+
+  for (const argument of node.arguments) {
+    if (argument.kind === SyntaxKind.SpreadElement) {
+      throw CompileError.at(
+        argument,
+        `\`${label}\` does not take a spread argument: how many values it gets is not known at build time, and an empty one makes \`Math.max\` return -Infinity. Pass the values one by one.`,
+      );
+    }
+  }
+  if (entry.shape === "widest" ? node.arguments.length === 0 : node.arguments.length !== 1) {
+    throw CompileError.at(
+      node,
+      entry.shape === "widest"
+        ? `\`${label}()\` with no argument is ${member === "max" ? "-Infinity" : "Infinity"}, which has no SQL equivalent. Pass at least one number.`
+        : `\`${label}\` takes exactly one argument, got ${node.arguments.length}.`,
+    );
+  }
+
+  const args: ExprIR[] = [];
+  for (const argument of node.arguments) {
+    const lowered = await lowerExpr(argument as Expression, s);
+    if (!isScalar(lowered.type) || !isNumeric(lowered.type) || lowered.type.nullable) {
+      throw CompileError.at(
+        argument as Node,
+        `\`${label}\` needs numbers that cannot be null, not \`${describe(lowered.type)}${lowered.type.nullable ? " | null" : ""}\`.`,
+      );
+    }
+    args.push(lowered);
+  }
+
+  switch (entry.shape) {
+    case "same": {
+      const operand = args[0]!;
+      if (isExactly(operand.type, "integer") && !guarded) {
+        throw CompileError.at(
+          node,
+          `\`${label}\` of an \`Integer\` can overflow 32 bits — \`${label}(${INT4_MIN})\` is ${-INT4_MIN} — which PostgreSQL refuses (\`integer out of range\`) where TypeScript returns it. ` +
+            `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise, or pass a \`Float\`.`,
+        );
+      }
+      return { kind: "builtin", sql: entry.sql, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
+    }
+    case "float": {
+      const type = scalarType("double precision");
+      return { kind: "builtin", sql: entry.sql, args: [coerce(args[0]!, type)], type };
+    }
+    case "widest": {
+      let type: PgType = args[0]!.type;
+      for (const [i, argument] of args.entries()) {
+        if (i > 0) type = unify(type, argument.type, node.arguments[i] as Node, `arguments of \`${label}\``);
+      }
+      const widest = scalarType((type as ScalarType).sql);
+      return { kind: "builtin", sql: entry.sql, args: args.map((a) => coerce(a, widest)), type: widest };
+    }
+  }
 }
 
 /**

@@ -2,7 +2,7 @@
 
 ## Global objects :
 - console.log -> raise ...
-- Math
+- Math (done: `abs`, `ceil`, `floor`, `max`, `min`, `sign`, `sqrt`, `trunc` — see `docs/design.md`; left: `round`, which needs a rewrite, and the constants)
 - Date
 - String
 - Number
