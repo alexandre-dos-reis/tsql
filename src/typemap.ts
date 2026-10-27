@@ -83,26 +83,44 @@ export interface TypeCtx {
 const NULL_ONLY = Symbol("null");
 type Mapped = PgType | typeof NULL_ONLY;
 
-/** Numeric aliases from src/pgtypes.ts, resolved by name at build time. */
+/** Numeric aliases from src/index.ts, resolved by name at build time. */
 const NUMERIC_ALIASES: Record<string, PgScalar> = {
   Integer: "integer",
-  Numeric: "numeric",
   Float: "double precision",
 };
 
 /**
- * This package's own name, which is how `Integer`, `Numeric` and `Float` are
- * told apart from identically named local aliases. A constant kept in step
+ * This package's own name, which is how `Integer`, `Float` and `int` are
+ * told apart from identically named local declarations. A constant kept in step
  * with package.json by a test, so recognising it needs no file read at run time.
  */
 export const PACKAGE_NAME = "@adr/tsql";
 
-/** `pgtypes.ts`, which is what the published types point at too; a `.d.ts` or `.js` copy is accepted as well. */
-const PGTYPES_FILE = /(^|\/)pgtypes\.(ts|d\.ts|js)$/;
+/** The authoring module, `src/index.ts`, which is what the published types point at; a `.d.ts` or `.js` copy is accepted as well. */
+const AUTHORING_FILE = /(^|\/)index\.(ts|d\.ts|m?js)$/;
 
 /** Was this declaration written in tsql's own authoring vocabulary? */
-function isPgTypes(path: string): boolean {
-  return PGTYPES_FILE.test(path) && isFromPackage(path, PACKAGE_NAME);
+function isAuthoringModule(path: string): boolean {
+  return AUTHORING_FILE.test(path) && isFromPackage(path, PACKAGE_NAME);
+}
+
+/** The name of the guard that makes `integer` arithmetic translatable. */
+export const INT_GUARD = "int";
+
+/**
+ * Does this identifier refer to tsql's own `int` guard?
+ *
+ * Asked by provenance, like the numeric aliases and for the same reason: a
+ * consumer's own `int` must not be erased from the emitted SQL. The name at
+ * the call site may be anything (`import { int as i }`), so the comparison is
+ * against the name of the symbol it resolves to.
+ */
+export async function isIntGuard(node: Node, ctx: TypeCtx): Promise<boolean> {
+  const local = await ctx.checker.getSymbolAtLocation(node);
+  if (!local) return false;
+  const declared = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
+  if (declared.name !== INT_GUARD) return false;
+  return declared.declarations.some((d) => isAuthoringModule(d.path.replaceAll("\\", "/")));
 }
 
 /**
@@ -317,7 +335,10 @@ function register(named: NamedText, at: Node, ctx: TypeCtx): NamedText {
 function enumFromDeclaration(node: EnumDeclaration, module: string): NamedText {
   const tsName = node.name.text;
   if ((node as { modifiers?: readonly Node[] }).modifiers?.some((m) => m.kind === SyntaxKind.DeclareKeyword)) {
-    throw CompileError.at(node, `\`${tsName}\` is a \`declare enum\`: its values are not in the source, so there is nothing to create.`);
+    throw CompileError.at(
+      node,
+      `\`${tsName}\` is a \`declare enum\`: its values are not in the source, so there is nothing to create.`,
+    );
   }
   const members = new Map<string, string>();
   for (const member of node.members) {
@@ -341,7 +362,11 @@ function enumFromDeclaration(node: EnumDeclaration, module: string): NamedText {
  * the erasable successor to a string `enum`. Recognised in exactly that form, so
  * a reader can see which aliases become an enum.
  */
-async function constObjectOf(alias: TypeAliasDeclaration, symbol: TsSymbol, ctx: TypeCtx): Promise<NamedText | undefined> {
+async function constObjectOf(
+  alias: TypeAliasDeclaration,
+  symbol: TsSymbol,
+  ctx: TypeCtx,
+): Promise<NamedText | undefined> {
   const name = alias.name.text;
   const typeNode = unparenthesized(alias.type);
   if (typeNode.kind !== SyntaxKind.IndexedAccessType) return undefined;
@@ -367,7 +392,8 @@ async function constObjectOf(alias: TypeAliasDeclaration, symbol: TsSymbol, ctx:
   if (!declaration || !(declaration.parent.flags & NodeFlags.Const)) throw CompileError.at(alias, notConst);
 
   let init = declaration.initializer;
-  while (init && init.kind === SyntaxKind.ParenthesizedExpression) init = (init as unknown as { expression: Expression }).expression;
+  while (init && init.kind === SyntaxKind.ParenthesizedExpression)
+    init = (init as unknown as { expression: Expression }).expression;
   const asConst =
     init?.kind === SyntaxKind.AsExpression && (init as AsExpression).type.getText() === "const"
       ? (init as AsExpression).expression
@@ -390,7 +416,10 @@ async function constObjectOf(alias: TypeAliasDeclaration, symbol: TsSymbol, ctx:
     // JavaScript moves integer-like keys to the front of `Object.values`, so
     // the written order would not be the runtime order.
     if (/^(0|[1-9][0-9]*)$/.test(keyText)) {
-      throw CompileError.at(key, `\`${name}.${keyText}\`: an integer-like key is reordered by JavaScript, so the enum's order would not be the one written. Use a name.`);
+      throw CompileError.at(
+        key,
+        `\`${name}.${keyText}\`: an integer-like key is reordered by JavaScript, so the enum's order would not be the one written. Use a name.`,
+      );
     }
     members.set(keyText, (assignment.initializer as StringLiteral).text);
   }
@@ -418,7 +447,13 @@ async function domainOf(
     }
   }
   if (values.length === 0) return undefined;
-  const set = closedSet("domain", alias.name.text, new Map([...new Set(values)].sort().map((v) => [v, v])), alias, module);
+  const set = closedSet(
+    "domain",
+    alias.name.text,
+    new Map([...new Set(values)].sort().map((v) => [v, v])),
+    alias,
+    module,
+  );
   return { named: set, nullable };
 }
 
@@ -437,12 +472,18 @@ function closedSet(
   if (values.length === 0) throw CompileError.at(at, `\`${tsName}\` has no values.`);
   for (const value of values) {
     if (Buffer.byteLength(value, "utf8") > MAX_IDENTIFIER_BYTES) {
-      throw CompileError.at(at, `\`${tsName}\` has a value longer than PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte enum label limit: \`${value}\`.`);
+      throw CompileError.at(
+        at,
+        `\`${tsName}\` has a value longer than PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte enum label limit: \`${value}\`.`,
+      );
     }
   }
   const sqlName = toSnakeCase(tsName);
   if (Buffer.byteLength(`${sqlName}_values`, "utf8") > MAX_IDENTIFIER_BYTES) {
-    throw CompileError.at(at, `\`${tsName}\` maps to \`${sqlName}\`, too long for PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte identifiers.`);
+    throw CompileError.at(
+      at,
+      `\`${tsName}\` maps to \`${sqlName}\`, too long for PostgreSQL's ${MAX_IDENTIFIER_BYTES}-byte identifiers.`,
+    );
   }
   const named: NamedText = { kind, tsName, sqlName, values, module };
   MEMBERS.set(named, members);
@@ -506,7 +547,7 @@ async function resolveNumericAlias(node: TypeReferenceNode, ctx: TypeCtx): Promi
   if (!local) return undefined;
   const declared = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
   const declaredIn = declared.declarations.map((d) => d.path.replaceAll("\\", "/"));
-  if (!declaredIn.some(isPgTypes)) return undefined;
+  if (!declaredIn.some(isAuthoringModule)) return undefined;
   return scalar;
 }
 
@@ -567,7 +608,7 @@ async function mapTypeStructurally(type: Type, at: Node, ctx: TypeCtx): Promise<
 
   throw CompileError.at(
     at,
-    `Unsupported type \`${await ctx.checker.typeToString(type)}\`. Supported: string, number, boolean, Integer, Numeric, Float, unions of string literals, \`T | null\`, named object types, and \`readonly T[]\`.`,
+    `Unsupported type \`${await ctx.checker.typeToString(type)}\`. Supported: string, number, boolean, Integer, Float, unions of string literals, \`T | null\`, named object types, and \`readonly T[]\`.`,
   );
 }
 
@@ -669,7 +710,10 @@ async function mapCompositeType(type: Type, at: Node, ctx: TypeCtx): Promise<Com
   const composite = compositeType(tsName, sqlName, fields, false, module);
 
   if (ctx.named.has(sqlName)) {
-    throw CompileError.at(at, `\`${tsName}\` maps to SQL type \`${sqlName}\`, which is already used by \`${ctx.named.get(sqlName)!.tsName}\`.`);
+    throw CompileError.at(
+      at,
+      `\`${tsName}\` maps to SQL type \`${sqlName}\`, which is already used by \`${ctx.named.get(sqlName)!.tsName}\`.`,
+    );
   }
   const existing = ctx.composites.get(sqlName);
   if (existing && existing.tsName !== tsName) {
@@ -777,7 +821,7 @@ function merge(parts: readonly Mapped[], at: Node): Mapped {
       scalar = part.sql;
     } else if (scalar !== part.sql) {
       const both: PgScalar[] = [scalar, part.sql];
-      if (both.every((s) => s === "integer" || s === "numeric" || s === "double precision")) {
+      if (both.every((s) => s === "integer" || s === "double precision")) {
         scalar = widenNumeric(scalar, part.sql);
       } else {
         throw CompileError.at(

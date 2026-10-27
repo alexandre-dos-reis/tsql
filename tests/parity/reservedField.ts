@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * A field named after a reserved word is quoted where SQL reads it — `"limit" integer` in
@@ -12,5 +12,5 @@ export interface Quota {
 }
 
 export function remainingQuota(quota: Quota): Integer {
-  return quota.limit - quota.used;
+  return int(quota.limit - quota.used);
 }

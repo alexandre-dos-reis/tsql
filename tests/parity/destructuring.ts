@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * `const { a, b } = obj` is one field read per name. A nested pattern reads a field of a nested
@@ -18,7 +18,7 @@ export function purchaseSummary(purchase: Purchase): Integer {
     quantity,
     shipping: { express },
   } = purchase;
-  return express ? quantity + 1 : quantity;
+  return express ? int(quantity + 1) : quantity;
 }
 
 export function shippingCountry(purchase: Purchase): string {
@@ -32,7 +32,7 @@ export function purchasePlan(purchase: Purchase): string {
 }
 
 export function withBonus(purchase: Purchase): Purchase {
-  return { ...purchase, quantity: purchase.quantity + 1 };
+  return { ...purchase, quantity: int(purchase.quantity + 1) };
 }
 
 export function bonusQuantity(purchase: Purchase): Integer {

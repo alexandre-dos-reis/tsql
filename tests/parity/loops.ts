@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * Every loop becomes `WHILE … LOOP`: a `for` keeps its re-tested condition and runs its step at the
@@ -8,11 +8,11 @@ import type { Integer } from "../../src/pgtypes";
 export function sumOfOdds(n: Integer): Integer {
   const limit = n % 50;
   let sum = 0;
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < limit; i = int(i + 1)) {
     if (i % 2 === 0) {
       continue;
     }
-    sum += i;
+    sum = int(sum + i);
   }
   return sum;
 }
@@ -23,7 +23,7 @@ export function nextPowerOfTwo(n: Integer): Integer {
     if (power > 1000000) {
       break;
     }
-    power *= 2;
+    power = int(power * 2);
   }
   return power;
 }
@@ -31,11 +31,11 @@ export function nextPowerOfTwo(n: Integer): Integer {
 export function triangle(n: Integer): Integer {
   const limit = n % 20;
   let total = 0;
-  for (let i = 1; i <= limit; i++) {
-    total += i;
+  for (let i = 1; i <= limit; i = int(i + 1)) {
+    total = int(total + i);
   }
-  for (let i = 0; i < 2; i++) {
-    total += 1;
+  for (let i = 0; i < 2; i = int(i + 1)) {
+    total = int(total + 1);
   }
   return total;
 }

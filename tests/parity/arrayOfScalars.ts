@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * `readonly T[]` parameters, in the three ways an array type can be written — `readonly Integer[]`,
@@ -24,7 +24,7 @@ export function sumUntilNegative(amounts: ReadonlyArray<Integer>): Integer {
     if (amount % 2 === 0) {
       continue;
     }
-    total += amount;
+    total = int(total + amount);
   }
   return total;
 }
@@ -55,7 +55,7 @@ export function countMissingNotes(notes: readonly (string | null)[]): Integer {
   let missing = 0;
   for (const note of notes) {
     if (note === null) {
-      missing++;
+      missing = int(missing + 1);
     }
   }
   return missing;

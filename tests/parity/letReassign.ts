@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * A `let` local reassigned with `=`, `+=`, `-=`, `*=` and `++`, in branches and after them. A
@@ -8,12 +8,12 @@ import type { Integer } from "../../src/pgtypes";
 export function shippingTotal(weight: Integer, express: boolean): Integer {
   let total = 500;
   if (weight > 1000) {
-    total += 200;
+    total = int(total + 200);
   }
   if (express) {
-    total = total * 2;
+    total = int(total * 2);
   }
-  total++;
+  total = int(total + 1);
   return total;
 }
 

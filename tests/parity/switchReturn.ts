@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * A `switch` whose branches only return becomes RETURN CASE … END. SQL's CASE expression takes one

@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * An array of a named object type is an array of its composite: `readonly TodoItem[]` is
@@ -19,7 +19,7 @@ export function openEstimate(todos: readonly TodoItem[]): Integer {
       continue;
     }
     const { estimate } = todo;
-    total += estimate;
+    total = int(total + estimate);
   }
   return total;
 }
@@ -28,7 +28,7 @@ export function openTodoCount(todos: readonly TodoItem[]): Integer {
   let remaining = 0;
   for (const todo of todos) {
     if (!todo.done) {
-      remaining++;
+      remaining = int(remaining + 1);
     }
   }
   return remaining;

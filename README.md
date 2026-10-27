@@ -63,7 +63,7 @@ npm i -D @adr/tsql typescript@~7.0.2     # or: bun add -d @adr/tsql typescript@~
 **2. Write a function**, `functions/billing.ts`:
 
 ```ts
-import type { Integer } from "@adr/tsql/pgtypes";
+import type { Integer } from "@adr/tsql";
 
 export type Plan = "free" | "pro" | "enterprise";
 
@@ -165,7 +165,8 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | --- | --- |
 | `string`, `boolean` | `text`, `boolean` |
 | `number` | `double precision` |
-| `Integer`, `Numeric`, `Float` (from `@adr/tsql/pgtypes`) | `integer`, `numeric`, `double precision` |
+| `Integer`, `Float` (from `@adr/tsql`) | `integer`, `double precision` — there is deliberately no `numeric` |
+| `int(a + b)` (from `@adr/tsql`) | `a + b` — the guard raises in TypeScript where PostgreSQL already raises past 32 bits |
 | `T \| null` | a nullable value, compared with `IS [NOT] DISTINCT FROM` |
 | `type Plan = "free" \| "pro"` | a domain: `text` with a `CHECK` on its values |
 | a string `enum`, or an `as const` object of strings | an enum, in the order written |

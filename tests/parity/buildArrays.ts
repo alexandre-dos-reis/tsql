@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * Building arrays. A literal's runs of elements are `ARRAY[…]::t[]` and its spreads are arrays, joined
@@ -64,7 +64,7 @@ export function pairTotal(low: Integer, high: Integer): Integer {
   const pair = [low, high];
   let total = 0;
   for (const part of pair) {
-    total += part;
+    total = int(total + part);
   }
   return total;
 }

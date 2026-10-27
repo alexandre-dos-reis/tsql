@@ -51,6 +51,19 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 Formatting is not checked in CI; run `bun run format` before committing.
 
+**The three case folders are excluded from the formatter** (`ignorePatterns` in `.oxfmtrc.json`):
+`tests/parity/`, `tests/rejected/` and `tests/divergent/`. A case's source *is* the test input, so
+reformatting it changes what is under test rather than how it reads. The sharp edge is the rejection
+marker: oxfmt moves a trailing comment off a line that opens a block, so
+
+```ts
+for (const key in totals) { // ← rejected here
+```
+
+becomes a `{` line and a comment line, silently detaching the marker from the line the error must
+point at — the case still "passes" while checking nothing about position. Write a case the way it
+should read, by hand.
+
 **A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 ## Layout
@@ -68,7 +81,6 @@ tests/parity/           accepted cases: name.ts, the functions, and name.sql, th
 tests/rejected/         rejected cases, one file per case, each saying why and what message to expect
 tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the harness must catch them
 tests/README.md         what each kind of case and each test file is for
-src/pgtypes.ts          the authoring vocabulary (Integer, Numeric, Float)
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives
 src/typemap.ts          TypeScript types -> PostgreSQL types
@@ -78,7 +90,9 @@ src/lower.ts            AST -> IR; every restriction is enforced here
 src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
-src/index.ts            the library entry point
+src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int,
+                        and the int4 bounds). Imports nothing — see CLAUDE.md
+src/constants.ts        values more than one stage needs; borrows the bounds from index.ts
 bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```

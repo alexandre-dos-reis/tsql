@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * The function the README opens with: scalar parameters, `Integer`, `||` and `<`.

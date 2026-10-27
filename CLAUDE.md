@@ -29,7 +29,7 @@ bun test                        # unit + rejection + packaging + parity tests (P
 bun test tests/parity.test.ts   # one file
 bun test -t "nested object"     # one test or describe block by name
 bun run typecheck               # bun check over src, tests and scripts
-bun run format                  # oxfmt (dev dependency; not checked in CI)
+bun run format                  # oxfmt (dev dependency; not checked in CI; skips tests/rejected)
 ```
 
 `src/cli.ts` has three commands, declared with commander so each has its own options and its own
@@ -175,16 +175,29 @@ bun run release     # changeset publish
   dependencies are `commander` (the CLI, itself dependency-free) and `fast-check`,
   `@electric-sql/pglite` and `postgres`, for the parity harness and `tsql parity`, which
   `tests/packaging.test.ts` asserts.
+- **The package exports the authoring vocabulary only.** `@adr/tsql` is `src/index.ts`: `Integer`,
+  `Float`, `int`. The compiler is *not* exported — `tsql` on the command line is the whole public
+  surface for running a build. A compiled project type checks the root module under `FORCED_OPTIONS`
+  (`types: []`, no DOM), so anything reachable from it that touched `process`, `node:path` or
+  `Buffer` would be a type error in every consumer's build; keeping the compiler out of the root
+  makes that structural rather than a convention. Re-adding a `./compiler` subpath would be additive
+  if embedding is ever wanted; there was no consumer for it.
+- **`src/index.ts` must import nothing.** `FORCED_OPTIONS` does not set
+  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses becomes
+  TS5097 in the *consumer's* build as soon as it is reachable from the root — which is where a
+  compiled project starts type checking. This is why `index.ts` owns `INT4_MIN`/`INT4_MAX` and
+  `src/constants.ts` imports them from it, never the reverse. Breaking it fails every compiled
+  case at once, with an error that names `src/index.ts` and looks like the consumer's fault.
 - **Code from `dist/`, types from `src/`.** Node strips TypeScript types, but refuses to under
   `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every installed copy
   lives — so the published code is JavaScript. `scripts/build.ts` runs `Bun.build` on `cli.ts`,
-  `index.ts` and `pgtypes.ts`: ESM, `target: "node"`, **no dependency bundled** (`typescript` must be
+  and `index.ts`: ESM, `target: "node"`, **no dependency bundled** (`typescript` must be
   the consumer's own, with its native executable; PGlite loads its WebAssembly from beside itself),
   code splitting so `runParity` and PGlite stay in a chunk only `parity` loads, not minified.
   `exports` maps `types` to `src/*.ts` and `default` to `dist/*.mjs`, so there are no emitted
   declarations to drift. In the repository nothing changes: tests and scripts run `src/` directly.
   A test from the repository cannot see the `node_modules` problem — the path has none — which is why
-  `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the library with `node`.
+  `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the authoring module with `node`.
 - **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter
   properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources runnable as they are in the
   repository, under Node as well as Bun.
@@ -213,8 +226,10 @@ than turned into composite types.
 The numeric aliases are a second, related question: `Integer` is resolved **by name**, so the compiler
 must be sure the name is its own. `isFromPackage` (`src/origin.ts`) answers that by walking up to the
 nearest `package.json` and comparing `name` against `PACKAGE_NAME`. It must not go back to matching a
-path suffix — a consumer's own `src/pgtypes.ts` satisfies `endsWith("src/pgtypes.ts")`, so their
+path suffix — a consumer's own `src/index.ts` satisfies `endsWith("src/index.ts")`, so their
 `export type Integer = string` would compile to PostgreSQL's `integer` while TypeScript held a string.
+The `int` guard (`isIntGuard`) is resolved the same way and for the same reason: recognised by name
+alone, a consumer's own `int` would be *erased* from the emitted SQL.
 
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
@@ -352,5 +367,15 @@ its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cann
   literals are emitted as `1.5::double precision` (an unadorned `1.5` is `numeric`); nullable equality
   is `IS [NOT] DISTINCT FROM`; `&&`/`||` require booleans; concatenation requires non-nullable operands.
   See the section of the same name in `docs/design.md` before changing any of these.
+- **Two numeric types, and `integer` arithmetic is guarded.** `Integer` (`integer`) and `Float`
+  (`double precision`) are the whole vocabulary; **`numeric` is not in `PgScalar`**, so no path can
+  produce it — exact decimal cannot agree with a double (`24.41 + -314.26`). Every `+`, `-`, `*` or
+  unary `-` yielding an `integer` must sit directly inside `int(...)`, one guard per operation, which
+  lowering erases: it exists so TypeScript raises where PostgreSQL already raises past 32 bits, and
+  the parity harness counts *both* sides raising as agreement (one side alone is still a divergence).
+  `%` and `/` are exempt. The guard does **not** cover the parameter boundary — PostgreSQL rejects an
+  out-of-`integer` argument as it binds it, where TypeScript carries on — which stays a documented
+  divergence whose remedy is the caller's (`f(int(x))`). `docs/design.md` "Numbers" and its "Known
+  divergence" carry the reasoning.
 - **Reject rather than guess.** Silently generating SQL that diverges from the TypeScript is the one
   outcome this project exists to prevent.

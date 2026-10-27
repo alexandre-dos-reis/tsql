@@ -43,24 +43,24 @@ describe("alias provenance survives packaging", () => {
     expect(PACKAGE_NAME).toBe(manifest.name);
   });
 
-  test("this repo's own pgtypes belongs to the package", () => {
-    expect(isFromPackage(resolve("src/pgtypes.ts"), PACKAGE_NAME)).toBe(true);
+  test("this repo's own authoring module belongs to the package", () => {
+    expect(isFromPackage(resolve("src/index.ts"), PACKAGE_NAME)).toBe(true);
   });
 
   test("an installed copy under node_modules belongs to the package", () => {
-    const installed = fakePackage(PACKAGE_NAME, join("src", "pgtypes.ts"));
+    const installed = fakePackage(PACKAGE_NAME, join("src", "index.ts"));
     expect(isFromPackage(installed, PACKAGE_NAME)).toBe(true);
   });
 
-  test("a consumer's own src/pgtypes.ts does not", () => {
+  test("a consumer's own src/index.ts does not", () => {
     // The case a suffix match would get wrong, letting a local
     // `type Integer = Date` pass for PostgreSQL's integer.
-    const theirs = fakePackage("their-app", join("src", "pgtypes.ts"));
+    const theirs = fakePackage("their-app", join("src", "index.ts"));
     expect(isFromPackage(theirs, PACKAGE_NAME)).toBe(false);
   });
 
   test("a file in no package at all does not", () => {
-    const orphan = fakePackage(undefined, join("src", "pgtypes.ts"));
+    const orphan = fakePackage(undefined, join("src", "index.ts"));
     expect(isFromPackage(orphan, PACKAGE_NAME)).toBe(false);
   });
 });
@@ -130,7 +130,7 @@ describe("the published layout is coherent", () => {
   // Node strips types, but not under node_modules — where every installed copy
   // lives — so a check run from the repository would pass while every `npx tsql`
   // failed. Build, install a copy there with its dependencies beside it, and run
-  // it under node: the CLI, and the library entry point too.
+  // it under node: the CLI, and the authoring module too.
   test("an installed copy runs under node, from node_modules", async () => {
     const { cpSync, symlinkSync, rmSync } = await import("node:fs");
     const root = mkdtempSync(join(tmpdir(), "tsql-installed-"));
@@ -145,7 +145,14 @@ describe("the published layout is coherent", () => {
         symlinkSync(resolve("node_modules", dependency), join(root, "node_modules", dependency), "dir");
       }
       const proc = Bun.spawn(
-        ["node", join(installed, manifest.bin["tsql"]!), "check", "tests/parity/ifElseChain.ts", "--project", "tests/parity/tsconfig.json"],
+        [
+          "node",
+          join(installed, manifest.bin["tsql"]!),
+          "check",
+          "tests/parity/ifElseChain.ts",
+          "--project",
+          "tests/parity/tsconfig.json",
+        ],
         { stdout: "pipe", stderr: "pipe", env: { ...process.env, NO_COLOR: "1" } },
       );
       const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
@@ -154,12 +161,19 @@ describe("the published layout is coherent", () => {
       expect(stdout).toContain("ok");
       expect(await proc.exited).toBe(0);
 
-      const library = Bun.spawn(
-        ["node", "--input-type=module", "-e", `const m = await import(${JSON.stringify(manifest.name)}); console.log(typeof m.compileProject);`],
+      // The root export is the authoring vocabulary, which the compiled functions import and the
+      // parity harness then calls — so it has to load under plain node, and `int` has to guard there.
+      const authoring = Bun.spawn(
+        [
+          "node",
+          "--input-type=module",
+          "-e",
+          `const m = await import(${JSON.stringify(manifest.name)}); let raised = false; try { m.int(2147483648); } catch { raised = true; } console.log(typeof m.int, m.int(41) + 1, raised);`,
+        ],
         { cwd: root, stdout: "pipe", stderr: "pipe" },
       );
-      expect((await new Response(library.stdout).text()).trim()).toBe("function");
-      expect(await new Response(library.stderr).text()).toBe("");
+      expect((await new Response(authoring.stdout).text()).trim()).toBe("function 42 true");
+      expect(await new Response(authoring.stderr).text()).toBe("");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

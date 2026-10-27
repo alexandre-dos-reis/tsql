@@ -1,5 +1,5 @@
 /**
- * Build the published JavaScript: `dist/cli.mjs`, `dist/index.mjs`, `dist/pgtypes.mjs`.
+ * Build the published JavaScript: `dist/cli.mjs` and `dist/index.mjs`.
  *
  * Why a build at all: Node strips TypeScript types, but refuses to under
  * `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where
@@ -22,7 +22,7 @@ const root = join(import.meta.dir, "..");
 export async function build(outdir = join(root, "dist")): Promise<void> {
   rmSync(outdir, { recursive: true, force: true });
   const result = await Bun.build({
-    entrypoints: ["cli.ts", "index.ts", "pgtypes.ts"].map((file) => join(root, "src", file)),
+    entrypoints: ["cli.ts", "index.ts"].map((file) => join(root, "src", file)),
     outdir,
     target: "node",
     format: "esm",

@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * Rejected: a `number` returned (or passed, or assigned) where `Integer` is expected.
@@ -10,7 +10,7 @@ import type { Integer } from "../../src/pgtypes";
  *     CREATE FUNCTION app.whole(x double precision) RETURNS integer ... RETURN x;
  *     SELECT app.whole(2.5);  -- 2 (round half to even), where TypeScript returns 2.5
  *
- * Numbers may only widen: integer → numeric → double precision.
+ * Numbers may only widen: integer → double precision.
  *
  * Expected: PostgreSQL would round it silently where TypeScript keeps the fraction
  */

@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * `if` / `else if` / fallback `return` over a string-literal union, whose values are recorded beside

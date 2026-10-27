@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import { int, type Integer } from "../../src/index";
 
 /**
  * Exported `const`s bound to arrow functions are compiled like `function` declarations. An expression
@@ -9,6 +9,6 @@ export type Grade = "a" | "b" | "c";
 export const gradePoints = (grade: Grade): Integer => (grade === "a" ? 3 : 1);
 
 export const passes = (grade: Grade, bonus: Integer): boolean => {
-  const total = gradePoints(grade) + bonus;
+  const total = int(gradePoints(grade) + bonus);
   return total >= 2;
 };

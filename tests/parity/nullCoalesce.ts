@@ -1,4 +1,4 @@
-import type { Float, Integer } from "../../src/pgtypes";
+import type { Float, Integer } from "../../src/index";
 
 /**
  * `??` becomes COALESCE: an absent discount is not a zero discount.

@@ -5,7 +5,7 @@
  * the emitter can be a total function: any IR that exists is emittable.
  */
 
-export type PgScalar = "text" | "integer" | "numeric" | "double precision" | "boolean";
+export type PgScalar = "text" | "integer" | "double precision" | "boolean";
 
 export interface ScalarType {
   readonly kind: "scalar";
@@ -156,7 +156,7 @@ export function isExactly(type: PgType, sql: PgScalar): boolean {
   return isScalar(type) && type.sql === sql;
 }
 
-const NUMERIC_SCALARS = new Set<PgScalar>(["integer", "numeric", "double precision"]);
+const NUMERIC_SCALARS = new Set<PgScalar>(["integer", "double precision"]);
 
 export function isNumeric(type: PgType): boolean {
   return isScalar(type) && NUMERIC_SCALARS.has(type.sql);
@@ -205,7 +205,7 @@ function sameElement(a: ScalarType | CompositeType, b: ScalarType | CompositeTyp
 }
 
 /** TypeScript computes all arithmetic in doubles; these ranks only widen. */
-const NUMERIC_RANK: Record<string, number> = { integer: 1, numeric: 2, "double precision": 3 };
+const NUMERIC_RANK: Record<string, number> = { integer: 1, "double precision": 2 };
 
 export function widenNumeric(a: PgScalar, b: PgScalar): PgScalar {
   return (NUMERIC_RANK[a] ?? 0) >= (NUMERIC_RANK[b] ?? 0) ? a : b;

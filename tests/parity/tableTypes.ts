@@ -1,4 +1,4 @@
-import type { Integer } from "../../src/pgtypes";
+import type { Integer } from "../../src/index";
 
 /**
  * Types compiled for their own sake: nothing in this file calls or mentions
