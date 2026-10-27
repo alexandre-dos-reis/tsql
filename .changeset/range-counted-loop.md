@@ -43,6 +43,24 @@ array parameters. `range` is legal only as the iterable of a `for … of` — a
 sequence is not a value PostgreSQL can hold. The loop *body* is unaffected and
 still needs its guard, since a sum can overflow when the counter cannot.
 
+Writing the loop the long way still compiles — `i = int(i + 1)` is what the
+refusal of `i++` asks for — so the compiler does not refuse it twice. It
+**advises**, on a new non-fatal channel (`CompileResult.warnings`), printed by
+`check` and `compile` on stdout with exit 0:
+
+```
+input.ts:53:26 - warning: this counted loop can be `for (const i of range(0, 9))`,
+which becomes PostgreSQL's own `FOR i IN 0..9` — its counter stops at the bound, so
+the step needs no `int(...)` guard. Compiles as written either way.
+```
+
+That is the only advice the compiler gives, and the bar for any other: a rewrite
+it can name. Advice without a remedy describes a problem the author cannot act
+on, and advice naming the wrong remedy is worse than none — so a `tests/parity/`
+case must declare the advice it provokes (`Warns:`, count included) and a
+`tests/rejected/` case may declare what its message must *not* say
+(`Not expected:`).
+
 Refusing `i++` now names the rewrite, with the bounds as written:
 `for (let i = 0; i <= limit; i++)` points at `range(0, limit)`, and a strict
 `i < limit` at `range(0, int(limit - 1))`, since `range` has no half-open form.

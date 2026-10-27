@@ -297,6 +297,22 @@ not emitted into `DECLARE`. For the same reason the TypeScript one must be **`co
 belongs to its loop, and a reassignable one would promise something the SQL does not do. Requiring
 `const` also hands the check to `tsc`, as requiring `readonly` does for array parameters.
 
+Writing the loop the long way is still correct, and still compiles: `i = int(i + 1)` is exactly what
+the refusal of `i++` asks for. So the compiler does not refuse it a second time — it **advises**:
+
+```
+input.ts:53:26 - warning: this counted loop can be `for (const i of range(0, 9))`, which becomes
+PostgreSQL's own `FOR i IN 0..9` — its counter stops at the bound, so the step needs no `int(...)`
+guard. Compiles as written either way.
+```
+
+That is the only advice the compiler gives, and the bar it sets for any other: **a rewrite it can
+name**. Advice without a remedy describes a problem the author cannot act on, and advice naming the
+wrong remedy is worse than none — so every accepted case must declare the advice it provokes
+(`Warns:`, count included) and every refusal may declare what its message must *not* say
+(`Not expected:`). A build that volunteers opinions nobody asked it for is a build people learn to
+ignore.
+
 Two things it does not do. **The body is unaffected** — `total = int(total + i)` still needs its
 guard, because a sum can overflow even when the counter cannot. And `range` is **only** the iterable
 of a `for … of`; a sequence is not a value PostgreSQL can hold, so it cannot be stored, passed or

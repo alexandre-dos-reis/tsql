@@ -38,7 +38,7 @@ import {
   type VariableStatement,
   type WhileStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "./errors.ts";
+import { CompileError, CompileWarning } from "./errors.ts";
 import {
   describe,
   arrayType,
@@ -595,6 +595,7 @@ async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> {
       const step = await lowerAssignment(node.incrementor, s, countedAdvice(node));
       if (!step) throw CompileError.at(node.incrementor, "A `for` step must assign a variable (`i++`, `i += 2`).");
       increment.push(step);
+      await adviseRange(node, s);
     }
 
     const body = await within(s, { kind: "loop", increment }, () => lowerStatements(asStatements(node.statement), s));
@@ -676,7 +677,7 @@ async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR> {
  * A strict `<` has no inclusive upper bound of its own, so the suggestion
  * carries the `- 1`, guarded, which is what makes it compile.
  */
-function countedAdvice(node: ForStatement): string | undefined {
+function countedShape(node: ForStatement): CountedShape | undefined {
   const init = node.initializer;
   if (!init || init.kind !== SyntaxKind.VariableDeclarationList) return undefined;
   const declarations = (init as VariableDeclarationList).declarations;
@@ -690,16 +691,86 @@ function countedAdvice(node: ForStatement): string | undefined {
   if (comparison !== SyntaxKind.LessThanToken && comparison !== SyntaxKind.LessThanEqualsToken) return undefined;
   if (condition.left.kind !== SyntaxKind.Identifier || (condition.left as Identifier).text !== name) return undefined;
 
-  if (!node.incrementor || stepsByOne(node.incrementor) !== name) return undefined;
-
   const from = declaration.initializer.getText();
-  const bound = condition.right.getText();
-  const to = comparison === SyntaxKind.LessThanEqualsToken ? bound : `${INT_GUARD}(${bound} - 1)`;
-  return (
-    `This is a counted loop, so write it as \`for (const ${name} of ${RANGE_HELPER}(${from}, ${to}))\` — ` +
-    `that becomes PostgreSQL's own \`FOR ${name} IN ${from}..${comparison === SyntaxKind.LessThanEqualsToken ? bound : `${bound} - 1`}\`, ` +
-    `whose counter stops at the bound and so needs no guard. `
+  const bound = condition.right;
+  const inclusive = comparison === SyntaxKind.LessThanEqualsToken;
+  // `i < 10` is `0..9`, folded here rather than suggesting `int(10 - 1)`, which
+  // would be advice nobody would take.
+  const literal = bound.kind === SyntaxKind.NumericLiteral ? Number((bound as NumericLiteral).text) : undefined;
+  const to = inclusive
+    ? bound.getText()
+    : literal !== undefined && Number.isInteger(literal)
+      ? String(literal - 1)
+      : `${INT_GUARD}(${bound.getText()} - 1)`;
+  const sql = inclusive ? bound.getText() : literal !== undefined && Number.isInteger(literal) ? String(literal - 1) : `${bound.getText()} - 1`;
+  return { name, call: `for (const ${name} of ${RANGE_HELPER}(${from}, ${to}))`, sql: `FOR ${name} IN ${from}..${sql}` };
+}
+
+interface CountedShape {
+  readonly name: string;
+  /** The `for … of` that replaces it, with the bounds the author wrote. */
+  readonly call: string;
+  /** The PL/pgSQL it becomes, named so the advice shows what is gained. */
+  readonly sql: string;
+}
+
+/**
+ * A counted loop that already guards its step is correct, and could be shorter.
+ *
+ * Nothing is wrong with `i = int(i + 1)` — it is what the refusal of `i++` asks
+ * for — so this is advice, not a refusal: the loop compiles either way. It is
+ * only raised because there is a concrete rewrite to name; the compiler does
+ * not warn about things the author cannot improve.
+ */
+async function adviseRange(node: ForStatement, s: State): Promise<void> {
+  const shape = countedShape(node);
+  if (!shape || !node.incrementor) return;
+  if ((await guardedStepByOne(node.incrementor, s)) !== shape.name) return;
+  // A `Float` counter has no `range`, and no overflow to guard against either.
+  const binding = s.scope.get(shape.name);
+  if (!binding || !isExactly(binding.type, "integer")) return;
+  s.warnings.push(
+    CompileWarning.at(
+      node.incrementor,
+      `warning: this counted loop can be \`${shape.call}\`, which becomes PostgreSQL's own \`${shape.sql}\` — ` +
+        `its counter stops at the bound, so the step needs no \`${INT_GUARD}(...)\` guard. Compiles as written either way.`,
+    ),
   );
+}
+
+/** The advice carried by a refusal of the step. */
+function countedAdvice(node: ForStatement): string | undefined {
+  const shape = countedShape(node);
+  if (!shape || !node.incrementor || stepsByOne(node.incrementor) !== shape.name) return undefined;
+  return (
+    `This is a counted loop, so write it as \`${shape.call}\` — ` +
+    `that becomes PostgreSQL's own \`${shape.sql}\`, whose counter stops at the bound and so needs no guard. `
+  );
+}
+
+/**
+ * `i = int(i + 1)` — the step that compiles, and the one worth advising about.
+ *
+ * The author has already done the work the refusal would have asked for, so
+ * there is nothing to refuse; there is only a better loop to point at. This is
+ * the only accepted construct the compiler currently has advice for.
+ */
+async function guardedStepByOne(expression: Expression, s: State): Promise<string | undefined> {
+  if (expression.kind !== SyntaxKind.BinaryExpression) return undefined;
+  const assignment = expression as BinaryExpression;
+  if (assignment.operatorToken.kind !== SyntaxKind.EqualsToken) return undefined;
+  if (assignment.left.kind !== SyntaxKind.Identifier) return undefined;
+  const name = (assignment.left as Identifier).text;
+  if (assignment.right.kind !== SyntaxKind.CallExpression) return undefined;
+  const call = assignment.right as CallExpression;
+  if (call.expression.kind !== SyntaxKind.Identifier || !(await isIntGuard(call.expression, s))) return undefined;
+  const [argument, ...rest] = call.arguments;
+  if (!argument || rest.length > 0 || argument.kind !== SyntaxKind.BinaryExpression) return undefined;
+  const sum = argument as BinaryExpression;
+  if (sum.operatorToken.kind !== SyntaxKind.PlusToken) return undefined;
+  if (sum.left.kind !== SyntaxKind.Identifier || (sum.left as Identifier).text !== name) return undefined;
+  if (sum.right.kind !== SyntaxKind.NumericLiteral || (sum.right as NumericLiteral).text !== "1") return undefined;
+  return name;
 }
 
 /** `i++`, `++i` or `i += 1` — the variable it steps, if it steps by one. */

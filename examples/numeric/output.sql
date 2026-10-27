@@ -41,13 +41,10 @@ IMMUTABLE
 AS $$
 DECLARE
   total integer;
-  i integer;
 BEGIN
   total := 0;
-  i := 0;
-  WHILE i < 10 LOOP
+  FOR i IN 1..n % 1000 LOOP
     total := total + i;
-    i := i + 1;
   END LOOP;
   RETURN total;
 END;

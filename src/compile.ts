@@ -8,7 +8,7 @@ import {
   type VariableStatement,
 } from "typescript/unstable/ast";
 import { dirname, relative, resolve } from "node:path";
-import { CompileError } from "./errors.ts";
+import { CompileError, type CompileWarning } from "./errors.ts";
 import type { Paint } from "./style.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
@@ -62,6 +62,8 @@ export interface CompileResult {
   readonly manifest: Manifest;
   /** Constructs this compiler refuses to translate. */
   readonly errors: readonly CompileError[];
+  /** Accepted constructs it can translate better. Never fatal; `ok` ignores them. */
+  readonly warnings: readonly CompileWarning[];
   /** Errors from `tsc` itself. */
   readonly diagnostics: readonly string[];
 }
@@ -95,13 +97,15 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
         sql: "",
         manifest: emptyManifest(options),
         errors: [],
+        warnings: [],
         diagnostics,
       };
     }
 
     const files = await sourceFiles(project, projectRoot, options);
     const compiled = new Set(files.map((file) => resolve(file.fileName)));
-    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>(), compiled };
+    const warnings: CompileWarning[] = [];
+    const ctx = { project, checker: project.checker, composites, mapping: new Set<string>(), named: new Map<string, NamedText>(), warnings, compiled };
 
     // Pass 1: every signature, so call checking does not depend on file order.
     const signatures = new Map<string, SignatureIR>();
@@ -179,6 +183,9 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
         })),
       },
       errors,
+      // Only from functions that lowered: advice about a function that failed
+      // would be noise beside the refusal that matters.
+      warnings,
       diagnostics: [],
     };
   } finally {
@@ -376,4 +383,9 @@ export function formatResult(result: CompileResult, root = process.cwd(), paint?
   for (const diagnostic of result.diagnostics) lines.push(diagnostic);
   for (const error of result.errors) lines.push(error.format(root, paint));
   return lines.join("\n");
+}
+
+/** The advice, separately: it is printed on success as well as on failure. */
+export function formatWarnings(result: CompileResult, root = process.cwd(), paint?: Paint): string {
+  return result.warnings.map((warning) => warning.format(root, paint)).join("\n");
 }

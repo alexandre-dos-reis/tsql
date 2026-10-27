@@ -168,6 +168,11 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   whether its type is callable, so a non-compiled function and a module-level value get different
   advice. `referenceMessage` words the refusal.
 
+[`CompileWarning`](../src/errors.ts) is the same carrier for an accepted construct with a better
+translation — collected on `TypeCtx.warnings`, surfaced as `CompileResult.warnings`, never fatal, and
+only ever raised with a rewrite to name. Both share one `formatDiagnostic`, so advice and a refusal are
+read the same way; only the underline colour differs.
+
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler
 diagnostic, with the construct underlined.

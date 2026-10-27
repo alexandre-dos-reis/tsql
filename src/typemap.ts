@@ -31,7 +31,7 @@ import {
   type Type,
   type UnionType,
 } from "typescript/unstable/async";
-import { CompileError } from "./errors.ts";
+import { CompileError, type CompileWarning } from "./errors.ts";
 import {
   arrayType,
   compositeType,
@@ -67,6 +67,11 @@ export interface TypeCtx {
   readonly mapping: Set<string>;
   /** Domains and enums discovered while mapping, keyed by SQL name, like `composites`. */
   readonly named: Map<string, NamedText>;
+  /**
+   * Accepted constructs the compiler can translate better, collected for the
+   * whole build. Never fatal, and only ever added with a rewrite to name.
+   */
+  readonly warnings: CompileWarning[];
   /**
    * The resolved paths of the files this build compiles.
    *

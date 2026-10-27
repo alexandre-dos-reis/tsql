@@ -137,6 +137,15 @@ Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, 
 per function so one bad function does not hide the rest. They carry file, line, column and the offending
 source line.
 
+`CompileWarning` is the same carrier for what the compiler **accepts but can translate better** —
+`CompileResult.warnings`, printed by `formatWarnings`, collected on `TypeCtx.warnings` during lowering,
+and never fatal: `ok` ignores it, `check` and `compile` print it on stdout and exit 0. Not an `Error`,
+because it is never thrown. **Only ever raised with a concrete rewrite to name.** Advice with no remedy
+describes a problem the author cannot act on, and advice naming the *wrong* rewrite is worse than none —
+which is why `tests/rejected/` can assert a message is absent (`Not expected:`) and every `tests/parity/`
+case must declare its advice (`Warns:`, count included), so stray advice fails the build. Today there is
+exactly one: a counted `for` already guarding its step, which could be a `range`.
+
 ## The central invariant
 
 **Lowering enforces every restriction; the emitter is a total function.** Any IR that exists is
