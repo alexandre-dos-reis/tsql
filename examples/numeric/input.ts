@@ -47,3 +47,11 @@ export function asEuros(cents: Integer): Float {
 export function withVat(amount: Float): Float {
   return amount * 1.2;
 }
+
+export function rangeSum(n: Integer): Integer {
+  let total = 0;
+  for (let i = 0; i < 10; i = int(i + 1)) {
+    total = int(total + i);
+  }
+  return total;
+}

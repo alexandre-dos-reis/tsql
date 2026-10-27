@@ -10,6 +10,11 @@ import { compileProject } from "../src/compile.ts";
  * is refused and what the compiler must report — one `Expected:` line per
  * fragment of the message. A line ending in `// ← rejected here` additionally
  * requires the error to point at that line.
+ *
+ * `Not expected:` asserts a fragment is *absent*. Presence alone cannot catch a
+ * message that says too much, and where the compiler offers a rewrite that
+ * matters: advice naming the wrong rewrite is worse than no advice, and would
+ * satisfy every `Expected:` line in the file that provoked it.
  */
 
 const DIR = "tests/rejected";
@@ -28,6 +33,7 @@ for (const file of cases) {
     const path = resolve(DIR, file);
     const source = readFileSync(path, "utf8");
     const expected = [...source.matchAll(/^ \* Expected: (.+)$/gm)].map((m) => m[1]!);
+    const forbidden = [...source.matchAll(/^ \* Not expected: (.+)$/gm)].map((m) => m[1]!);
     expect(expected.length).toBeGreaterThan(0);
 
     // One case at a time, so each sees only its own errors.
@@ -44,6 +50,7 @@ for (const file of cases) {
 
     const messages = result.errors.map((e) => e.message).join("\n");
     for (const fragment of expected) expect(messages).toContain(fragment);
+    for (const fragment of forbidden) expect(messages).not.toContain(fragment);
 
     const marked = source.split("\n").findIndex((line) => line.trimEnd().endsWith(MARKER));
     if (marked !== -1) {

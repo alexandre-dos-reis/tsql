@@ -31,6 +31,28 @@ BEGIN
 END;
 $$;
 
+-- input.ts: rangeSum()
+CREATE OR REPLACE FUNCTION app.range_sum(
+  n integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  total integer;
+  i integer;
+BEGIN
+  total := 0;
+  i := 0;
+  WHILE i < 10 LOOP
+    total := total + i;
+    i := i + 1;
+  END LOOP;
+  RETURN total;
+END;
+$$;
+
 -- input.ts: seatTotalCents()
 CREATE OR REPLACE FUNCTION app.seat_total_cents(
   seats integer,

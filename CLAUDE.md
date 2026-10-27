@@ -308,7 +308,9 @@ raises on drift. The compiler creates types; it never rewrites them.
   outside the subset, so rejection tests exercise the translator rather than `tsc`. Each file opens with a
   comment saying why it is refused — with the SQL that would diverge, where that shows it best — and
   `Expected:` lines with the message the compiler must give; `// ← rejected here` marks the line it must
-  point at, where that matters.
+  point at, where that matters. `Not expected:` asserts a fragment is **absent** — presence alone cannot
+  catch a message that says too much, and where the compiler offers a rewrite, advice naming the wrong
+  one is worse than none and would satisfy every `Expected:` line in the file that provoked it.
 
 **Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
 `examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
@@ -336,7 +338,7 @@ test file. `tests/README.md` explains the three.
   field via `(result).field`, array and nested-object fields through `to_jsonb`; arguments are snapshotted before the TypeScript call and compared after, so a
   mutating function cannot pass. It also applies the migration twice and checks a drifted type is refused.
 - `tests/rejected.test.ts` compiles each case in `tests/rejected/` alone and checks the build fails with
-  every `Expected:` fragment, at the marked line if there is one.
+  every `Expected:` fragment and none of its `Not expected:` ones, at the marked line if there is one.
 - `tests/divergent.test.ts` is the negative control: each pair in `tests/divergent/` must be reported as
   a divergence, on both backends. Keep it working: a parity harness that cannot fail proves nothing.
 - `tests/cli.test.ts` spawns the CLI, since the refused invocations and the exit codes are not
