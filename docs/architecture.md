@@ -123,7 +123,8 @@ wrote** (`mapTypeNode`) when there is one, so `count: Integer` stays `integer` i
 the `number` it resolves to; `mapInferredType` asks the checker when there is no annotation.
 
 - `Integer` and `Float` are aliases of `number` declared in
-  [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
+  [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard and the
+  `range` counted-loop helper (`isIntGuard`, `isRangeHelper`, both over one `isAuthoredHere`). All
   are recognised by name, but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
   the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
   would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
@@ -213,7 +214,8 @@ compile on every change under the project. `parity` imports `runParity.ts` lazil
 
 [`index.ts`](../src/index.ts) is the package's only public entry point, and it is the *authoring*
 vocabulary — `Integer`, `Float`, `int` — not the compiler. The compiler is reached through the `tsql`
-command alone. That is deliberate: a compiled project type checks this module under `types: []` with
+command alone — `Integer`, `Float`, the `int` guard, the `range` loop helper and the int4 bounds.
+That is deliberate: a compiled project type checks this module under `types: []` with
 no DOM, so anything reachable from it that touched `process` or `node:path` would be a type error in
 every consumer's build. Keeping the root free of the compiler makes that structural.
 

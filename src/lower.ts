@@ -70,7 +70,16 @@ import {
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
-import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
+import {
+  enumMember,
+  INT_GUARD,
+  isIntGuard,
+  isRangeHelper,
+  mapInferredType,
+  mapTypeNode,
+  RANGE_HELPER,
+  type TypeCtx,
+} from "./typemap.ts";
 
 interface Binding {
   readonly sqlName: string;
@@ -583,7 +592,7 @@ async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> {
 
     const increment: StmtIR[] = [];
     if (node.incrementor) {
-      const step = await lowerAssignment(node.incrementor, s);
+      const step = await lowerAssignment(node.incrementor, s, countedAdvice(node));
       if (!step) throw CompileError.at(node.incrementor, "A `for` step must assign a variable (`i++`, `i += 2`).");
       increment.push(step);
     }
@@ -627,6 +636,10 @@ async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR> {
   }
   const tsName = (declaration.name as Identifier).text;
 
+  if (await isRangeCall(node.expression, s)) {
+    return lowerForRange(node, node.expression as CallExpression, tsName, kind, declaration.name, s);
+  }
+
   const array = await lowerExpr(node.expression, s);
   if (!isArray(array.type)) {
     throw CompileError.at(
@@ -649,6 +662,122 @@ async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR> {
       lowerStatements(asStatements(node.statement), s),
     );
     return { kind: "foreach", variable: sqlName, array, body };
+  });
+}
+
+/**
+ * `for (let i = A; i <= B; i++)` — the counted shape, read purely syntactically.
+ *
+ * Only used to write a better refusal. When the step is an `integer` it has
+ * nowhere to put a guard, and the useful answer is not "guard it" but "this is
+ * a counted loop, and there is a counted loop" — so the message names the exact
+ * `range(...)` that replaces it, with the bounds the author actually wrote.
+ *
+ * A strict `<` has no inclusive upper bound of its own, so the suggestion
+ * carries the `- 1`, guarded, which is what makes it compile.
+ */
+function countedAdvice(node: ForStatement): string | undefined {
+  const init = node.initializer;
+  if (!init || init.kind !== SyntaxKind.VariableDeclarationList) return undefined;
+  const declarations = (init as VariableDeclarationList).declarations;
+  const declaration = declarations.length === 1 ? declarations[0] : undefined;
+  if (!declaration || declaration.name.kind !== SyntaxKind.Identifier || !declaration.initializer) return undefined;
+  const name = (declaration.name as Identifier).text;
+
+  if (!node.condition || node.condition.kind !== SyntaxKind.BinaryExpression) return undefined;
+  const condition = node.condition as BinaryExpression;
+  const comparison = condition.operatorToken.kind;
+  if (comparison !== SyntaxKind.LessThanToken && comparison !== SyntaxKind.LessThanEqualsToken) return undefined;
+  if (condition.left.kind !== SyntaxKind.Identifier || (condition.left as Identifier).text !== name) return undefined;
+
+  if (!node.incrementor || stepsByOne(node.incrementor) !== name) return undefined;
+
+  const from = declaration.initializer.getText();
+  const bound = condition.right.getText();
+  const to = comparison === SyntaxKind.LessThanEqualsToken ? bound : `${INT_GUARD}(${bound} - 1)`;
+  return (
+    `This is a counted loop, so write it as \`for (const ${name} of ${RANGE_HELPER}(${from}, ${to}))\` — ` +
+    `that becomes PostgreSQL's own \`FOR ${name} IN ${from}..${comparison === SyntaxKind.LessThanEqualsToken ? bound : `${bound} - 1`}\`, ` +
+    `whose counter stops at the bound and so needs no guard. `
+  );
+}
+
+/** `i++`, `++i` or `i += 1` — the variable it steps, if it steps by one. */
+function stepsByOne(expression: Expression): string | undefined {
+  if (expression.kind === SyntaxKind.PostfixUnaryExpression || expression.kind === SyntaxKind.PrefixUnaryExpression) {
+    const unary = expression as unknown as { readonly operator: SyntaxKind; readonly operand: Expression };
+    if (unary.operator !== SyntaxKind.PlusPlusToken) return undefined;
+    return unary.operand.kind === SyntaxKind.Identifier ? (unary.operand as Identifier).text : undefined;
+  }
+  if (expression.kind === SyntaxKind.BinaryExpression) {
+    const binary = expression as BinaryExpression;
+    if (binary.operatorToken.kind !== SyntaxKind.PlusEqualsToken) return undefined;
+    if (binary.left.kind !== SyntaxKind.Identifier) return undefined;
+    if (binary.right.kind !== SyntaxKind.NumericLiteral || (binary.right as NumericLiteral).text !== "1") return undefined;
+    return (binary.left as Identifier).text;
+  }
+  return undefined;
+}
+
+/** Is this `for … of` iterating `range(a, b)` rather than an array? */
+async function isRangeCall(expression: Expression, s: State): Promise<boolean> {
+  if (expression.kind !== SyntaxKind.CallExpression) return false;
+  const callee = (expression as CallExpression).expression;
+  return callee.kind === SyntaxKind.Identifier && (await isRangeHelper(callee, s));
+}
+
+/**
+ * `for (const i of range(a, b))` is `FOR i IN a..b LOOP … END LOOP;`.
+ *
+ * The one counted loop the compiler accepts without a guard on its step, and it
+ * is PostgreSQL's own: both bounds are evaluated once and the counter stops at
+ * the upper one, so it cannot leave 32 bits however large that bound is. A
+ * hand-written `i++` carries no such proof, which is why it is refused.
+ *
+ * `const` is required. PL/pgSQL's loop variable belongs to the loop, and making
+ * the TypeScript one reassignable would describe something the SQL does not do;
+ * `const` also means `tsc` refuses the reassignment, so the correspondence is
+ * checked rather than trusted.
+ */
+async function lowerForRange(
+  node: ForOfStatement,
+  call: CallExpression,
+  tsName: string,
+  kind: "const" | "let",
+  at: Node,
+  s: State,
+): Promise<StmtIR> {
+  if (kind !== "const") {
+    throw CompileError.at(
+      at,
+      `\`${tsName}\` must be \`const\`: PL/pgSQL's \`FOR\` variable belongs to its loop, so a reassignable one would promise something the SQL does not do.`,
+    );
+  }
+  const [a, b, ...rest] = call.arguments;
+  if (!a || !b || rest.length > 0) {
+    throw CompileError.at(call, `\`${RANGE_HELPER}\` takes exactly two bounds, got ${call.arguments.length}.`);
+  }
+
+  const integer = scalarType("integer");
+  const bounds: ExprIR[] = [];
+  for (const [i, argument] of [a, b].entries()) {
+    const lowered = await lowerExpr(argument as Expression, s, integer);
+    requireAssignable(lowered.type, integer, argument as Node, `${i === 0 ? "lower" : "upper"} bound of \`${RANGE_HELPER}\``);
+    bounds.push(coerce(lowered, integer));
+  }
+
+  return scoped(s, async () => {
+    if (s.scope.has(tsName)) {
+      throw CompileError.at(at, `\`${tsName}\` shadows an existing binding.`);
+    }
+    // No local: PL/pgSQL declares the loop variable itself, as an `integer`
+    // scoped to the loop, and declaring it again would only shadow that.
+    const sqlName = uniqueName(toSnakeCase(tsName), s.used);
+    s.scope.set(tsName, { sqlName, type: integer, kind });
+    const body = await within(s, { kind: "loop", increment: [] }, () =>
+      lowerStatements(asStatements(node.statement), s),
+    );
+    return { kind: "forRange", variable: sqlName, from: bounds[0]!, to: bounds[1]!, body };
   });
 }
 
@@ -725,7 +854,7 @@ const COMPOUND: ReadonlyMap<SyntaxKind, SyntaxKind> = new Map([
  * the result must still fit the variable's type — `total /= 2` on an `integer`
  * is refused, as PostgreSQL would round where TypeScript keeps the fraction.
  */
-async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR | undefined> {
+async function lowerAssignment(expression: Expression, s: State, advice?: string): Promise<StmtIR | undefined> {
   let target: Expression;
   let value: (current: ExprIR) => Promise<ExprIR>;
 
@@ -751,7 +880,8 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
           throw CompileError.at(
             binary.operatorToken,
             `\`${binary.operatorToken.getText()}\` on an \`integer\` has nowhere to put the 32-bit overflow guard. ` +
-              `Write the assignment out and guard it: \`${(target as Identifier).text} = ${INT_GUARD}(${(target as Identifier).text} ${binary.operatorToken.getText().slice(0, -1)} ${binary.right.getText()})\`.`,
+              (advice ?? "") +
+              `${advice ? "Otherwise, write" : "Write"} the assignment out and guard it: \`${(target as Identifier).text} = ${INT_GUARD}(${(target as Identifier).text} ${binary.operatorToken.getText().slice(0, -1)} ${binary.right.getText()})\`.`,
           );
         }
         return next;
@@ -783,7 +913,8 @@ async function lowerAssignment(expression: Expression, s: State): Promise<StmtIR
         throw CompileError.at(
           expression,
           `\`${expression.getText()}\` on an \`integer\` has nowhere to put the 32-bit overflow guard. ` +
-            `Write it out and guard it: \`${text} = ${INT_GUARD}(${text} ${op === SyntaxKind.PlusToken ? "+" : "-"} 1)\`.`,
+            (advice ?? "") +
+            `${advice ? "Otherwise, write" : "Write"} it out and guard it: \`${text} = ${INT_GUARD}(${text} ${op === SyntaxKind.PlusToken ? "+" : "-"} 1)\`.`,
         );
       }
       return step;
@@ -1148,6 +1279,12 @@ async function lowerCall(node: CallExpression, s: State): Promise<ExprIR> {
   }
   const name = (node.expression as Identifier).text;
   if (await isIntGuard(node.expression, s)) return lowerIntGuard(node, s);
+  if (await isRangeHelper(node.expression, s)) {
+    throw CompileError.at(
+      node,
+      `\`${RANGE_HELPER}\` is only the iterable of a \`for … of\` (\`for (const i of ${RANGE_HELPER}(a, b))\`), which becomes PostgreSQL's \`FOR i IN a..b\`. A sequence is not a value PostgreSQL can hold, so it cannot be stored, passed or returned.`,
+    );
+  }
   const target = s.signatures.get(name);
   if (!target) throw await referenceError(name, node.expression, node.expression, s);
   if (node.arguments.length !== target.params.length) {

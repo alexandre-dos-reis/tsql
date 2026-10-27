@@ -1,7 +1,7 @@
 import { int, type Integer } from "../../src/index";
 
 /**
- * Every loop becomes `WHILE … LOOP`: a `for` keeps its re-tested condition and runs its step at the
+ * A `while`, and a `for` that is not a `range`, become `WHILE … LOOP`: the `for` keeps its re-tested condition and runs its step at the
  * end of each turn — and before a `continue`. `break` is `EXIT`. Loop variables are block-scoped, so
  * a second `for (let i …)` gets its own SQL variable. Inputs are reduced with `%` to keep loops short.
  */

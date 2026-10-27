@@ -167,6 +167,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | `number` | `double precision` |
 | `Integer`, `Float` (from `@adr/tsql`) | `integer`, `double precision` — there is deliberately no `numeric` |
 | `int(a + b)` (from `@adr/tsql`) | `a + b` — the guard raises in TypeScript where PostgreSQL already raises past 32 bits |
+| `for (const i of range(a, b))` (from `@adr/tsql`) | `FOR i IN a..b LOOP` — both bounds included, and no guard needed on the step |
 | `T \| null` | a nullable value, compared with `IS [NOT] DISTINCT FROM` |
 | `type Plan = "free" \| "pro"` | a domain: `text` with a `CHECK` on its values |
 | a string `enum`, or an `as const` object of strings | an enum, in the order written |

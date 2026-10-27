@@ -373,7 +373,11 @@ its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cann
   unary `-` yielding an `integer` must sit directly inside `int(...)`, one guard per operation, which
   lowering erases: it exists so TypeScript raises where PostgreSQL already raises past 32 bits, and
   the parity harness counts *both* sides raising as agreement (one side alone is still a divergence).
-  `%` and `/` are exempt. The guard does **not** cover the parameter boundary — PostgreSQL rejects an
+  `%` and `/` are exempt, and so is the step of `for (const i of range(a, b))` — the one counted loop
+  accepted unguarded, because it lowers to PostgreSQL's own `FOR i IN a..b`, whose counter stops at
+  the bound (`range` is inclusive, like `a..b`; `const` is required; it is legal only as a `for … of`
+  iterable; PL/pgSQL declares the variable, so it is not a `DECLARE` local).
+  The guard does **not** cover the parameter boundary — PostgreSQL rejects an
   out-of-`integer` argument as it binds it, where TypeScript carries on — which stays a documented
   divergence whose remedy is the caller's (`f(int(x))`). `docs/design.md` "Numbers" and its "Known
   divergence" carry the reasoning.
