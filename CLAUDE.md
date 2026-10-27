@@ -373,6 +373,9 @@ its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cann
   unary `-` yielding an `integer` must sit directly inside `int(...)`, one guard per operation, which
   lowering erases: it exists so TypeScript raises where PostgreSQL already raises past 32 bits, and
   the parity harness counts *both* sides raising as agreement (one side alone is still a divergence).
-  `%` and `/` are exempt. `docs/design.md` "Numbers" carries the reasoning.
+  `%` and `/` are exempt. The guard does **not** cover the parameter boundary — PostgreSQL rejects an
+  out-of-`integer` argument as it binds it, where TypeScript carries on — which stays a documented
+  divergence whose remedy is the caller's (`f(int(x))`). `docs/design.md` "Numbers" and its "Known
+  divergence" carry the reasoning.
 - **Reject rather than guess.** Silently generating SQL that diverges from the TypeScript is the one
   outcome this project exists to prevent.

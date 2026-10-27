@@ -119,6 +119,25 @@ A few others: a `switch` without `default` (PostgreSQL does not enforce a union'
 
 ### Known divergence
 
+**An out-of-range `Integer` argument.** `Integer` is an alias of `number`, so TypeScript accepts any
+double where one is wanted; PostgreSQL rejects it when it binds the parameter, before the body runs:
+
+```
+shardOf(3000000000)        // id % 16
+  TypeScript  0
+  PostgreSQL  ERROR: value "3000000000" is out of range for type integer
+```
+
+[The `int` guard](#the-int-guard) does not cover this — it guards arithmetic *results*, and here the
+arithmetic is fine; it is the argument that cannot exist in PostgreSQL. Nor can the compiler close it,
+for the same reason it cannot close the arithmetic case on its own, only more so: the call site is in
+the caller's code, which tsql never sees. The remedy belongs to the caller, and it is the same
+function — `shardOf(int(id))` raises in TypeScript exactly where PostgreSQL would. Read `int` as the
+assertion for `Integer` at any boundary, not only around arithmetic.
+
+The parity harness generates integers well inside the range (±1e6) and so does not provoke this; that
+bound is chosen to keep values being compared rather than raises, which `src/parity.ts` explains.
+
 PostgreSQL raises on `double precision` underflow — a result too small to represent, such as `5e-324 / 10`, is the error `value out of range: underflow` — where TypeScript quietly gives 0 (and on overflow, where TypeScript gives `Infinity`). The parity harness generates doubles away from the subnormal range and within ±1e9 for the same reason.
 
 ## Numbers
