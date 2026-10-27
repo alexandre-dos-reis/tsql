@@ -238,7 +238,7 @@ The one table of names runs the other way, and is closed: `src/math.ts` lists th
 *compile* (`abs`, `ceil`, `floor`, `trunc`, `sign`, `sqrt`, `min`, `max`) — a PostgreSQL function under its
 own name — or, for `min` of doubles, `sign` and `sqrt`, written another way (`nan` rule) — measured to return the same double, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`). `Math` itself is still found by provenance,
 and a member not in the table is refused, so what `Math` grows stays out. Before adding a member, measure it
-against PostgreSQL (`docs/design.md`, "Math"): the ones that need a rewrite (`round`) or whose last bits are
+against PostgreSQL (`docs/design.md`, "Math"): the ones whose last bits are
 platform-defined (`sin`, `exp`, `pow`…) are refused on purpose.
 
 ## Types and composites
