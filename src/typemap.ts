@@ -893,11 +893,17 @@ export async function mapTypeDeclaration(declaration: TypeDeclaration, ctx: Type
   // else, so `type Tier = "free" | "pro"` is the same domain here as in a
   // parameter. An interface or an enum has no type node to read, so the type
   // the name declares is mapped instead.
+  const symbol = await ctx.checker.getSymbolAtLocation(declaration.name);
+  if (!symbol) throw CompileError.at(declaration.name, `\`${declaration.name.text}\` could not be resolved.`);
+
   if (declaration.kind === SyntaxKind.TypeAliasDeclaration) {
+    // A union of strings is a domain *because of the name it was given*: the body alone, `"a" | "b"`, is
+    // plain `text`. A reference to the alias finds that name; the declaration has to look for it too,
+    // or an exported union that nothing mentions would create nothing.
+    const found = await namedFromSymbol(symbol, declaration.name, ctx);
+    if (found) return namedType(found.named, found.nullable);
     return mapTypeNode((declaration as TypeAliasDeclaration).type, ctx);
   }
 
-  const symbol = await ctx.checker.getSymbolAtLocation(declaration.name);
-  if (!symbol) throw CompileError.at(declaration.name, `\`${declaration.name.text}\` could not be resolved.`);
   return mapInferredType(await ctx.checker.getDeclaredTypeOfSymbol(symbol), declaration.name, ctx);
 }

@@ -13,6 +13,9 @@ import type { Integer } from "../../src/index";
 
 export type TableTier = "standard" | "gold";
 
+// A union nothing mentions, not even `TableRow`: its domain is created because it is exported.
+export type TableZone = "north" | "south";
+
 export enum TableStatus {
   Open = "open",
   Shipped = "shipped",
