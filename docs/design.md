@@ -168,7 +168,7 @@ PostgreSQL gives `NaN` a place in the order: it equals itself and sorts above ev
 | `x === y` | `x = y AND x <> 'NaN'::double precision` (`IS NOT DISTINCT FROM` / `IS DISTINCT FROM` when nullable) |
 | `x !== y` | `x <> y OR x = 'NaN'::double precision` (`x !== x` is the test for `NaN`, and stays one) |
 
-A literal or an `Integer` cannot be `NaN`, so a comparison whose checked side is one is left as it is (`count > 10` is checked, `10 > x` is not). The checked operand is written twice; it is a pure expression, so only its cost doubles. The cost of choosing this over leaving the divergence is a longer line on every `Float` comparison. `tests/parity/nanComparison.ts` is run on `NaN` strictly (`tests/specialValues.test.ts`), and the parity harness draws `NaN`, both infinities and `-0` itself.
+A literal or an `Integer` cannot be `NaN`, so a comparison whose checked side is one is left as it is (`count > 10` is checked, `10 > x` is not). The checked operand is written twice; it has no effect, so only its cost doubles. The cost of choosing this over leaving the divergence is a longer line on every `Float` comparison. `tests/parity/nanComparison.ts` is run on `NaN` strictly (`tests/specialValues.test.ts`), and the parity harness draws `NaN`, both infinities and `-0` itself.
 
 ### Why `Float` and not `DoublePrecision`
 
@@ -304,7 +304,7 @@ This was measured, not assumed. Each function ran on 40 016 inputs (uniform over
 
 - **The members above agree on all of it.** They are operations IEEE-754 defines exactly, so they do not depend on a platform's `libm`. Each rewrite exists because a measured input needed it (the table's note column).
 - **`sin`, `cos`, `exp`, `log`, `pow`, `atan2`, `cbrt` and the like cannot be promised.** ECMAScript only asks for an approximation, and V8 and JavaScriptCore already disagreed with each other on between 2 and 3 535 of the 40 016 inputs, depending on the function. PostgreSQL uses the platform's `libm`, so a third answer is possible. No SQL expression changes that; reproducing one engine's algorithm in PL/pgSQL would still disagree with the other. (PGlite is WebAssembly on musl, not a native PostgreSQL on glibc, so the PostgreSQL column of the approximated group is indicative; the exact group does not depend on it.)
-- **`Math.random`** is not pure. **`hypot`** overflows as `sqrt(x*x + y*y)` where it does not and rounds differently; **`log2`**, **`log1p`** and **`expm1`** have no PostgreSQL function for `double precision`, and the arithmetic substitutes do not return the same bits.
+- **`Math.random`** gives a different answer for the same arguments. **`hypot`** overflows as `sqrt(x*x + y*y)` where it does not and rounds differently; **`log2`**, **`log1p`** and **`expm1`** have no PostgreSQL function for `double precision`, and the arithmetic substitutes do not return the same bits.
 
 Each refusal says which of these it is.
 

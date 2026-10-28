@@ -99,7 +99,7 @@ export function mathFunction(member: string): MathFunction | undefined {
  */
 const REASONS: Readonly<Record<string, string>> = {
   random:
-    "`Math.random` is not pure — the same arguments give a different answer each time — so there is nothing for a parity test to compare.",
+    "`Math.random` gives a different answer for the same arguments each time, so there is nothing for a parity test to compare.",
   hypot:
     "PostgreSQL has no function that computes the same value, and `sqrt(x*x + y*y)` overflows where `Math.hypot` does not, and rounds differently.",
   log2: "PostgreSQL has no `log2` for `double precision`, and `ln(x) / ln(2)` does not return the same bits (`Math.log2(8)` is exactly 3).",
