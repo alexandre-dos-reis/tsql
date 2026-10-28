@@ -1,5 +1,0 @@
----
-"@adr/tsql": minor
----
-
-Enforce named sets of strings in the database. A union alias (`type Plan = "free" | "pro"`) becomes a domain, `app.plan`, `text` with a `CHECK` on its values; an `as const` object with its `(typeof X)[keyof typeof X]` alias, or a string `enum`, becomes a PostgreSQL enum in the order written, with `AreaType.Level1` readable in the functions — the form PostGraphile exposes as a GraphQL enum. Lowering casts an enum `::text` wherever TypeScript uses it as a string and casts to a named type only where TypeScript has proven membership. Migrations converge without destroying anything: a domain's constraint is replaced (re-validating its columns) when the union changes, and an enum gains new values in place but refuses removals and reorders. Numeric enums, the enum form without `as const` or with integer-like keys, and two sets sharing a SQL name are refused. Parameters typed by an anonymous union stay `text`. **Breaking:** functions taking a named union now take its domain, and the generated migration creates it.
