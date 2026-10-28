@@ -30,13 +30,12 @@
     "LICENSE",
     "README.md",
     "bin",
-    "dist",
-    "src/index.ts"
+    "dist"
   ],
   "type": "module",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": "./dist/index.d.ts",
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json"
