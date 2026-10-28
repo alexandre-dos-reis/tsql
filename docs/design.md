@@ -408,20 +408,21 @@ The `0x` prefix is detected separately from the digits that follow it, because J
 on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are `NaN`, not the `0` that falling back to base ten
 would read off the leading zero. That one was found by measurement, not by reading the specification.
 
-### Why the hexadecimal form does not inline
+### Why the hexadecimal side needs no aggregate
 
-`tsql.number_parse_int` sums each hexadecimal digit weighted by its position, which needs an aggregate over a set, so
-it is the only helper with a `FROM` and the only one PostgreSQL will not inline. The shorter forms all truncate
-past the 53 bits of the mantissa and round differently from V8 somewhere; this one is exact at every width,
-including the ties at `2^53` and the boundary where 256 hexadecimal digits become `Infinity`. Correctness is
-the rule inlining is measured against, not the other way round.
+Reading hexadecimal exactly at *any* width takes an aggregate over the digits — which needs a `FROM`, so the
+helper would not inline. It does not need to be exact at any width: the helper returns `integer`, and **more
+than eight significant hexadecimal digits cannot fit one whatever they are**. That case needs no arithmetic
+at all, only a value past the range so the cast at the end raises, which is the answer. Eight or fewer go
+through `bit(64)` in one expression, exact.
 
-There is **one** helper, not two, and it takes the radix as JavaScript does: 10 for base ten, 0 for an omitted
-one. That keeps the base-ten expression in a single place and means no helper calls another — which a
-migration could not have ordered anyway, `runtimeSql` creating them alphabetically and carrying only the ones
-its functions use. The cost is that base ten no longer inlines either, the hexadecimal aggregate's `FROM`
-being on every call; the regular expression over the string dominates that, and correctness and one
-definition were judged worth it.
+So the body is one `SELECT` with no `FROM`, and PostgreSQL inlines it. Measured on PGlite over 200 000 rows:
+**1.2 µs a call against 15.2 µs** for the aggregate it replaced, a factor of thirteen.
+
+The generality that was lost was never used. It is worth noticing that it only became unnecessary once the
+helper returned `integer` rather than a double — while it returned a double it genuinely had to represent
+every value `parseInt` can produce, up to the 256 hexadecimal digits where a double becomes `Infinity`.
+`tests/helpers.test.ts` checks the inlining, so losing it again fails the build.
 
 ## The `tsql` schema
 
