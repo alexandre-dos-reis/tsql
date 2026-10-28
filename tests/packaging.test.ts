@@ -111,8 +111,13 @@ describe("the published layout is coherent", () => {
       expect(target.types).toMatch(/^\.\/src\/.+\.ts$/);
       expect(await Bun.file(target.types).exists()).toBe(true);
       expect(target.default).toMatch(/^\.\/dist\/.+\.mjs$/);
+      // The types entry must be listed in `files` by name. Only `src/index.ts`
+      // ships: it imports nothing, so every other file in `src/` would be bytes
+      // no consumer can resolve.
+      expect(manifest.files).toContain(target.types.replace(/^\.\//, ""));
     }
-    expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist", "src"]));
+    expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist"]));
+    expect(manifest.files).not.toContain("src");
   });
 
   test("the launcher ships, and runs the build", async () => {
@@ -137,7 +142,12 @@ describe("the published layout is coherent", () => {
     try {
       const installed = join(root, "node_modules", ...manifest.name.split("/"));
       mkdirSync(installed, { recursive: true });
-      for (const entry of ["package.json", "bin", "src"]) cpSync(entry, join(installed, entry), { recursive: true });
+      // Exactly what `files` ships, so the layout under test is the published
+      // one rather than a more generous copy of the repository.
+      for (const entry of ["package.json", "bin", ...manifest.files.filter((name) => name.startsWith("src/"))]) {
+        mkdirSync(dirname(join(installed, entry)), { recursive: true });
+        cpSync(entry, join(installed, entry), { recursive: true });
+      }
       const { build } = await import("../scripts/build.ts");
       await build(join(installed, "dist"));
       for (const dependency of [...Object.keys(manifest.dependencies ?? {}), "typescript"]) {

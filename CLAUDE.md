@@ -157,7 +157,7 @@ dumb?"
 ## Publishing
 
 The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` (`bun run build`, run by
-`prepublishOnly`, not committed) and `src/` for the types. Releases go through changesets:
+`prepublishOnly`, not committed) and `src/index.ts` for the types. Releases go through changesets:
 
 ```
 bun run changeset   # describe a change (interactive — needs a TTY)
@@ -198,7 +198,11 @@ bun run release     # changeset publish
   the consumer's own, with its native executable; PGlite loads its WebAssembly from beside itself),
   code splitting so `runParity` and PGlite stay in a chunk only `parity` loads, not minified.
   `exports` maps `types` to `src/*.ts` and `default` to `dist/*.mjs`, so there are no emitted
-  declarations to drift. In the repository nothing changes: tests and scripts run `src/` directly.
+  declarations to drift. **Only `src/index.ts` ships**, not the rest of `src/`: it imports nothing
+  (see above), so it is the one source file a consumer can resolve, and the other twenty would be
+  bytes nothing reaches. `tests/packaging.test.ts` asserts each `types` target is listed in `files`
+  by name, and installs exactly what `files` holds, so the layout it exercises is the published one.
+  In the repository nothing changes: tests and scripts run `src/` directly.
   A test from the repository cannot see the `node_modules` problem — the path has none — which is why
   `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the authoring module with `node`.
 - **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter

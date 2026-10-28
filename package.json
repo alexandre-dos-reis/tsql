@@ -31,7 +31,7 @@
     "README.md",
     "bin",
     "dist",
-    "src"
+    "src/index.ts"
   ],
   "type": "module",
   "exports": {
