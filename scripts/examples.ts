@@ -47,6 +47,10 @@ if (import.meta.main) {
     const dependencies = manifest.devDependencies ?? {};
     for (const [name, range] of Object.entries(wanted)) if (name in dependencies) dependencies[name] = range;
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-    process.stdout.write(`examples/${example.name}: ${Object.entries(wanted).map(([n, r]) => `${n}@${r}`).join(", ")}\n`);
+    process.stdout.write(
+      `examples/${example.name}: ${Object.entries(wanted)
+        .map(([n, r]) => `${n}@${r}`)
+        .join(", ")}\n`,
+    );
   }
 }

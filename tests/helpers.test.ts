@@ -1,13 +1,12 @@
 import { PGlite } from "@electric-sql/pglite";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { compileProject } from "../src/compile.ts";
+import { HELPER_HASHES } from "../src/helpersLock.ts";
 import {
   HELPERS,
   HELPERS_REVISION,
-  helpersFingerprintSource,
+  helperFingerprint,
   runtimeSql,
   TSQL_SCHEMA,
   type HelperName,
@@ -23,29 +22,20 @@ import {
  */
 
 const ALL = Object.keys(HELPERS) as HelperName[];
-const LOCK = JSON.parse(readFileSync("tests/helpers/revisions.json", "utf8")) as Record<string, string>;
-
-const fingerprint = () => createHash("sha256").update(helpersFingerprintSource()).digest("hex");
 
 describe("the text of the helpers is locked to a revision", () => {
-  test("the current revision has an entry, and it matches", () => {
+  test("the last recorded revision is the helpers as they are", () => {
+    // Changing a helper without recording it lands here: an IMMUTABLE function whose
+    // body changed under an index is what the revision exists to announce.
     expect(
-      LOCK[String(HELPERS_REVISION)],
-      `tests/helpers/revisions.json has no entry for revision ${HELPERS_REVISION}`,
-    ).toBeDefined();
-    // Changing a helper without a new revision lands here: an IMMUTABLE function
-    // whose body changed under an index is the thing the revision exists to announce.
-    expect(
-      fingerprint(),
-      `A helper in src/helpers.ts changed. Raise HELPERS_REVISION and add its entry (${fingerprint()}) to tests/helpers/revisions.json, with a changeset that says which Math functions behave differently.`,
-    ).toBe(LOCK[String(HELPERS_REVISION)]!);
+      helperFingerprint(),
+      "A helper in src/helpers.ts changed. Run `bun scripts/helpers.ts lock` to record the new revision, and say in a changeset which Math functions behave differently.",
+    ).toBe(HELPER_HASHES.at(-1)!);
   });
 
-  test("the revisions are consecutive and none is ahead of the code", () => {
-    const revisions = Object.keys(LOCK)
-      .map(Number)
-      .sort((a, b) => a - b);
-    expect(revisions).toEqual(Array.from({ length: HELPERS_REVISION }, (_, i) => i + 1));
+  test("the revision is how many are recorded, and none is recorded twice", () => {
+    expect(HELPERS_REVISION).toBe(HELPER_HASHES.length);
+    expect(new Set(HELPER_HASHES).size).toBe(HELPER_HASHES.length);
   });
 });
 

@@ -14,19 +14,22 @@
  * A migration carries the helpers its functions use, not all of them, and brings
  * them up to date itself (`runtimeSql`): there is no command to run. Because a
  * helper is `IMMUTABLE` and an index or a stored generated column may hold what it
- * returned, changing one is a decision: the body is locked to a revision by
- * `tests/helpers/revisions.json`, and a migration that replaces a body announces it.
+ * returned, changing one is a decision: the text is locked to a revision by
+ * `src/helpersLock.ts`, and a migration that replaces a body announces it.
  */
+
+import { createHash } from "node:crypto";
+import { HELPER_HASHES } from "./helpersLock.ts";
 
 /** The schema the helpers live in. Reserved: `--schema` may not be it. */
 export const TSQL_SCHEMA = "tsql";
 
 /**
- * Bumped by hand whenever the body of a helper changes (a bug fix), together with
- * a new entry in `tests/helpers/revisions.json`. A database that already holds a
- * higher revision refuses the migration: an older tsql must not overwrite a fix.
+ * How many times the helpers have been recorded (`src/helpersLock.ts`, appended to
+ * by `bun scripts/helpers.ts lock`). A database that already holds a higher
+ * revision refuses the migration: an older tsql must not overwrite a fix.
  */
-export const HELPERS_REVISION = 1;
+export const HELPERS_REVISION = HELPER_HASHES.length;
 
 /** The edges of `real`: its largest value, the point from which rounding goes to infinity, and half its smallest. */
 const REAL_MAX = (2 - 2 ** -23) * 2 ** 127;
@@ -113,13 +116,14 @@ export const HELPERS = {
 
 export type HelperName = keyof typeof HELPERS;
 
-/** The text that decides what the helpers do: what `tests/helpers/revisions.json` pins to a revision. */
-export function helpersFingerprintSource(): string {
-  return JSON.stringify(
+/** A hash of the text that decides what the helpers do: what `src/helpersLock.ts` pins to a revision. */
+export function helperFingerprint(): string {
+  const text = JSON.stringify(
     Object.keys(HELPERS)
       .sort()
       .map((name) => [name, HELPERS[name as HelperName]]),
   );
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function definition(name: HelperName): string {

@@ -242,8 +242,8 @@ and a member not in the table is refused, so what `Math` grows stays out. Before
 against PostgreSQL (`docs/design.md`, "Math"), on the special values as well: the ones whose last bits are
 platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A member whose SQL is not the bare PostgreSQL function is a call to a helper in the fixed `tsql` schema (`src/helpers.ts`,
 `docs/design.md` "The `tsql` schema"): the migration installs the ones its functions use, brings them up to date itself and
-refuses a database holding a newer revision. **Changing a helper's body is a decision**: raise `HELPERS_REVISION`, add the
-hash to `tests/helpers/revisions.json` (the failing test prints it) and say in the changeset which functions behave differently.
+refuses a database holding a newer revision. **Changing a helper's body is a decision**: run `bun scripts/helpers.ts lock` (it appends the hash to
+`src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
 
 ## Types and composites

@@ -19,6 +19,6 @@ indexes and stored generated columns computed with the old body are the user's t
 `--schema tsql` is now refused: the schema is reserved. The user's own functions keep
 `--schema`.
 
-Contributors: a helper's body only changes to fix a bug, and `tests/helpers/revisions.json`
-pins each revision to a hash of the text, so changing one without raising
-`HELPERS_REVISION` fails the tests.
+Contributors: a helper's body only changes to fix a bug. `src/helpersLock.ts` holds a hash per
+revision, appended by `bun scripts/helpers.ts lock`; changing a helper without recording it
+fails the tests.
