@@ -19,7 +19,7 @@
   </g>
 
   <g transform="translate(0 0)">
-  <circle cx="330" cy="325" r="195" fill="#326FAB" fill-opacity="0.12" stroke="#326FAB" stroke-opacity="0.65" stroke-width="2.5" />
+  <circle cx="330" cy="325" r="195" fill="#326FAB" stroke="#326FAB" stroke-width="2.5" />
   <circle cx="570" cy="325" r="195" fill="#336791" fill-opacity="0.12" stroke="#336791" stroke-opacity="0.65" stroke-width="2.5" />
 
   <!-- The overlap, filled: TypeScript's blue fading into PostgreSQL's -->
@@ -33,14 +33,14 @@
   <circle cx="570" cy="325" r="195" fill="url(#both)" clip-path="url(#ts-world)" />
 
   <!-- TypeScript's own world -->
-  <rect x="233" y="273" width="104" height="104" rx="21" fill="#3178C6" />
-  <text x="285" y="342" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="-1.5">TS</text>
-  <text x="300" y="209" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">setTimeout</text>
-  <text x="228" y="252" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
-  <text x="182" y="305" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
-  <text x="180" y="359" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">JSON</text>
-  <text x="216" y="419" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
-  <text x="288" y="459" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
+  <rect x="233" y="273" width="104" height="104" rx="21" fill="#FFFFFF" />
+  <text x="285" y="342" text-anchor="middle" fill="#3178C6" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="-1.5">TS</text>
+  <text x="300" y="209" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">setTimeout</text>
+  <text x="228" y="252" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
+  <text x="182" y="305" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
+  <text x="180" y="359" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">JSON</text>
+  <text x="216" y="419" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
+  <text x="288" y="459" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
 
   <!-- PostgreSQL's own world: the elephant, from the project's own artwork -->
   <g transform="translate(565 268) scale(0.235)">
