@@ -13,6 +13,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                                        ├─ typemap.ts    TypeScript types → PgType (composites, domains, enums, arrays)
                                        ├─ references.ts what a name refers to (parameter, global, package…)
                                        ├─ math.ts       the closed table of `Math` members that compile, and why the rest do not
+                                       ├─ helpers.ts    the functions installed in the `tsql` schema, and the SQL section that installs them
                                        └─ origin.ts     where a declaration lives (project, standard library, package)
 
  migration + manifest ──► runParity.ts ──► parity.ts ──► the same inputs through the TypeScript and through PostgreSQL
@@ -169,9 +170,12 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   advice. `referenceMessage` words the refusal.
 - **`Math` calls**: `isMathGlobal` finds `Math` by the same provenance, and `lowerMathCall` looks the
   member up in [`math.ts`](../src/math.ts)'s closed table. A member that is there becomes a `builtin`
-  IR node — a PostgreSQL function called by its bare name, its arguments already widened — or, for the members with a `rule` in the table, the SQL that matches JavaScript (`round`, `fround`, `sign`, `sqrt`, doubles' `min`/`max`: `case`/`builtin` nodes; `clz32`, `imul`: `clz32`, `imul` and `toReal` nodes), an argument read more than once being written again when cheap and bound by `once` (`bind`) otherwise. `Math.PI` and the other constants become a `lit`. A member that is not in the table is refused
-  that is not is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only
-  one that asks for the `int(...)` guard.
+  IR node — a PostgreSQL function called by its bare name, its arguments already widened — or, for the
+  members with a `rule` in the table, a `helper` node: a call to `tsql.math_round` and its kin
+  ([`helpers.ts`](../src/helpers.ts)), recorded in `FunctionIR.helpers` so `emitMigration` installs the
+  ones the functions use. `Math.PI` and the other constants become a `lit`. A member that is not in the
+  table is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only one that
+  asks for the `int(...)` guard.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler

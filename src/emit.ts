@@ -13,6 +13,7 @@ import {
   type StmtIR,
 } from "./ir.ts";
 import { isInt4 } from "./constants.ts";
+import { runtimeSql, TSQL_SCHEMA, type HelperName } from "./helpers.ts";
 import { quoteIdentifier, quoteLiteral } from "./names.ts";
 
 export interface EmitOptions {
@@ -89,12 +90,6 @@ interface Qualifier {
   scalar(type: ScalarType): string;
 }
 
-/** An operand of a `::` cast: an atom, and a negative literal in parentheses. */
-function castOperand(expr: ExprIR, q: Qualifier): string {
-  const text = emitExpr(expr, q, PREC.atom);
-  return text.startsWith("-") ? `(${text})` : text;
-}
-
 function emitExpr(expr: ExprIR, q: Qualifier, minPrecedence = 0): string {
   const precedence = precedenceOf(expr);
   const text = emitExprInner(expr, q, precedence);
@@ -168,18 +163,8 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
     case "call":
       return `${q(expr.sqlName)}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 
-    case "bind":
-      return `(SELECT ${emitExpr(expr.body, q)} FROM (SELECT ${emitExpr(expr.value, q)} AS ${quoteIdentifier(expr.name)}) AS t)`;
-
-    // A negative literal is `-5`: `-5::bit(32)` would negate the cast, so it is wrapped.
-    case "clz32":
-      return `COALESCE(NULLIF(position('1' IN ${castOperand(expr.operand, q)}::bit(32)), 0) - 1, 32)`;
-
-    case "imul":
-      return `(((${castOperand(expr.left, q)}::bigint * ${castOperand(expr.right, q)}::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer`;
-
-    case "toReal":
-      return `${castOperand(expr.operand, q)}::real::double precision`;
+    case "helper":
+      return `${TSQL_SCHEMA}.${expr.name}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
 
     case "builtin":
       return `${expr.sql}(${expr.args.map((a) => emitExpr(a, q)).join(", ")})`;
@@ -610,6 +595,10 @@ export function emitMigration(
     );
   }
   if (schema) parts.push(`CREATE SCHEMA IF NOT EXISTS ${quoteIdentifier(schema)};`);
+  // The helpers the functions call, before the functions: a migration carries the
+  // ones it uses, and none when no function calls one.
+  const helpers = [...new Set(functions.flatMap((fn) => fn.helpers))] as HelperName[];
+  if (helpers.length > 0) parts.push(runtimeSql(helpers, comments));
   // Types first: the function signatures below refer to them, and a composite's
   // fields may be domains or enums.
   for (const set of [...named].sort((a, b) => a.sqlName.localeCompare(b.sqlName))) {

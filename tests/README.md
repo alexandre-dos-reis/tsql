@@ -35,6 +35,7 @@ test file.
   `rejected/helpers/` is part of the project the compiler opens (the tsconfig includes `.`) without
   being a case of its own.
   Each file's header explains why, often with the SQL that would have diverged.
+- **`tests/helpers.test.ts`** is not a folder of cases: it pins the text of the functions tsql installs in the `tsql` schema to a revision (`tests/helpers/revisions.json`) and checks how a migration installs them — twice in a row, refusing a newer revision, announcing a replaced body, staying inlinable. What the helpers *return* is `parity/` and `specialValues.test.ts`, which run the whole migration.
 - **`divergent/`** tests the test: the compiler is not involved. The SQL is written by hand because the
   compiler must never produce it; the pair proves the parity harness — and so `tsql parity` — can fail.
   A harness that cannot fail would make every green parity run meaningless.

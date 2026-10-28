@@ -173,7 +173,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | a named `interface` or object `type` | a composite type; a field of a named object type is a column of its composite |
 | `readonly T[]` | `t[]` |
 | `a / b` | always `double precision`, as in TypeScript |
-| `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or SQL written to match it |
+| `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or a `tsql.math_*` helper the migration installs |
 | `` `${a}-${b}` ``, `??`, `c ? a : b` | `\|\|`, `COALESCE`, `CASE` |
 
 ## What's supported
