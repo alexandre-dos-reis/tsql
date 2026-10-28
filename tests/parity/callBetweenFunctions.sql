@@ -7,13 +7,9 @@ CREATE OR REPLACE FUNCTION app.plan_cap(
   plan app.plan
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE WHEN plan = 'free' THEN 3 ELSE 100 END;
-END;
-$$;
+RETURN CASE WHEN plan = 'free' THEN 3 ELSE 100 END;
 
 CREATE OR REPLACE FUNCTION app.remaining_todos(
   plan app.plan,

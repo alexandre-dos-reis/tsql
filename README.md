@@ -36,13 +36,9 @@ CREATE OR REPLACE FUNCTION app.can_create_todo(
   count integer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan <> 'free' OR count < 3;
-END;
-$$;
+RETURN plan <> 'free' OR count < 3;
 ```
 
 </td></tr>
@@ -293,7 +289,7 @@ column, and `REINDEX` an expression index. A trigger has none of these problems.
 
 Pre-1.0: a minor version may change defaults or the generated SQL, and says so in the
 [changelog](CHANGELOG.md). TypeScript is pinned to `~7.0.2` because tsql reads its `unstable/` compiler
-API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and through PGlite.
+API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and through PGlite; PostgreSQL 14 or later, for the SQL-standard function body.
 
 ## Learn more
 

@@ -13,10 +13,7 @@ CREATE OR REPLACE FUNCTION app.echo_plan(
   plan app.plan_record
 )
 RETURNS app.plan_record
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan;
-END;
-$$;
+RETURN plan;
+

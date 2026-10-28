@@ -7,14 +7,11 @@ CREATE OR REPLACE FUNCTION app.label(
   code text
 )
 RETURNS text
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE
-    WHEN code IS NULL THEN 'none'
-    WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha'
-    ELSE 'other'
-  END;
+RETURN CASE
+  WHEN code IS NULL THEN 'none'
+  WHEN code IS NOT DISTINCT FROM 'a' THEN 'alpha'
+  ELSE 'other'
 END;
-$$;
+

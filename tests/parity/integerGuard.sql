@@ -2,13 +2,9 @@ CREATE OR REPLACE FUNCTION app.guarded_euros(
   cents integer
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN cents::double precision / 100;
-END;
-$$;
+RETURN cents::double precision / 100;
 
 CREATE OR REPLACE FUNCTION app.guarded_nested(
   setup_cents integer,
@@ -16,35 +12,24 @@ CREATE OR REPLACE FUNCTION app.guarded_nested(
   unit_cents integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN setup_cents + seats * unit_cents;
-END;
-$$;
+RETURN setup_cents + seats * unit_cents;
 
 CREATE OR REPLACE FUNCTION app.guarded_product(
   seats integer,
   unit_cents integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN seats * unit_cents;
-END;
-$$;
+RETURN seats * unit_cents;
 
 CREATE OR REPLACE FUNCTION app.guarded_shard(
   id integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN id % 16;
-END;
-$$;
+RETURN id % 16;
+

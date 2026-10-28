@@ -28,38 +28,26 @@ CREATE OR REPLACE FUNCTION app.has_missing_note(
   notes text[]
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN array_position(notes, NULL) IS NOT NULL;
-END;
-$$;
+RETURN array_position(notes, NULL) IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION app.has_score(
   scores double precision[],
   score integer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN array_position(scores, score::double precision) IS NOT NULL;
-END;
-$$;
+RETURN array_position(scores, score::double precision) IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION app.item_count(
   items integer[]
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN cardinality(items);
-END;
-$$;
+RETURN cardinality(items);
 
 CREATE OR REPLACE FUNCTION app.largest_quantity(
   quantities integer[]
@@ -87,13 +75,9 @@ CREATE OR REPLACE FUNCTION app.offers_plan(
   plan app.offer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN array_position(plans, plan) IS NOT NULL;
-END;
-$$;
+RETURN array_position(plans, plan) IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION app.sum_until_negative(
   amounts integer[]

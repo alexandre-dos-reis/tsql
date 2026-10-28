@@ -15,6 +15,7 @@ import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower.ts";
 import { openProject, typeCheck } from "./program.ts";
+import { chooseLanguages } from "./language.ts";
 import { mapTypeDeclaration, type TypeDeclaration } from "./typemap.ts";
 
 export interface CompileOptions {
@@ -145,14 +146,16 @@ export async function compileProject(options: CompileOptions): Promise<CompileRe
     }
 
     // Pass 2: bodies.
-    const functions: FunctionIR[] = [];
+    const lowered: FunctionIR[] = [];
     for (const { fn, signature, module } of pending) {
       try {
-        functions.push(await lowerFunction(fn, signature, module, signatures, ctx));
+        lowered.push(await lowerFunction(fn, signature, module, signatures, ctx));
       } catch (error) {
         errors.push(asCompileError(error));
       }
     }
+    // Every function is known now, so which can be a SQL function (see `src/language.ts`) can be told.
+    const functions = chooseLanguages(lowered);
 
     // Pass 3: the exported types, mapped for their own sake. A type exported
     // from a compiled file belongs to the schema whether or not a function

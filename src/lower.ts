@@ -97,6 +97,8 @@ interface State extends TypeCtx {
   readonly targets: Target[];
   /** The helpers of `src/helpers.ts` this function calls. */
   readonly helpers: Set<HelperName>;
+  /** The compiled functions this one calls, by SQL name. */
+  readonly calls: Set<string>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -188,6 +190,7 @@ export async function lowerFunction(
     returns: signature.returns,
     targets: [],
     helpers: new Set(),
+    calls: new Set(),
   };
 
   const { fn } = exported;
@@ -213,6 +216,8 @@ export async function lowerFunction(
     locals: state.locals,
     body,
     helpers: [...state.helpers].sort(),
+    calls: [...state.calls].sort(),
+    language: "plpgsql",
   };
 }
 
@@ -1171,6 +1176,7 @@ async function lowerCall(node: CallExpression, s: State, guarded = false): Promi
     requireAssignable(lowered.type, param.type, argument as Node, `argument \`${param.tsName}\``);
     args.push(coerce(lowered, param.type));
   }
+  s.calls.add(target.sqlName);
   return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
 }
 

@@ -10,18 +10,35 @@ IF to_regtype('app.todo_item') IS NULL THEN
     estimate integer
   );
 
+CREATE OR REPLACE FUNCTION app.open_todo_count(
+  todos app.todo_item[]
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  remaining integer;
+  todo app.todo_item;
+BEGIN
+  remaining := 0;
+  FOREACH todo IN ARRAY todos LOOP
+    IF NOT (todo).done THEN
+      remaining := remaining + 1;
+    END IF;
+  END LOOP;
+  RETURN remaining;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION app.is_overloaded(
   todos app.todo_item[],
   "limit" integer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN app.open_todo_count(todos) > "limit" % 5 OR cardinality(todos) = 10;
-END;
-$$;
+RETURN app.open_todo_count(todos) > "limit" % 5 OR cardinality(todos) = 10;
 
 CREATE OR REPLACE FUNCTION app.open_estimate(
   todos app.todo_item[]
@@ -44,26 +61,5 @@ BEGIN
     total := total + estimate;
   END LOOP;
   RETURN total;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION app.open_todo_count(
-  todos app.todo_item[]
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-DECLARE
-  remaining integer;
-  todo app.todo_item;
-BEGIN
-  remaining := 0;
-  FOREACH todo IN ARRAY todos LOOP
-    IF NOT (todo).done THEN
-      remaining := remaining + 1;
-    END IF;
-  END LOOP;
-  RETURN remaining;
 END;
 $$;

@@ -15,6 +15,7 @@ import {
 import { isInt4 } from "./constants.ts";
 import { runtimeSql, TSQL_SCHEMA, type HelperName } from "./helpers.ts";
 import { quoteIdentifier, quoteLiteral } from "./names.ts";
+import { creationOrder } from "./language.ts";
 
 export interface EmitOptions {
   /** Schema to qualify generated functions with. Omit for unqualified names. */
@@ -365,6 +366,12 @@ export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string 
   lines.push(params.join(",\n"));
   lines.push(")");
   lines.push(`RETURNS ${typeName(fn.returns, schema)}`);
+  if (fn.language === "sql") {
+    // One `return`: the SQL-standard body (PostgreSQL 14+), which PostgreSQL parses when it creates the
+    // function, so what it calls and the types it names are recorded as dependencies.
+    lines.push("LANGUAGE sql", "IMMUTABLE", ...emitStatements(fn.body, qualify, ""));
+    return lines.join("\n");
+  }
   lines.push("LANGUAGE plpgsql");
   lines.push("IMMUTABLE");
   lines.push("AS $$");
@@ -582,7 +589,7 @@ export function emitMigration(
   named: readonly NamedText[] = [],
 ): string {
   const { schema, comments } = { ...DEFAULTS, ...options };
-  const sortedFunctions = [...functions].sort((a, b) => a.sqlName.localeCompare(b.sqlName));
+  const sortedFunctions = creationOrder(functions);
   const sortedComposites = dependencyOrder([...composites].sort((a, b) => a.sqlName.localeCompare(b.sqlName)));
 
   const parts: string[] = [];

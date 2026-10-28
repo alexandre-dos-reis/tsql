@@ -14,6 +14,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                                        ├─ references.ts what a name refers to (parameter, global, package…)
                                        ├─ math.ts       the closed table of `Math` members that compile, and why the rest do not
                                        ├─ helpers.ts    the functions installed in the `tsql` schema, and the SQL section that installs them
+                                       ├─ language.ts   which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
                                        └─ origin.ts     where a declaration lives (project, standard library, package)
 
  migration + manifest ──► runParity.ts ──► parity.ts ──► the same inputs through the TypeScript and through PostgreSQL

@@ -13,10 +13,7 @@ CREATE OR REPLACE FUNCTION app.can_add_todo(
   policy app.todo_policy
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN (policy).plan <> 'free' OR (policy).current_count < 3;
-END;
-$$;
+RETURN (policy).plan <> 'free' OR (policy).current_count < 3;
+

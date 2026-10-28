@@ -8,10 +8,7 @@ CREATE OR REPLACE FUNCTION app.can_create_todo(
   count integer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan <> 'free' OR count < 3;
-END;
-$$;
+RETURN plan <> 'free' OR count < 3;
+

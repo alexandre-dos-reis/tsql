@@ -7,10 +7,7 @@ CREATE OR REPLACE FUNCTION app.add_one(
   math double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN math + 1;
-END;
-$$;
+RETURN math + 1;
+

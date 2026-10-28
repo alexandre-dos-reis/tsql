@@ -9,15 +9,12 @@ CREATE OR REPLACE FUNCTION app.seat_limit(
   tier app.tier
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE tier
-    WHEN 'free' THEN 1
-    WHEN 'starter' THEN 1
-    WHEN 'pro' THEN 10
-    ELSE 100
-  END;
+RETURN CASE tier
+  WHEN 'free' THEN 1
+  WHEN 'starter' THEN 1
+  WHEN 'pro' THEN 10
+  ELSE 100
 END;
-$$;
+

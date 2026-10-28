@@ -341,6 +341,18 @@ A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x -
 
 Rejected on the way: helpers whose name carries a revision (`math_round_2`, left behind with the old one, the fix reaching a database only by recompiling) — more to read, and a stale helper staying callable; and a `tsql upgrade` command — a second step to forget, for a change the user's own migration already applies.
 
+## SQL functions, and inlining
+
+A function whose whole body is `return <expression>` is emitted as `LANGUAGE sql` with a SQL-standard body (`RETURN expression;`, PostgreSQL 14 and later); every other function is PL/pgSQL. The reason is the planner. It *inlines* a SQL function: in `WHERE app.above(v)` it sees `v > 990`, so an index on `v` is usable, and a `CHECK`, a generated column or a row-level security policy that calls the function costs no call per row. A PL/pgSQL function is a black box to it. Measured on PGlite (PostgreSQL 18), 300 000 rows and an index on `v`, for the same condition: 369 ms with a sequential scan calling the function on every row, against 3 ms with a bitmap scan on the index. The results are the same; the parity harness runs both languages.
+
+[`src/language.ts`](../src/language.ts) decides, after every function has been lowered, because it needs the call graph. A function stays PL/pgSQL when:
+
+- **it is not one expression**: a local, an `if` or a loop have no SQL-function form;
+- **it is part of a cycle of SQL functions**, itself included (recursion): PostgreSQL resolves the calls in a SQL function's body when it *creates* it, so each would have to exist before the other, where PL/pgSQL looks a call up only when it runs;
+- **it writes an enum value as a literal**: a migration that adds a value (`ALTER TYPE … ADD VALUE`) and, in the same transaction, replaces a function that names it fails with *unsafe use of new value* for a SQL function, which is analysed when created, and not for PL/pgSQL. `tests/parity.test.ts` ("the migration adds an enum value in its place") is the case that found it.
+
+The same fact orders the migration: a SQL function is created after every function it calls (`creationOrder`), otherwise by name, so a recompile is still byte-identical. A SQL-standard body is parsed when the function is created, so PostgreSQL records what it calls and the types it names as dependencies; a `DROP` of either is refused until the function goes.
+
 ## Object types
 
 A named `interface` or `type` object shape becomes a PostgreSQL composite type, and field access becomes a parenthesised field reference:

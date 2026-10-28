@@ -7,10 +7,7 @@ CREATE OR REPLACE FUNCTION app.double_negation(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN -(-x);
-END;
-$$;
+RETURN -(-x);
+

@@ -7,10 +7,7 @@ CREATE OR REPLACE FUNCTION app.doubled_weight(
   weight double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN weight * 2;
-END;
-$$;
+RETURN weight * 2;
+
