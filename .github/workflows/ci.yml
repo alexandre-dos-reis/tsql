@@ -25,7 +25,7 @@ jobs:
     env:
       TSQL_TEST_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Same Bun as devenv.nix: `bun check` (used by `typecheck`) arrived in 1.4.3.
       - uses: oven-sh/setup-bun@v2
@@ -33,7 +33,7 @@ jobs:
           bun-version: 1.4.4
 
       # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for >=22.18.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 

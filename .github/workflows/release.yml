@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Full history and tags: changesets reads them to tell what is released.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -65,7 +65,7 @@ jobs:
       # OIDC: trusted publishing needs >= 11.5.1, and Node 24 ships 11.x.
       # tests/cli.test.ts also spawns the CLI under `node`, and `engines` asks
       # for >= 22.18.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
