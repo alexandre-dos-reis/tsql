@@ -94,7 +94,7 @@ const NUMERIC_ALIASES: Record<string, PgScalar> = {
  * told apart from identically named local declarations. A constant kept in step
  * with package.json by a test, so recognising it needs no file read at run time.
  */
-export const PACKAGE_NAME = "@adr/tsql";
+export const PACKAGE_NAME = "@adrdp/tsql";
 
 /** The authoring module, `src/index.ts`, which is what the published types point at; a `.d.ts` or `.js` copy is accepted as well. */
 const AUTHORING_FILE = /(^|\/)index\.(ts|d\.ts|m?js)$/;

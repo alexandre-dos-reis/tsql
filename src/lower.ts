@@ -1301,7 +1301,7 @@ async function lowerMathCall(
         throw CompileError.at(
           node,
           `\`${label}\` of an \`Integer\` can overflow 32 bits — \`${label}(${INT4_MIN})\` is ${-INT4_MIN} — which PostgreSQL refuses (\`integer out of range\`) where TypeScript returns it. ` +
-            `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise, or pass a \`Float\`.`,
+            `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adrdp/tsql"\`) so both sides raise, or pass a \`Float\`.`,
         );
       }
       return { kind: "builtin", sql: entry.sql!, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
@@ -2028,7 +2028,7 @@ function unguarded(op: string, what: string, node: Node): CompileError {
   return CompileError.at(
     node,
     `${what} \`${op}\` can overflow 32 bits, which PostgreSQL refuses (\`integer out of range\`) where TypeScript keeps counting in doubles. ` +
-      `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adr/tsql"\`) so both sides raise — one guard per operation, so \`${INT_GUARD}(a + ${INT_GUARD}(b * c))\` — ` +
+      `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adrdp/tsql"\`) so both sides raise — one guard per operation, so \`${INT_GUARD}(a + ${INT_GUARD}(b * c))\` — ` +
       `or annotate the result as \`Float\` to compute in doubles, which both languages do alike.`,
   );
 }

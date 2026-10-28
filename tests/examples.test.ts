@@ -10,9 +10,9 @@ import { PUBLISHED } from "../scripts/examples.ts";
  * checkout's CLI, with nothing installed and no database (parity runs on the in-process PGlite, as
  * the script does). A new example is covered by adding its folder.
  *
- * The examples import `@adr/tsql`. Without an install, that resolves through one link in
- * this repository's own `node_modules` (`@adr/tsql` → the repository), made here if missing; the
- * provenance check still sees the declaration inside the package named `@adr/tsql`.
+ * The examples import `@adrdp/tsql`. Without an install, that resolves through one link in
+ * this repository's own `node_modules` (`@adrdp/tsql` → the repository), made here if missing; the
+ * provenance check still sees the declaration inside the package named `@adrdp/tsql`.
  *
  * The scripts' output never lands in the example: `--out` is redirected to a throwaway directory,
  * and a file the example checks in (simple's `output.sql`) is compared with it instead.
@@ -21,9 +21,9 @@ import { PUBLISHED } from "../scripts/examples.ts";
 const root = resolve(import.meta.dir, "..");
 const cli = join(root, "src", "cli.ts");
 
-const self = join(root, "node_modules", "@adr", "tsql");
+const self = join(root, "node_modules", "@adrdp", "tsql");
 if (!existsSync(self) && !lstatSync(self, { throwIfNoEntry: false })) {
-  mkdirSync(join(root, "node_modules", "@adr"), { recursive: true });
+  mkdirSync(join(root, "node_modules", "@adrdp"), { recursive: true });
   symlinkSync("../..", self, "dir");
 }
 
@@ -75,7 +75,7 @@ for (const name of examples) {
 
     // What a user who copies the folder installs. `bun scripts/examples.ts link` is for local work;
     // this keeps a linked example from being committed.
-    test("asks for the published @adr/tsql and typescript", () => {
+    test("asks for the published @adrdp/tsql and typescript", () => {
       for (const [dependency, range] of Object.entries(PUBLISHED)) {
         expect(manifest.devDependencies?.[dependency], `${dependency} — run \`bun scripts/examples.ts sync\``).toBe(
           range,

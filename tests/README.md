@@ -52,6 +52,6 @@ test file.
 
 `examples.test.ts` runs every folder in `examples/` through its own `tsql:check`, `tsql:parity` and
 `tsql:compile` scripts, with this checkout's CLI and nothing installed, and checks that each example
-asks for the published `@adr/tsql` and `typescript` (not a `link`ed checkout) and that anything it
+asks for the published `@adrdp/tsql` and `typescript` (not a `link`ed checkout) and that anything it
 checks in is what tsql writes. It reads the examples only through those scripts: they are projects
 to copy, not coverage, which stays in the folders above.

@@ -1,4 +1,4 @@
-import { int, type Float, type Integer } from "@adr/tsql";
+import { int, type Float, type Integer } from "@adrdp/tsql";
 
 /**
  * The two numeric types, and the guard that makes integer arithmetic

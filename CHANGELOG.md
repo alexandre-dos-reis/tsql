@@ -1,4 +1,4 @@
-# @adr/tsql
+# @adrdp/tsql
 
 ## 0.2.0
 
@@ -65,7 +65,7 @@
 - e7cadb2: Comparing a `Float` that is `NaN` now gives JavaScript's answer. PostgreSQL sorts `NaN` above every number and makes it equal to itself, so `count > 10` was true in the database for a `NaN` and false in TypeScript. The compiled comparison checks the operand that can be `NaN` (`count > 10 AND count <> 'NaN'::double precision`); a literal or an `Integer` side adds nothing. `tsql parity` now draws `NaN`, the infinities and `-0` for `Float` parameters and tells `-0` from `0`, which is how this was found.
 - 9c98b49: Nest object types as PostgreSQL does, instead of flattening them. A field of a named object type is now a column of that type's own composite — `customer: Customer` is `customer app.customer`, read as `((basket).customer).tier` — where it used to be flattened into prefixed columns (`customer_tier`). A nested object is a value: it can be passed to another function, returned, held in a local or destructured as a whole, and a nested literal is a `ROW` inside a `ROW`. Anonymous nested shapes (`customer: { tier: string }`) are now refused — give the shape a name — as is a nested object that may be `null`; the 4-level nesting cap is gone. The generated types change shape: an existing database needs its composite types migrated (the type guard reports the difference rather than replacing anything).
 - 4c8ac7c: No tsconfig is needed any more: `tsql check input.ts` works on its own, and `--project` has no default. tsql always type checks with options it imposes — `strict`, `noEmit`, `types: []` and `lib: ["ESNext"]` — even over a tsconfig given with `--project`, which still lends its paths and other settings. Without `strict`, TypeScript lets `null` into every type and a nullable comparison would be translated wrongly; without the other two, browser and Node globals would type check. Before, `--project` defaulted to `functions/tsconfig.json`, and the translation depended on that file's settings.
-- fc2139e: Numbers: drop `Numeric`, guard `integer` arithmetic, and make `@adr/tsql` the authoring import
+- fc2139e: Numbers: drop `Numeric`, guard `integer` arithmetic, and make `@adrdp/tsql` the authoring import
   
   Three related, breaking changes to how numbers are written and where they come from.
   
@@ -83,7 +83,7 @@
   directly inside `int(...)`, which raises in TypeScript and is **erased** from the emitted SQL:
   
   ```ts
-  import { int, type Integer } from "@adr/tsql";
+  import { int, type Integer } from "@adrdp/tsql";
   
   export function seatTotalCents(seats: Integer, unitCents: Integer): Integer {
     return int(seats * unitCents); // RETURN seats * unit_cents;
@@ -97,8 +97,8 @@
   now counts *both* sides raising as agreement, which is what makes the guard worth writing; one side
   raising alone is still reported as a divergence.
   
-  **The authoring vocabulary moved to the package root.** `import { int, type Integer } from "@adr/tsql"`
-  replaces `@adr/tsql/pgtypes`, and the `./pgtypes` subpath is removed. The compiler-as-library export
+  **The authoring vocabulary moved to the package root.** `import { int, type Integer } from "@adrdp/tsql"`
+  replaces `@adrdp/tsql/pgtypes`, and the `./pgtypes` subpath is removed. The compiler-as-library export
   (`compileProject`, `formatResult`, the IR types) is removed with it: `tsql` on the command line is
   the whole public surface for running a build. This also fixes the error that prompted the change — a
   compiled project type checks the root module under `types: []` with no DOM, so a root that reached
@@ -116,7 +116,7 @@
   Packaging changes that come with it:
   
   - `fast-check`, `@electric-sql/pglite` and `postgres` (postgres.js) are now runtime dependencies, so the command works straight after installing. PGlite and postgres.js are only loaded by `tsql parity`.
-  - `@adr/tsql/parity` is no longer exported: the harness is internal, and `tsql parity` is the way to run it.
+  - `@adrdp/tsql/parity` is no longer exported: the harness is internal, and `tsql parity` is the way to run it.
 - 5ae30c8: Speak of functions rather than business rules: tsql compiles TypeScript functions, whatever they encode. The defaults follow — `--project` is now `functions/tsconfig.json` (was `rules/tsconfig.json`) and `compile --out` is `generated/0001_functions.sql` (was `generated/0001_rules.sql`); pass `--project rules/tsconfig.json` to keep the old layout. The guards' drift messages read "but the functions expect".
 - 0798729: Run on Node, not only Bun.
   
@@ -200,7 +200,7 @@
   is still told to be exported, while a value is told why it cannot be inlined (the database would hold a
   frozen copy the TypeScript could later change, and the parity harness would keep agreeing because it
   imports the same module) and to become a parameter or a local.
-- c7fce29: Fix `tsql` on Node when installed from npm. Node strips TypeScript types, but refuses to under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is where an installed package lives — so every `npx tsql` on Node failed, and so did importing `@adr/tsql` from Node. The package now ships its code as JavaScript, built into `dist/` (no dependency bundled, not minified), with its types still read from the TypeScript sources. Bun was never affected.
+- c7fce29: Fix `tsql` on Node when installed from npm. Node strips TypeScript types, but refuses to under `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), which is where an installed package lives — so every `npx tsql` on Node failed, and so did importing `@adrdp/tsql` from Node. The package now ships its code as JavaScript, built into `dist/` (no dependency bundled, not minified), with its types still read from the TypeScript sources. Bun was never affected.
 - 0f71fb6: Two silent numeric divergences fixed. A field declared `Integer` (or `Numeric`, `Float`) in an object type now maps to that column type; it used to become `double precision`, because fields were typed from what the checker sees (`number`) instead of what the author wrote. And a number may no longer be narrowed on assignment, return or argument (`double precision` into `integer`): PostgreSQL would round it silently where TypeScript keeps the fraction. Numbers may only widen, `integer` → `numeric` → `double precision`.
 - 2fbb376: `tsql parity` no longer generates subnormal doubles. PostgreSQL raises "value out of range: underflow" when a `double precision` result underflows to zero, where TypeScript gives 0; like integer overflow, this is now a documented divergence rather than a parity failure on inputs such as `5e-324`.
 - d47539c: Quote PostgreSQL's "type or function name" keywords (`outer`, `inner`, `left`, `join`, `like`…) and PL/pgSQL's own reserved words (`begin`, `loop`, `if`…) in generated identifiers. A function with a parameter named `outer` used to compile to SQL that PostgreSQL refused: the keyword is accepted as a parameter name but not as a column reference in `(outer).field`.

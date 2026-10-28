@@ -1,4 +1,4 @@
-import type { Integer } from "@adr/tsql";
+import type { Integer } from "@adrdp/tsql";
 
 export type Plan = "free" | "pro";
 

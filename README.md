@@ -5,7 +5,7 @@
 ### Write your functions and types once, in TypeScript — tsql compiles them to PostgreSQL and proves both give the same answer.
 
 [![CI](https://github.com/alexandre-dos-reis/tsql/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-dos-reis/tsql/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@adr/tsql)](https://www.npmjs.com/package/@adr/tsql)
+[![npm](https://img.shields.io/npm/v/@adrdp/tsql)](https://www.npmjs.com/package/@adrdp/tsql)
 [![MIT](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
 
 </div>
@@ -53,13 +53,13 @@ translate *exactly* is a build error, never a guess.
 **1. Install** — Node 22.18+ or Bun, with TypeScript 7 as a peer:
 
 ```bash
-npm i -D @adr/tsql typescript@~7.0.2     # or: bun add -d @adr/tsql typescript@~7.0.2
+npm i -D @adrdp/tsql typescript@~7.0.2     # or: bun add -d @adrdp/tsql typescript@~7.0.2
 ```
 
 **2. Write a function**, `functions/billing.ts`:
 
 ```ts
-import type { Integer } from "@adr/tsql";
+import type { Integer } from "@adrdp/tsql";
 
 export type Plan = "free" | "pro" | "enterprise";
 
@@ -163,8 +163,8 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | --- | --- |
 | `string`, `boolean` | `text`, `boolean` |
 | `number` | `double precision` |
-| `Integer`, `Float` (from `@adr/tsql`) | `integer`, `double precision` — there is deliberately no `numeric` |
-| `int(a + b)` (from `@adr/tsql`) | `a + b` — the guard raises in TypeScript where PostgreSQL already raises past 32 bits |
+| `Integer`, `Float` (from `@adrdp/tsql`) | `integer`, `double precision` — there is deliberately no `numeric` |
+| `int(a + b)` (from `@adrdp/tsql`) | `a + b` — the guard raises in TypeScript where PostgreSQL already raises past 32 bits |
 | `T \| null` | a nullable value, compared with `IS [NOT] DISTINCT FROM` |
 | `type Plan = "free" \| "pro"` | a domain: `text` with a `CHECK` on its values |
 | a string `enum`, or an `as const` object of strings | an enum, in the order written |

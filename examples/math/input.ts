@@ -1,4 +1,4 @@
-import { int, type Float, type Integer } from "@adr/tsql";
+import { int, type Float, type Integer } from "@adrdp/tsql";
 
 /**
  * `Math`, as far as tsql can keep the answer identical.

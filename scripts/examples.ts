@@ -1,5 +1,5 @@
 /**
- * Points the examples' `@adr/tsql` and `typescript` either at what a user installs, or at this
+ * Points the examples' `@adrdp/tsql` and `typescript` either at what a user installs, or at this
  * checkout.
  *
  *   bun scripts/examples.ts sync   `^<version>` of this package and the `typescript` range it

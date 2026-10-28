@@ -233,7 +233,7 @@ So the author closes it, with a function from the authoring module that raises w
 already raises:
 
 ```ts
-import { int, type Integer } from "@adr/tsql";
+import { int, type Integer } from "@adrdp/tsql";
 
 export function seatTotalCents(seats: Integer, unitCents: Integer): Integer {
   return int(seats * unitCents);

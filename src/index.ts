@@ -1,7 +1,7 @@
 /**
  * The authoring vocabulary: what the compiled functions import.
  *
- * This is the whole of `@adr/tsql`'s public API, and it is deliberately tiny.
+ * This is the whole of `@adrdp/tsql`'s public API, and it is deliberately tiny.
  * The compiler itself is not exported — `tsql` on the command line is how a
  * build is run — because a compiled project type checks this module under
  * `types: []` and no DOM, so anything reachable from here that touched

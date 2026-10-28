@@ -75,7 +75,7 @@ bring in the DOM.
 `typecheck` script, never the compiler API the translator depends on. A script named `check` would
 shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
-`examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
+`examples/` holds projects a user copies, each with its own `package.json` asking for `@adrdp/tsql` at
 `^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
 and checked for drift in CI), `numeric` and `math` (one `input.ts` each, `output.sql` checked in: `Integer`/`Float`/`int()`, and the `Math` members with the `tsql.math_*` helpers they call), `with-postgrest` and
 `with-postgraphile` (the same todo list: PostgreSQL via Docker, a trigger calling the compiled
@@ -178,7 +178,7 @@ bun run release     # changeset publish
   dependencies are `commander` (the CLI, itself dependency-free) and `fast-check`,
   `@electric-sql/pglite` and `postgres`, for the parity harness and `tsql parity`, which
   `tests/packaging.test.ts` asserts.
-- **The package exports the authoring vocabulary only.** `@adr/tsql` is `src/index.ts`: `Integer`,
+- **The package exports the authoring vocabulary only.** `@adrdp/tsql` is `src/index.ts`: `Integer`,
   `Float`, `int`. The compiler is *not* exported — `tsql` on the command line is the whole public
   surface for running a build. A compiled project type checks the root module under `FORCED_OPTIONS`
   (`types: []`, no DOM), so anything reachable from it that touched `process`, `node:path` or
@@ -327,7 +327,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 **Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
 `examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
-`@adr/tsql/pgtypes` resolves through a self-link, `node_modules/@adr/tsql` → the repository, which the
+`@adrdp/tsql/pgtypes` resolves through a self-link, `node_modules/@adrdp/tsql` → the repository, which the
 test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
 with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
 committed. Only those three scripts are tested, with no database to set up (parity runs on
