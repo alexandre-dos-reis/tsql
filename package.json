@@ -5,10 +5,10 @@
   "keywords": [
     "bun",
     "compiler",
+    "functions",
     "parity-testing",
     "plpgsql",
     "postgresql",
-    "functions",
     "sql",
     "typescript"
   ],

@@ -157,13 +157,20 @@ dumb?"
 ## Publishing
 
 The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` (`bun run build`, run by
-`prepublishOnly`, not committed) and `src/index.ts` for the types. Releases go through changesets:
+`prepublishOnly`, not committed) and `src/index.ts` for the types. Releases go through changesets, and
+are **triggered by merging a PR, not by running a command** (`.github/workflows/release.yml`,
+`CONTRIBUTING.md` "Publishing"): a push to `main` with unreleased changesets opens a "Version
+Packages" PR carrying `bun run version`'s output, and merging it makes `changesets/action` publish to
+npm, tag `v<version>` and create the GitHub Release from the same CHANGELOG entry — one action, so the
+two cannot drift apart. Locally only:
 
 ```
 bun run changeset   # describe a change (interactive — needs a TTY)
-bun run version     # bump and write CHANGELOG.md
-bun run release     # changeset publish
 ```
+
+`bun run version` and `bun run release` (`changeset publish`) stay for publishing by hand, which
+tags only locally and leaves the push and the GitHub Release to do. `release` must stay free of
+machine-specific paths — the workflow runs that script, where a `~/.npmrc.local` would not exist.
 
 - **No compiled binary, deliberately.** `bun build --compile` was implemented and then removed. The
   embedded Bun runtime is the whole weight — a `console.log("hi")` binary is 104 MB and this compiler

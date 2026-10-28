@@ -1,0 +1,70 @@
+name: Release
+
+# Releases are triggered by merging, not by running a command.
+#
+# On a push to main, `changesets/action` looks for unreleased changesets in
+# `.changeset/`:
+#
+#   - Some exist → it opens (or updates) a "Version Packages" pull request
+#     holding what `bun run version` produces: the bump in package.json, the
+#     CHANGELOG entry, the examples' dependency ranges and the lockfile. The
+#     release is reviewable before it happens, and nothing is published.
+#   - None exist, and package.json's version is not on the registry → it runs
+#     `bun run release` (`changeset publish`), which publishes to npm, tags
+#     `v<version>`, and creates the GitHub Release from the CHANGELOG entry.
+#
+# So merging the "Version Packages" PR is the single action that produces both
+# the npm release and the GitHub Release — they cannot drift apart.
+#
+# `prepublishOnly` (build, typecheck, test) runs inside `npm publish`, so a tree
+# that does not build is never published, whatever this workflow does.
+
+on:
+  push:
+    branches: [main]
+
+# Publishing is not idempotent: two runs racing could both try to version or
+# publish. Never cancel a run in progress — cancelling mid-publish could leave
+# npm and the Git tags disagreeing.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # commit the version bump, push the tag, create the Release
+  pull-requests: write # open and update the "Version Packages" PR
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history and tags: changesets reads them to tell what is released.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Same Bun as devenv.nix and ci.yml: `bun check` (used by `typecheck`,
+      # which `prepublishOnly` runs) arrived in 1.4.3.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for
+      # >=22.18. `prepublishOnly` runs those tests here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: bun install --frozen-lockfile
+
+      - uses: changesets/action@v1
+        with:
+          version: bun run version
+          publish: bun run release
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A granular automation token, which bypasses the one-time password
+          # this account requires for an interactive publish.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

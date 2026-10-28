@@ -97,22 +97,37 @@ src/index.ts            the only public export: the authoring vocabulary (Intege
                         and the int4 bounds). Imports nothing — see CLAUDE.md
 src/constants.ts        values more than one stage needs; borrows the bounds from index.ts
 bin/tsql.mjs            the launcher npm puts on PATH
-.github/workflows/      CI: type check, tests, parity, example drift
+.github/workflows/      ci.yml: type check, tests, parity, example drift
+                        release.yml: the Version Packages PR, npm and the GitHub Release
 ```
 
 No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib: ["ESNext"]` itself (`FORCED_OPTIONS` in `src/program.ts`), so a compiled function cannot reach for a Bun, Node or browser global that the database side has no equivalent for.
 
 ## Publishing
 
-The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` and the TypeScript sources in `src/` (for the types) — no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets):
+The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` and `src/index.ts` (for the types — it imports nothing, so it is the only source file a consumer resolves) — no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets).
+
+**Releasing is merging a pull request, not running a command.** The only step on your machine is describing the change:
 
 ```
-bun run changeset   # describe a change (interactive)
-bun run version     # bump and write CHANGELOG.md
-bun run release     # changeset publish
+bun run changeset   # describe a change (interactive — needs a TTY), then commit .changeset/*.md
 ```
 
-`prepublishOnly` runs the build (`bun run build`, `scripts/build.ts`), the type checker and the test suite. `dist/` is not committed.
+From there `.github/workflows/release.yml` does the rest, on every push to `main`:
+
+| Unreleased changesets in `.changeset/`? | What happens |
+| --- | --- |
+| Yes | A **"Version Packages"** PR is opened or updated, holding what `bun run version` produces: the bump, the `CHANGELOG.md` entry, the examples' dependency ranges and the lockfile. Nothing is published, so the release is reviewable first. |
+| No, and the version is not on the registry | `bun run release` (`changeset publish`) publishes to npm, tags `v<version>`, and creates the **GitHub Release** from that CHANGELOG entry. |
+
+So merging the "Version Packages" PR is the single action producing both the npm release and the GitHub Release — they cannot drift apart, which hand-running `changeset publish` and `gh release create` allowed. `prepublishOnly` runs the build (`bun run build`, `scripts/build.ts`), the type checker and the test suite inside `npm publish`, so a tree that does not build is never published. `dist/` is not committed.
+
+Two pieces of setup the workflow depends on:
+
+- **`NPM_TOKEN`**, a repository secret holding a *granular automation token* with publish rights on `@adrdp/*`. It has to be an automation token: this account requires a one-time password for an interactive publish, and the npm two-factor setting must be "require two-factor authentication **or** automation tokens" rather than the variant that disallows tokens.
+- **"Allow GitHub Actions to create and approve pull requests"**, under Settings → Actions → General. Without it the action cannot open the "Version Packages" PR, and fails rather than publishing.
+
+To publish by hand instead — a broken workflow, say — `bun run release` still works, but it only publishes and tags *locally*: `git push --follow-tags` and the GitHub Release are then yours to do. npm credentials come from wherever npm finds them; if yours live outside `~/.npmrc`, point npm at them per-invocation (`NPM_CONFIG_USERCONFIG=~/.npmrc.local bun run release`) rather than committing the path into `package.json`, which would break the workflow above.
 
 Three decisions worth stating:
 
