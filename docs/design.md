@@ -323,6 +323,14 @@ What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL r
 
 ## `Number.parseInt`
 
+The behaviour reproduced here is the one written down at
+[MDN's `parseInt`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt),
+and every example on that page for the two forms tsql compiles is a test
+(`tests/parseIntValues.test.ts`), checked against the *documented* answer rather than against whatever V8
+returns — so the SQL is pinned to the language and not to one engine. The examples for a radix tsql refuses
+(2, 8, 13, 16, 36) are left out, the compiler rejecting those at build time.
+
+
 `Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
 longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
 `'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
@@ -368,6 +376,17 @@ general-purpose SQL function but the SQL that reproduces one JavaScript call exa
 and `parseInt(s, 10)`, which does not and so stops at the `x`. Any other radix, or one that is not a literal,
 is refused — the radix decides which helper the call becomes, so it has to be readable at build time, and the
 compiler does not emit SQL whose agreement with TypeScript nobody has checked.
+
+### What the page makes explicit
+
+Three rules are easy to assume wrongly, and all three are tested:
+
+- **A leading zero is not octal.** `parseInt("077")` is 77, in both forms.
+- **Only `0x` is auto-detected.** `0b101` reads as `0`, stopping at the `b`; `0o17` likewise. The binary and
+  octal prefixes are not recognised, where the hexadecimal one is.
+- **Anything invalid stops the read, it does not fail it.** `"15px"`, `"15,123"`, `"15 * 3"`, `"15e2"` and
+  `"123_456"` are all 15, 15, 15, 15 and 123 — the exponent and the numeric separator are just invalid
+  characters, and `e` is only a digit when the radix makes it one.
 
 ### What PostgreSQL does differently
 

@@ -15,6 +15,14 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * the rounding ties past 2^53, the overflow boundary, and the strings whose
  * value leaves `integer` so both sides must raise.
  *
+ * The second test is the specification side of the same question: every example
+ * written down at
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt
+ * for the two forms tsql compiles, checked against the documented answer rather
+ * than against whatever V8 happens to do — so the SQL is pinned to the language,
+ * not to one engine. Examples for a radix tsql refuses (2, 8, 13, 16, 36) are
+ * left out; the compiler rejects those at build time.
+ *
  * Like the rest of the suite it holds no cases of its own: it runs
  * `parseInt.ts` of `tests/parity/`, through the functions that file exports.
  */
@@ -89,3 +97,59 @@ test("Number.parseInt agrees with JavaScript, raising where it raises", async ()
   }
   expect(failures).toEqual([]);
 }, 60_000); // one round trip per function and string: slow on a real server
+
+/**
+ * `[input, radix, what MDN documents]`, radix 0 meaning an omitted one. `int`
+ * turns `NaN` and anything outside 32 bits into a throw, and the SQL raises on
+ * the same, so those rows expect both sides to raise.
+ */
+const MDN: Array<[string, 0 | 10, number | "NaN"]> = [
+  ["   123 ", 10, 123],
+  ["077", 10, 77],
+  ["015", 10, 15],
+  ["15,123", 10, 15],
+  ["15e2", 10, 15],
+  ["1e3", 10, 1],
+  ["15px", 10, 15],
+  ["15 * 3", 10, 15],
+  ["-15", 10, -15],
+  ["-15e1", 10, -15],
+  ["123_456", 10, 123], // a numeric separator is not recognised
+  ["15.99", 10, 15],
+  ["-15.1", 10, -15],
+  ["Hello", 10, "NaN"],
+  ["xyz", 0, "NaN"],
+  ["0xFF", 0, 255],
+  ["0xF", 0, 15],
+  ["-0XF", 0, -15],
+  ["0e0", 0, 0], // no `0x`, so base ten, which stops at the `e`
+  ["0b101", 0, 0], // `0b` is not recognised, unlike `0x`
+  ["077", 0, 77], // a leading zero is not octal
+  ["900719925474099267n", 10, 900719925474099267], // stops at the `n`; past `integer`, so both raise
+];
+
+test("agrees with the examples documented on MDN", async () => {
+  const byRadix = new Map(
+    result.manifest.functions
+      .filter((fn) => fn.params.length === 1)
+      // `readDecimal` passes radix 10, `readNumber` omits it.
+      .map((fn) => [fn.tsName === "readDecimal" ? 10 : 0, fn] as const),
+  );
+  const failures: string[] = [];
+  for (const [input, radix, documented] of MDN) {
+    const fn = byRadix.get(radix)!;
+    const expected =
+      documented === "NaN" || documented > 2147483647 || documented < -2147483648 ? "raise" : documented;
+    let actual: number | "raise";
+    try {
+      const row = (await db.query(`SELECT (app.${fn.sqlName}($1))::text AS v`, [input])) as { v: string };
+      actual = Number(row.v);
+    } catch {
+      actual = "raise";
+    }
+    if (expected !== actual) {
+      failures.push(`parseInt(${JSON.stringify(input)}${radix === 10 ? ", 10" : ""}): MDN ${String(documented)}, SQL ${String(actual)}`);
+    }
+  }
+  expect(failures).toEqual([]);
+}, 60_000);
