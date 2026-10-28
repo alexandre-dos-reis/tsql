@@ -209,7 +209,7 @@ The full list, with the reason for each, is in [docs/design.md](docs/design.md#r
 
 ## Using the functions from SQL
 
-A compiled function is an ordinary `IMMUTABLE` PostgreSQL function. Three patterns cover most uses;
+A compiled function is an ordinary `IMMUTABLE` PostgreSQL function. Four patterns cover most uses;
 [`with-postgrest`](examples/with-postgrest) and [`with-postgraphile`](examples/with-postgraphile) run the trigger one end to end.
 
 **A condition on one row: a `CHECK` constraint.**
@@ -226,6 +226,31 @@ CREATE TABLE products (
 ```sql
 price_cents double precision GENERATED ALWAYS AS (app.price_cents(list_cents, percent_off)) STORED
 ```
+
+**A column of a type tsql generated.** An exported `interface` or `enum` (or an `as const` object) becomes a PostgreSQL type
+even when no function uses it, so a table can take it as a column type, with the same name and the same
+fields as in TypeScript.
+
+```ts
+export const Role = { Admin: "admin", Member: "member" } as const;
+export type Role = (typeof Role)[keyof typeof Role];
+
+export interface Address {
+  street: string;
+  city: string;
+}
+```
+
+```sql
+CREATE TABLE users (
+  id bigint PRIMARY KEY,
+  role app.role NOT NULL DEFAULT 'member', -- the database refuses a value TypeScript would
+  address app.address                      -- (address).city reads a field
+);
+```
+
+The migration has to run before the table is created. A composite column does not enforce its fields' own
+`NOT NULL`; a `CHECK` calling a compiled function can.
 
 **A condition involving other rows: a trigger.** The trigger gathers the data and takes the locks; the
 function decides.
