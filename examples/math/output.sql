@@ -3,7 +3,7 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
--- tsql runtime, revision 1: the helpers the functions below call.
+-- tsql runtime, revision 2: the helpers the functions below call.
 CREATE SCHEMA IF NOT EXISTS tsql;
 CREATE TABLE IF NOT EXISTS tsql.runtime (
   only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
@@ -18,8 +18,8 @@ DECLARE
   after text;
 BEGIN
   SELECT revision INTO installed FROM tsql.runtime;
-  IF installed > 1 THEN
-    RAISE EXCEPTION 'this database holds tsql runtime revision %, newer than the revision 1 this tsql writes: update tsql before compiling again', installed;
+  IF installed > 2 THEN
+    RAISE EXCEPTION 'this database holds tsql runtime revision %, newer than the revision 2 this tsql writes: update tsql before compiling again', installed;
   END IF;
   FOR helper, sql IN SELECT * FROM (VALUES
     ('tsql.math_clz32(integer)', $def$CREATE OR REPLACE FUNCTION tsql.math_clz32(x integer)
@@ -57,10 +57,10 @@ AS $body$SELECT CASE WHEN x < 0 THEN 'NaN'::double precision ELSE pg_catalog.sqr
     EXECUTE sql;
     SELECT prosrc INTO after FROM pg_catalog.pg_proc WHERE oid = pg_catalog.to_regprocedure(helper);
     IF before IS NOT NULL AND before <> after THEN
-      RAISE NOTICE 'tsql: % was replaced (runtime revision 1). Rebuild what was computed with the old one: indexes, stored generated columns, materialized views.', helper;
+      RAISE NOTICE 'tsql: % was replaced (runtime revision 2). Rebuild what was computed with the old one: indexes, stored generated columns, materialized views.', helper;
     END IF;
   END LOOP;
-  INSERT INTO tsql.runtime (revision) VALUES (1)
+  INSERT INTO tsql.runtime (revision) VALUES (2)
     ON CONFLICT (only_row) DO UPDATE SET revision = excluded.revision;
 END
 $tsql$;

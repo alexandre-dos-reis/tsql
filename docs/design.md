@@ -321,6 +321,54 @@ Each refusal says which of these it is.
 
 What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL raises where JavaScript makes an infinity or a `NaN` out of finite operands (`1e308 * 10`, `0 / 0`). That is the section on numbers, not `Math`.
 
+## `Number.parseInt`
+
+`Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
+longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
+`'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
+parser, in the `tsql` schema: `tsql.parse_int` and `tsql.parse_int_10`.
+
+**The result is a `Float`, never an `Integer`.** It can be `NaN`, and it is not bounded by 32 bits
+(`parseInt('2147483648')`), so calling it an `Integer` would be a lie TypeScript also refuses.
+
+**Two forms compile**, because two were measured: `parseInt(s)`, which reads a leading `0x` as hexadecimal,
+and `parseInt(s, 10)`, which does not and so stops at the `x`. Any other radix, or one that is not a literal,
+is refused — the radix decides which helper the call becomes, so it has to be readable at build time, and the
+compiler does not emit SQL whose agreement with TypeScript nobody has checked.
+
+### What PostgreSQL does differently
+
+Three things, each closed in the helper and measured against V8 on 48 inputs through both forms:
+
+| | JavaScript | PostgreSQL, written naively | What the helper does |
+| --- | --- | --- | --- |
+| `'1' + 400 zeros` | `Infinity` | **raises**, `numeric::double precision` overflows | digit count, then an exact compare against the rounding boundary |
+| `'-0'`, `'-000'` | `-0` | `0` — `numeric` has no negative zero | answers `-0` directly |
+| `'abc'`, `''` | `NaN` | raises, or NULL | `'NaN'::double precision` |
+
+The overflow boundary is exact rather than approximate: a double rounds to infinity from `2^1024 - 2^970`, the
+midpoint between the largest double and `2^1024`, and the comparison is made in `numeric` so no rounding
+happens before it. `'9'×309` is finite and `'9'×310` is not; one less than the boundary is the largest double
+and the boundary itself is `Infinity`. The digit-count guard comes first so a million-digit argument never
+builds a `numeric` at all.
+
+The `0x` prefix is detected separately from the digits that follow it, because JavaScript *commits* to base 16
+on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are `NaN`, not the `0` that falling back to base ten
+would read off the leading zero. That one was found by measurement, not by reading the specification.
+
+### Why the hexadecimal form does not inline
+
+`tsql.parse_int` sums each hexadecimal digit weighted by its position, which needs an aggregate over a set, so
+it is the only helper with a `FROM` and the only one PostgreSQL will not inline. The shorter forms all truncate
+past the 53 bits of the mantissa and round differently from V8 somewhere; this one is exact at every width,
+including the ties at `2^53` and the boundary where 256 hexadecimal digits become `Infinity`. Correctness is
+the rule inlining is measured against, not the other way round.
+
+Neither helper calls the other. `parse_int` falls back to base ten by repeating the expression rather than
+calling `parse_int_10`, because a migration carries the helpers its *functions* use and creates them in no
+particular order — a helper depending on a helper would need both a dependency graph and an ordering, for a
+saving in generated text nobody reads.
+
 ## The `tsql` schema
 
 A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x - floor(x) >= 0.5 …`). Written out where it is used, that is a line of several hundred characters, and a heavy argument (a call to a compiled function) would either run several times or need a sub-select, which PL/pgSQL no longer evaluates as a simple expression: measured on PGlite, 200 000 calls, 20 µs against 6.6 µs for a helper function and 3.4 µs for an inlined one. So the rewrites are functions in a schema of tsql's own, `tsql`, and a compiled function calls them: `RETURN tsql.math_min(tsql.math_max(x, lo), hi);`.

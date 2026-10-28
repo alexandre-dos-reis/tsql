@@ -252,7 +252,7 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
-The one table of names runs the other way, and is closed: `src/math.ts` lists the members of `Math` that
+The tables of names run the other way, and are closed. `src/math.ts` lists the members of `Math` that
 *compile* (`abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul`, plus the
 constants) — a PostgreSQL function under its own name, or SQL written to return the same double (`rule`) —
 measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
@@ -263,6 +263,17 @@ platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A member whose
 refuses a database holding a newer revision. **Changing a helper's body is a decision**: run `bun scripts/helpers.ts lock` (it appends the hash to
 `src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
+
+`src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
+JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
+so it lowers to `tsql.parse_int` (no radix, reads a leading `0x` as hexadecimal) or `tsql.parse_int_10` (the
+literal `10`, which does not). Any other radix, or one that is not a literal, is refused: the radix decides
+which helper the call becomes. The result is a `Float`, never an `Integer`: it can be `NaN` and is not bounded
+by 32 bits. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
+naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
+no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. `parse_int` is the one helper that
+does not inline (an aggregate over the hexadecimal digits, exact at every width) and the one pair that must
+not call each other, since a migration carries the helpers its functions use and orders them not at all.
 
 ## Types and composites
 

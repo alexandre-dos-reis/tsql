@@ -24,7 +24,19 @@ switch (process.argv[2]) {
       break;
     }
     const source = readFileSync(FILE, "utf8");
-    writeFileSync(FILE, source.replace(/\n\];\n$/, `\n  "${current}",\n];\n`));
+    // Rewrite the whole declaration rather than splicing before its last line:
+    // the array is one line until it has two entries, and a pattern that
+    // assumed the multi-line shape matched nothing and reported success anyway.
+    const entries = [...HELPER_HASHES, current].map((hash) => `  "${hash}",`).join("\n");
+    const updated = source.replace(
+      /export const HELPER_HASHES: readonly string\[\] = \[[\s\S]*?\];/,
+      `export const HELPER_HASHES: readonly string[] = [\n${entries}\n];`,
+    );
+    if (updated === source) {
+      console.error("Could not find the HELPER_HASHES declaration in src/helpersLock.ts.");
+      process.exit(1);
+    }
+    writeFileSync(FILE, updated);
     console.log(`Recorded revision ${HELPER_HASHES.length + 1}. Add a changeset saying what behaves differently.`);
     break;
   }

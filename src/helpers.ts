@@ -49,6 +49,45 @@ export interface Helper {
 const D = "double precision";
 
 /**
+ * JavaScript's StrWhiteSpace, which `parseInt` skips before anything else.
+ * PostgreSQL's `E''` has no `\v`, so the vertical tab is written `\x0B`.
+ */
+const WHITESPACE =
+  "\\t\\n\\x0B\\f\\r \\u00a0\\u1680\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
+
+/**
+ * The value from which a double rounds to Infinity: the midpoint between the
+ * largest double and 2^1024, which is 2^1024 - 2^970. Exact, as a decimal
+ * integer, so the comparison happens in `numeric` and not in floating point.
+ */
+const INFINITE_AT = (2n ** 1024n - 2n ** 970n).toString();
+
+/** The input with leading whitespace removed. A schema-qualified `substring` takes two arguments, never `from`. */
+const TRIMMED = `pg_catalog.ltrim(s, E'${WHITESPACE}')`;
+/** The longest prefix JavaScript would read in base ten: a sign and digits. NULL when there is none. */
+const MATCHED = `pg_catalog.substring(${TRIMMED}, '^[+-]?[0-9]+')`;
+const NEGATIVE = `pg_catalog.left(${MATCHED}, 1) = '-'`;
+/** The digits alone, without sign or leading zeros, so `''` means the value is a zero. */
+const DIGITS = `pg_catalog.ltrim(pg_catalog.ltrim(${MATCHED}, '+-'), '0')`;
+/**
+ * The `0x` prefix with its sign, NULL when there is none. Detecting the prefix
+ * is separate from reading the digits because JavaScript *commits* to base 16
+ * on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are NaN, not the 0 that
+ * falling back to base ten would read off the leading zero.
+ */
+const HEX_PREFIX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]')`;
+/**
+ * Base ten, as an expression rather than a call: `parse_int` falls back to it
+ * when there is no `0x` prefix, and a helper calling another helper would need
+ * the migration to carry and create them in dependency order, which it does not
+ * — it installs the helpers its *functions* use.
+ */
+const DECIMAL = `CASE WHEN ${MATCHED} IS NULL THEN 'NaN'::${D} WHEN ${DIGITS} = '' THEN CASE WHEN ${NEGATIVE} THEN '-0'::${D} ELSE 0::${D} END WHEN pg_catalog.length(${DIGITS}) > 309 OR ${DIGITS}::numeric >= ${INFINITE_AT}::numeric THEN CASE WHEN ${NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END ELSE ${MATCHED}::numeric::${D} END`;
+/** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
+const HEX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]([0-9a-fA-F]+)')`;
+const HEX_NEGATIVE = `pg_catalog.left(${HEX_PREFIX}, 1) = '-'`;
+
+/**
  * Written so that each returns the same double as the JavaScript function, for
  * every input including `NaN`, the infinities and `-0`; `docs/design.md` ("Math")
  * says what each one is for, and `tests/specialValues.test.ts` checks them.
@@ -111,6 +150,35 @@ export const HELPERS = {
     signature: "integer, integer",
     returns: "integer",
     body: "SELECT (((a::bigint * b::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer",
+  },
+  // `Number.parseInt`. JavaScript reads a prefix and ignores the rest, so this
+  // is a parser, not a cast: `'12abc'::integer` would raise where `parseInt`
+  // answers 12. Measured against V8 on whitespace, signs, trailing garbage,
+  // `-0`, the 2^53 rounding ties and the overflow boundary (`docs/design.md`,
+  // "Number.parseInt").
+  //
+  // Three things PostgreSQL does differently, each closed here:
+  //   - `numeric::double precision` RAISES past the double range; JavaScript
+  //     gives Infinity. Guarded by the digit count first, so a million-digit
+  //     argument never builds a numeric, then by the exact rounding boundary.
+  //   - `numeric` has no `-0`, so "-0" and "-000" are answered directly.
+  //   - no digits at all is `NaN`, not NULL and not an error.
+  parse_int_10: {
+    params: "s text",
+    signature: "text",
+    returns: D,
+    body: `SELECT ${DECIMAL}`,
+  },
+  // `Number.parseInt` with no radix, which reads an `0x` prefix as hexadecimal.
+  // Summing the digits weighted by position is exact at every width, including
+  // the 2^53 ties and the 256-hex-digit overflow boundary; it needs an
+  // aggregate, so this is the one helper that does not inline. Correctness wins:
+  // a shorter form would have to truncate past the mantissa and round wrongly.
+  parse_int: {
+    params: "s text",
+    signature: "text",
+    returns: D,
+    body: `SELECT CASE WHEN ${HEX_PREFIX} IS NULL THEN ${DECIMAL} WHEN ${HEX} IS NULL THEN 'NaN'::${D} WHEN v >= ${INFINITE_AT}::numeric THEN CASE WHEN ${HEX_NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END WHEN v = 0 AND ${HEX_NEGATIVE} THEN '-0'::${D} WHEN ${HEX_NEGATIVE} THEN -v::${D} ELSE v::${D} END FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(${HEX}), '') WITH ORDINALITY AS t(d, n)) q`,
   },
 } as const satisfies Record<string, Helper>;
 
