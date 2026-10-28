@@ -177,6 +177,14 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   ones the functions use. `Math.PI` and the other constants become a `lit`. A member that is not in the
   table is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only one that
   asks for the `int(...)` guard.
+- **`Number` calls**: `isNumberGlobal` finds `Number` the same way, and `lowerNumberCall` looks the
+  member up in [`number.ts`](../src/number.ts)'s closed table — `parseInt` alone today. It becomes a
+  `helper` node for `tsql.number_parse_int`, taking the radix as JavaScript does: the literal `10`, or 0
+  for an omitted one, which reads a leading `0x` as hexadecimal. Any other radix, or one that is not a
+  literal, is refused, and that is checked *before* the guard below so the advice names a rewrite that
+  compiles. A member marked `whole` in the table must sit directly inside `int(...)`: the helper returns
+  `integer`, raising on the `NaN` and the out-of-range values `int` throws on, so nothing is emitted for
+  the guard and `lowerIntGuard` erases itself as it does around arithmetic.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler

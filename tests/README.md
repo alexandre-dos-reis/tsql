@@ -35,7 +35,7 @@ test file.
   `rejected/helpers/` is part of the project the compiler opens (the tsconfig includes `.`) without
   being a case of its own.
   Each file's header explains why, often with the SQL that would have diverged.
-- **`tests/helpers.test.ts`** is not a folder of cases: it pins the text of the functions tsql installs in the `tsql` schema to a revision (`src/helpersLock.ts`) and checks how a migration installs them — twice in a row, refusing a newer revision, announcing a replaced body, staying inlinable. What the helpers *return* is `parity/` and `specialValues.test.ts`, which run the whole migration.
+- **`tests/helpers.test.ts`** is not a folder of cases: it pins the text of the functions tsql installs in the `tsql` schema to a revision (`src/helpersLock.ts`) and checks how a migration installs them — twice in a row, refusing a newer revision, announcing a replaced body, and that `math_round` still inlines — a `SET` clause would turn the planner away. Inlining is checked on that one rather than asserted of all: `number_parse_int` deliberately does not inline, its hexadecimal digits being summed by an aggregate, which is exact at every width where a shorter form would round wrongly. What the helpers *return* is `parity/`, `specialValues.test.ts` and `parseIntValues.test.ts`, which run the whole migration.
 - **`divergent/`** tests the test: the compiler is not involved. The SQL is written by hand because the
   compiler must never produce it; the pair proves the parity harness — and so `tsql parity` — can fail.
   A harness that cannot fail would make every green parity run meaningless.
@@ -48,6 +48,7 @@ test file.
 | `rejected.test.ts` | every case in `rejected/` |
 | `divergent.test.ts` | every pair in `divergent/`, on PGlite and PostgreSQL |
 | `cli.test.ts` | the `tsql` command as a user runs it, under Bun and Node: refused invocations, messages, exit codes, narrowing to named files, `tsql parity` with PGlite and `--db-url` |
+| `parseIntValues.test.ts` | `Number.parseInt` on a fixed grid of strings, and on every example [MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt) documents for the two forms tsql compiles — the harness draws arbitrary text that almost never parses, so the parity case alone would pass on inputs where both sides merely raise |
 | `packaging.test.ts` | what only breaks once published: alias provenance in an installed layout, locating the native TypeScript executable, the exact runtime dependencies, the exported entry points, a Node-compatible launcher |
 
 `examples.test.ts` runs every folder in `examples/` through its own `tsql:check`, `tsql:parity` and
