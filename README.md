@@ -285,6 +285,26 @@ CREATE TRIGGER todos_enforce_limit BEFORE INSERT ON todos
 existing rows against a `CHECK` (`SELECT … WHERE NOT app.f(…)`), rewrite rows to refresh a generated
 column, and `REINDEX` an expression index. A trigger has none of these problems.
 
+## Performance
+
+A function is emitted as `LANGUAGE sql` when its whole body is one `return <expression>`, and as PL/pgSQL
+otherwise. PostgreSQL *inlines* a SQL function: in `WHERE app.above(v)` the planner sees `v > 990`, so an
+index on `v` is usable, and a `CHECK`, a generated column or a row-level security policy that calls the
+function costs no call per row. A PL/pgSQL function is opaque to it. Measured on PGlite (PostgreSQL 18), 300 000
+rows with an index, for the same condition: 369 ms with a sequential scan, against 3 ms with the index. The
+answers are the same either way; `tsql parity` checks both.
+
+A function stays PL/pgSQL when:
+
+- **its body is more than one `return` of an expression**: it has a local, an `if` or a loop;
+- **it is part of a cycle**, itself included: a recursive function, or two that call each other;
+- **it writes an enum value as a literal** (`level === Level.High`), because a migration that adds the value and
+  replaces such a function in one transaction would fail.
+
+To keep a condition inlinable, write it as one expression: `a && b`, or `c ? x : y` rather than an `if`. Which
+language each function got is in the generated migration (`LANGUAGE sql` or `LANGUAGE plpgsql`).
+[Why, and what it costs](docs/design.md#sql-functions-and-inlining).
+
 ## Status
 
 Pre-1.0: a minor version may change defaults or the generated SQL, and says so in the
