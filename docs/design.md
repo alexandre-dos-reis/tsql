@@ -157,6 +157,19 @@ name](#keeping-integer-honest-once-installed). `INT4_MIN` and `INT4_MAX` are exp
 the compiler reads its own range checks from there, so there is one declaration of the bounds, and a
 caller validating input before it reaches a compiled function can use the same two numbers.
 
+### Comparing a `Float` that is `NaN`
+
+PostgreSQL gives `NaN` a place in the order: it equals itself and sorts above every number. JavaScript gives it none: `NaN === NaN` and every `<`, `<=`, `>`, `>=` with a `NaN` are false. Left alone, `count > 10` would be true in the database for a `NaN`, with the function otherwise correct. So a comparison with an operand that can be `NaN` carries the check for the side that PostgreSQL gets wrong, and only that side:
+
+| TypeScript | PL/pgSQL |
+| --- | --- |
+| `x > y`, `x >= y` | `x > y AND x <> 'NaN'::double precision` |
+| `x < y`, `x <= y` | `x < y AND y <> 'NaN'::double precision` |
+| `x === y` | `x = y AND x <> 'NaN'::double precision` (`IS NOT DISTINCT FROM` / `IS DISTINCT FROM` when nullable) |
+| `x !== y` | `x <> y OR x = 'NaN'::double precision` (`x !== x` is the test for `NaN`, and stays one) |
+
+A literal or an `Integer` cannot be `NaN`, so a comparison whose checked side is one is left as it is (`count > 10` is checked, `10 > x` is not). The checked operand is written twice; it is a pure expression, so only its cost doubles. The cost of choosing this over leaving the divergence is a longer line on every `Float` comparison. `tests/parity/nanComparison.ts` is run on `NaN` strictly (`tests/specialValues.test.ts`), and the parity harness draws `NaN`, both infinities and `-0` itself.
+
 ### Why `Float` and not `DoublePrecision`
 
 `Integer` is PostgreSQL's canonical name, CamelCased. `Float` is not — `'float'::regtype` canonicalises
@@ -274,16 +287,16 @@ Every member of `Math` whose result can be the **same double** as JavaScript's, 
 | --- | --- | --- |
 | `Math.abs(x)` | `abs(x)` | the argument's own type; an `Integer` needs [the guard](#the-int-guard) |
 | `Math.floor(x)`, `Math.ceil(x)`, `Math.trunc(x)` | the same names | always `Float`; an `Integer` is widened first (`floor(x::double precision)`), so no overload is left for PostgreSQL to pick |
-| `Math.round(x)` | `CASE WHEN x - floor(x) >= 0.5 THEN … floor(x) + 1 … ELSE floor(x) END` | PostgreSQL's `round` sends a tie to the even neighbour (`round(2.5)` is 2), `Math.round` up (3); `-0` is kept for -0.5 ≤ x < 0 |
-| `Math.sign(x)` | `CASE WHEN x = 0 OR x = 'NaN' THEN x ELSE sign(x) END` | `sign('NaN')` and `sign(-0)` are 0 |
-| `Math.sqrt(x)` | `CASE WHEN x < 0 THEN 'NaN' ELSE sqrt(x) END` | PostgreSQL raises on a negative |
-| `Math.fround(x)` | `Infinity`/`0` beyond the edges of `real`, else `x::real::double precision` | PostgreSQL's cast raises on overflow and underflow |
+| `Math.round(x)` | `tsql.math_round(x)` | PostgreSQL's `round` sends a tie to the even neighbour (`round(2.5)` is 2), `Math.round` up (3); `-0` is kept for -0.5 ≤ x < 0 |
+| `Math.sign(x)` | `tsql.math_sign(x)` | `sign('NaN')` and `sign(-0)` are 0 |
+| `Math.sqrt(x)` | `tsql.math_sqrt(x)` | PostgreSQL raises on a negative |
+| `Math.fround(x)` | `tsql.math_fround(x)` | PostgreSQL's cast to `real` raises beyond its range, where `fround` gives `Infinity` or `0` |
 | `Math.max(a, b, …)`, `Math.min(a, b, …)` | `greatest(…)`, `least(…)` for `Integer`s | the widest of the arguments, each widened to it |
-| the same on doubles | pairwise; `min` is `-greatest(-a, -b)`; a pair of zeros is decided by `atan2(z, -1) < 0` | `LEAST` skips a `NaN`; `GREATEST`/`LEAST` return whichever zero came first where JavaScript orders `-0` below `0` |
-| `Math.clz32(x)`, `Math.imul(a, b)` | `position('1' IN x::bit(32))`, a `bigint` product wrapped to 32 bits | `Integer` arguments only: a `Float` would first be truncated and wrapped modulo 2^32, which tsql does not reproduce |
+| the same on doubles | `tsql.math_max(a, b)`, `tsql.math_min(a, b)`, nested left to right | `LEAST` skips a `NaN`; `GREATEST`/`LEAST` return whichever zero came first where JavaScript orders `-0` below `0` |
+| `Math.clz32(x)`, `Math.imul(a, b)` | `tsql.math_clz32(x)`, `tsql.math_imul(a, b)` | `Integer` arguments only: a `Float` would first be truncated and wrapped modulo 2^32, which tsql does not reproduce |
 | `Math.PI`, `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`, `SQRT2`, `SQRT1_2` | a `double precision` literal | read from `Math` itself, so the bits are JavaScript's |
 
-An argument that a rewrite reads several times is evaluated once. A few operations on names (up to six nodes: `abs(a)`, `a + b`) are simply written again, which costs nothing — measured on PGlite, 200 000 calls, `round(abs(a))` repeated inline runs in 2.6 µs, like `abs(a)` alone. Anything heavier, or a call to a compiled function, is bound by `(SELECT … FROM (SELECT <argument> AS _tsql_1) AS t)` (`bind` in the IR), which PL/pgSQL no longer evaluates as a simple expression (8.2 µs for the same call). `clz32`, `imul` and `fround`'s cast are IR nodes of their own (`clz32`, `imul`, `toReal`), because they need `bit(32)`, `bigint` and `real`, types no value of the language has; like `arrayLength`, the emitter knows their text.
+The `tsql.…` functions are installed by the migration itself; [the next section](#the-tsql-schema) says how.
 
 ### Why these, and not the others
 
@@ -304,9 +317,29 @@ Each refusal says which of these it is.
 
 ### How it is checked
 
-`tests/parity/mathFunctions.ts` and `mathConstants.ts` go through the fast-check harness like any case. That harness draws finite doubles and compares `-0` and `0` as equal, so it cannot see the special values; `tests/specialValues.test.ts` runs every function of those two files on a fixed grid of `NaN`, both infinities, both zeros, ties, `2^52 + 1` and the edges of `real`, strictly with `Object.is`. A rewrite that is wrong only there fails it.
+`tests/parity/mathFunctions.ts` and `mathConstants.ts` go through the fast-check harness like any case. The harness draws `NaN`, both infinities and `-0` among its doubles (about one in ten) and compares with `Object.is`, so `-0` is not `0`; `tests/specialValues.test.ts` also runs every function of those two files on a fixed grid of `NaN`, both infinities, both zeros, ties, `2^52 + 1` and the edges of `real`, strictly with `Object.is`. A rewrite that is wrong only there fails it.
 
 What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL raises where JavaScript makes an infinity or a `NaN` out of finite operands (`1e308 * 10`, `0 / 0`). That is the section on numbers, not `Math`.
+
+## The `tsql` schema
+
+A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x - floor(x) >= 0.5 …`). Written out where it is used, that is a line of several hundred characters, and a heavy argument (a call to a compiled function) would either run several times or need a sub-select, which PL/pgSQL no longer evaluates as a simple expression: measured on PGlite, 200 000 calls, 20 µs against 6.6 µs for a helper function and 3.4 µs for an inlined one. So the rewrites are functions in a schema of tsql's own, `tsql`, and a compiled function calls them: `RETURN tsql.math_min(tsql.math_max(x, lo), hi);`.
+
+- **The set is closed** — [`src/helpers.ts`](../src/helpers.ts) — and small: `math_round`, `math_fround`, `math_sign`, `math_sqrt`, `math_min`, `math_max`, `math_clz32`, `math_imul`. They are `LANGUAGE sql`, `IMMUTABLE`, `PARALLEL SAFE`, with no `SET` clause (which would stop PostgreSQL inlining them: a test looks at the plan), and every function they call is written `pg_catalog.…`, so the search path cannot change what they mean.
+- **The schema is fixed.** It is not an option and the TypeScript cannot name it; `--schema tsql` is refused. The user's own functions keep `--schema`, which is a deployment decision (PostgREST exposes `public` by default, PostGraphile the schemas it is given), not something tsql should take away.
+- **A migration carries the helpers its functions use, not all of them**, before those functions, and none (no schema, no table) when no function calls one. It is the same file on every `compile`: it changes in a diff only when a helper does.
+- **The migration brings them up to date itself.** There is no command to run. Its runtime section creates the schema and a one-row table `tsql.runtime(revision)`, then a `DO` block:
+  1. refuses the migration if the database holds a **newer** revision than this tsql writes (an older tsql, another application sharing the database, must not overwrite a fix);
+  2. `CREATE OR REPLACE`s each helper it uses, and `RAISE NOTICE`s when what was installed had a different body;
+  3. records the revision.
+
+  Applying it again changes nothing and says nothing.
+- **A helper changes only to fix a bug**, because the JavaScript it matches does not move. A fix is replaced in place, under the same name, so the SQL of the user's functions does not change and nothing needs recompiling. The risk is the user's, and the notice names it: an index, a stored generated column or a materialized view computed with the old body keeps the old values until it is rebuilt, and tsql cannot do that for them — PostgreSQL records no dependency from a function body on the functions it calls, so no query finds those objects.
+- **A fix is a decision, so it is locked.** [`src/helpersLock.ts`](../src/helpersLock.ts) holds one hash of the helpers' text per revision, oldest first, and the revision a database records is how many there are. Nobody edits it: `bun scripts/helpers.ts lock` appends the current hash. Changing a body without running it fails `tests/helpers.test.ts` — and so the pre-commit hook and CI — with the command to run; an entry is never rewritten, which is what lets an older tsql recognise a database as newer. The changeset says which `Math` functions behave differently.
+- **Privileges are the user's.** tsql grants nothing. The role that applies the migration needs `CREATE` on the database the first time (for the schema), then to own `tsql` and its helpers: `CREATE OR REPLACE FUNCTION` and the `UPDATE` of `tsql.runtime` fail for another role, so every later migration must run as the same one. A role that only *calls* the compiled functions (PostgREST's `anon`, a PostGraphile role) needs `USAGE` on the schema `tsql` — `EXECUTE` on a function defaults to everyone, `USAGE` on a schema does not — so the grant the user already writes for their own schema is written for `tsql` too: `GRANT USAGE ON SCHEMA tsql TO web_anon;`. Without it the call fails with `permission denied for schema tsql`, from inside the user's function.
+- **Never dropped.** A helper no function uses any more stays installed: a `DROP` would break any function not recompiled since, with no dependency to warn.
+
+Rejected on the way: helpers whose name carries a revision (`math_round_2`, left behind with the old one, the fix reaching a database only by recompiling) — more to read, and a stale helper staying callable; and a `tsql upgrade` command — a second step to forget, for a change the user's own migration already applies.
 
 ## Object types
 

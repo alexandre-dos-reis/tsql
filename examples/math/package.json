@@ -1,0 +1,14 @@
+{
+  "name": "tsql-example-math",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tsql:check": "tsql check input.ts",
+    "tsql:compile": "tsql compile input.ts --out output.sql",
+    "tsql:parity": "tsql parity input.ts"
+  },
+  "devDependencies": {
+    "@adr/tsql": "^0.1.0",
+    "typescript": "~7.0.2"
+  }
+}

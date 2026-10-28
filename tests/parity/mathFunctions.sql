@@ -49,7 +49,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND hi = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 OR atan2(hi, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_1, -hi) END FROM (SELECT CASE WHEN x = 0 AND lo = 0 THEN CASE WHEN atan2(x, -1) < 0 AND atan2(lo, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(x, lo) END AS _tsql_1) AS t);
+  RETURN tsql.math_min(tsql.math_max(x, lo), hi);
 END;
 $$;
 
@@ -61,7 +61,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN COALESCE(NULLIF(position('1' IN x::bit(32)), 0) - 1, 32);
+  RETURN tsql.math_clz32(x);
 END;
 $$;
 
@@ -97,7 +97,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN x = 'NaN'::double precision OR x = 0 OR abs(x) = 'Infinity'::double precision THEN x ELSE CASE WHEN abs(x) >= 3.4028235677973366e+38::double precision THEN sign(x) * 'Infinity'::double precision ELSE CASE WHEN abs(x) <= 7.006492321624085e-46::double precision THEN sign(x) * 0 ELSE x::real::double precision END END END;
+  RETURN tsql.math_fround(x);
 END;
 $$;
 
@@ -110,7 +110,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (((a::bigint * b::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer;
+  RETURN tsql.math_imul(a, b);
 END;
 $$;
 
@@ -123,7 +123,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN a = 0 AND b = 0 THEN CASE WHEN atan2(a, -1) < 0 AND atan2(b, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(a, b) END;
+  RETURN tsql.math_max(a, b);
 END;
 $$;
 
@@ -137,7 +137,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 AND atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(_tsql_1, c) END FROM (SELECT CASE WHEN a = 0 AND abs(b) = 0 THEN CASE WHEN atan2(a, -1) < 0 AND atan2(abs(b), -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(a, abs(b)) END AS _tsql_1) AS t);
+  RETURN tsql.math_max(tsql.math_max(a, abs(b)), c);
 END;
 $$;
 
@@ -150,7 +150,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN a = 0 AND b = 0 THEN CASE WHEN atan2(a, -1) < 0 OR atan2(b, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-a, -b) END;
+  RETURN tsql.math_min(a, b);
 END;
 $$;
 
@@ -176,7 +176,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND 10 = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 OR atan2(10, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_1, -10) END FROM (SELECT CASE WHEN a::double precision = 0 AND b = 0 THEN CASE WHEN atan2(a::double precision, -1) < 0 OR atan2(b, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-a::double precision, -b) END AS _tsql_1) AS t);
+  RETURN tsql.math_min(tsql.math_min(a::double precision, b), 10);
 END;
 $$;
 
@@ -190,7 +190,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND c = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 OR atan2(c, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-_tsql_1, -c) END FROM (SELECT CASE WHEN a = 0 AND abs(b) = 0 THEN CASE WHEN atan2(a, -1) < 0 OR atan2(abs(b), -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE -greatest(-a, -abs(b)) END AS _tsql_1) AS t);
+  RETURN tsql.math_min(tsql.math_min(a, abs(b)), c);
 END;
 $$;
 
@@ -202,7 +202,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN x - floor(x) >= 0.5::double precision THEN CASE WHEN floor(x) + 1 = 0 AND x < 0 THEN '-0'::double precision ELSE floor(x) + 1 END ELSE floor(x) END;
+  RETURN tsql.math_round(x);
 END;
 $$;
 
@@ -214,7 +214,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN abs(a) - floor(abs(a)) >= 0.5::double precision THEN CASE WHEN floor(abs(a)) + 1 = 0 AND abs(a) < 0 THEN '-0'::double precision ELSE floor(abs(a)) + 1 END ELSE floor(abs(a)) END;
+  RETURN tsql.math_round(abs(a));
 END;
 $$;
 
@@ -226,7 +226,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 - floor(_tsql_1) >= 0.5::double precision THEN CASE WHEN floor(_tsql_1) + 1 = 0 AND _tsql_1 < 0 THEN '-0'::double precision ELSE floor(_tsql_1) + 1 END ELSE floor(_tsql_1) END FROM (SELECT app.math_abs_float(a) AS _tsql_1) AS t);
+  RETURN tsql.math_round(app.math_abs_float(a));
 END;
 $$;
 
@@ -238,7 +238,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN x = 0 OR x = 'NaN'::double precision THEN x ELSE sign(x) END;
+  RETURN tsql.math_sign(x);
 END;
 $$;
 
@@ -250,7 +250,7 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN CASE WHEN x < 0 THEN 'NaN'::double precision ELSE sqrt(x) END;
+  RETURN tsql.math_sqrt(x);
 END;
 $$;
 
@@ -275,6 +275,6 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (SELECT CASE WHEN _tsql_1 = 0 AND 0 = 0 THEN CASE WHEN atan2(_tsql_1, -1) < 0 AND atan2(0, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(_tsql_1, 0) END FROM (SELECT CASE WHEN a::double precision = 0 AND b = 0 THEN CASE WHEN atan2(a::double precision, -1) < 0 AND atan2(b, -1) < 0 THEN '-0'::double precision ELSE 0 END ELSE greatest(a::double precision, b) END AS _tsql_1) AS t);
+  RETURN tsql.math_max(tsql.math_max(a::double precision, b), 0);
 END;
 $$;

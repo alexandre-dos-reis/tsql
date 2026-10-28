@@ -242,6 +242,8 @@ export interface FunctionIR {
   readonly returns: PgType;
   readonly locals: readonly LocalIR[];
   readonly body: readonly StmtIR[];
+  /** The helpers of `src/helpers.ts` this function calls: the migration installs them first. */
+  readonly helpers: readonly string[];
 }
 
 export type StmtIR =
@@ -345,28 +347,12 @@ export type ExprIR =
   | { readonly kind: "builtin"; readonly sql: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
   | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
   /**
-   * `(SELECT body FROM (SELECT value AS name) AS t)` — `value` evaluated once and
-   * named for `body`, which reads it with a `ref` of the same `name`. It exists so
-   * a rewrite that needs its argument several times (`Math.round`) does not run a
-   * costly or repeated expression several times.
+   * A call to one of the functions tsql installs in its own schema
+   * (`tsql.math_round(x)`, `src/helpers.ts`). Like `builtin` it is not one of the
+   * compiled functions, but the migration has to install it, so lowering records
+   * the names it used in `FunctionIR.helpers`.
    */
-  | {
-      readonly kind: "bind";
-      readonly name: string;
-      readonly value: ExprIR;
-      readonly body: ExprIR;
-      readonly type: PgType;
-    }
-  /**
-   * `Math.clz32(x)`: the leading zero bits of the 32-bit pattern of an `integer`.
-   * Named rather than built from smaller nodes because it needs `bit(32)`, a type no
-   * value of this language has — like `arrayLength`, the emitter knows its text.
-   */
-  | { readonly kind: "clz32"; readonly operand: ExprIR; readonly type: ScalarType }
-  /** `Math.imul(a, b)`: the product of two `integer`s wrapped to 32 bits, computed in `bigint` inside the expression. */
-  | { readonly kind: "imul"; readonly left: ExprIR; readonly right: ExprIR; readonly type: ScalarType }
-  /** `Math.fround(x)` for a finite `x` inside the range of `real`: `x::real::double precision`. */
-  | { readonly kind: "toReal"; readonly operand: ExprIR; readonly type: ScalarType }
+  | { readonly kind: "helper"; readonly name: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
   | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
   /**

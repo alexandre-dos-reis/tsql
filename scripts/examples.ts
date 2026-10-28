@@ -6,7 +6,7 @@
  *                                  peers with — what is committed, so an example is ready to
  *                                  copy. Run by `bun run version`, so a release and the examples
  *                                  that need it go out together.
- *   bun scripts/examples.ts link   this checkout and its own `typescript` (`file:` paths), so a
+ *   bun scripts/examples.ts link   this checkout and its own `typescript` (`link:` paths, symlinks: a `file:` path would be a copy that goes stale), so a
  *                                  `bun install` in an example installs neither a second time.
  *                                  For local work only: `tests/examples.test.ts` fails while an
  *                                  example is linked, so it cannot be committed that way.
@@ -28,8 +28,8 @@ export const PUBLISHED: Readonly<Record<string, string>> = {
 };
 
 const LINKED: Readonly<Record<string, string>> = {
-  [own.name]: "file:../..",
-  typescript: "file:../../node_modules/typescript",
+  [own.name]: "link:../..",
+  typescript: "link:../../node_modules/typescript",
 };
 
 if (import.meta.main) {
@@ -47,6 +47,10 @@ if (import.meta.main) {
     const dependencies = manifest.devDependencies ?? {};
     for (const [name, range] of Object.entries(wanted)) if (name in dependencies) dependencies[name] = range;
     writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
-    process.stdout.write(`examples/${example.name}: ${Object.entries(wanted).map(([n, r]) => `${n}@${r}`).join(", ")}\n`);
+    process.stdout.write(
+      `examples/${example.name}: ${Object.entries(wanted)
+        .map(([n, r]) => `${n}@${r}`)
+        .join(", ")}\n`,
+    );
   }
 }

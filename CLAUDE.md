@@ -77,14 +77,14 @@ shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
 `^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
-and checked for drift in CI), `with-postgrest` and
+and checked for drift in CI), `numeric` and `math` (one `input.ts` each, `output.sql` checked in: `Integer`/`Float`/`int()`, and the `Math` members with the `tsql.math_*` helpers they call), `with-postgrest` and
 `with-postgraphile` (the same todo list: PostgreSQL via Docker, a trigger calling the compiled
 function, a React page on Vite importing the same TypeScript, behind PostgREST or PostGraphile 5).
 PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check violation (SQLSTATE
 23514, what the trigger raises) through; it names an `id` column `rowId`, and filters only on
 indexed columns. Keep them minimal. `bun scripts/examples.ts sync` sets that range from this
 package's version (and typescript's peer range) — what is committed, so an example is ready to copy
-— and runs inside `bun run version`. `link` points both at this checkout (`file:` paths) for local
+— and runs inside `bun run version`. `link` points both at this checkout (`link:` paths — symlinks, since `file:` installs a copy that goes stale after the next build) for local
 work, so neither is installed twice. Each example must define `tsql:check`,
 `tsql:parity` and `tsql:compile` (and may define `build`). Generated SQL is not checked in there
 (`.gitignore`), except `simple/output.sql`.
@@ -240,10 +240,11 @@ constants) — a PostgreSQL function under its own name, or SQL written to retur
 measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
 and a member not in the table is refused, so what `Math` grows stays out. Before adding a member, measure it
 against PostgreSQL (`docs/design.md`, "Math"), on the special values as well: the ones whose last bits are
-platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A rewrite that reads its argument more than once
-writes it again when it is a few operations on names and binds it (`once` in `lower.ts`, the `bind` IR node) when it is heavy
-or calls a compiled function. `clz32`, `imul` and `toReal` are IR nodes of their own for the types (`bit(32)`, `bigint`, `real`) no
-value of the language has.
+platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A member whose SQL is not the bare PostgreSQL function is a call to a helper in the fixed `tsql` schema (`src/helpers.ts`,
+`docs/design.md` "The `tsql` schema"): the migration installs the ones its functions use, brings them up to date itself and
+refuses a database holding a newer revision. **Changing a helper's body is a decision**: run `bun scripts/helpers.ts lock` (it appends the hash to
+`src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
+A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
 
 ## Types and composites
 

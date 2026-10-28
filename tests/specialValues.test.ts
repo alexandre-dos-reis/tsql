@@ -10,10 +10,10 @@ import { openDatabase, type Database } from "../src/runParity.ts";
  * `src/parity.ts` generates finite doubles and compares ±0 as equal, so a
  * rewrite that exists only for those values (`sign(NaN)`, `sqrt(-1)`,
  * `min(NaN, 1)`) is checked here, one fixed grid, strictly with `Object.is`.
- * Like the rest of the suite it holds no cases: it runs `tests/parity/mathFunctions.ts`.
+ * Like the rest of the suite it holds no cases: it runs `mathFunctions.ts`, `mathConstants.ts` and `nanComparison.ts` of `tests/parity/`.
  */
 
-const FILES = ["mathFunctions", "mathConstants"].map((name) => resolve(`tests/parity/${name}.ts`));
+const FILES = ["mathFunctions", "mathConstants", "nanComparison"].map((name) => resolve(`tests/parity/${name}.ts`));
 const DOUBLES = [
   NaN,
   Infinity,
@@ -63,7 +63,7 @@ function grids(fn: ManifestFunction): number[][] {
   return rows;
 }
 
-function same(a: number, b: number): boolean {
+function same(a: number | boolean, b: number | boolean): boolean {
   return Object.is(a, b);
 }
 
@@ -80,19 +80,22 @@ test("compiles", () => {
 test("every Math function agrees with JavaScript on NaN, infinities and signed zeros", async () => {
   const failures: string[] = [];
   for (const fn of result.manifest.functions) {
-    const impl = ((await import(resolve(fn.module))) as Record<string, (...args: number[]) => number>)[fn.tsName]!;
+    const impl = ((await import(resolve(fn.module))) as Record<string, (...args: number[]) => number | boolean>)[
+      fn.tsName
+    ]!;
     for (const args of grids(fn)) {
-      let expected: number | "raise";
+      let expected: number | boolean | "raise";
       try {
         expected = impl(...args);
       } catch {
         expected = "raise";
       }
       const call = `app.${fn.sqlName}(${args.map((v, i) => literal(v, (fn.params[i]!.type as { sql: string }).sql)).join(", ")})`;
-      let actual: number | "raise";
+      let actual: number | boolean | "raise";
       try {
         const row = (await db.query(`SELECT (${call})::text AS v`, [])) as { v: string };
-        actual = Number(row.v);
+        // A boolean comes back as `true` / `false` text, a double as its decimal form.
+        actual = (fn.returns as { sql: string }).sql === "boolean" ? row.v === "true" : Number(row.v);
       } catch {
         actual = "raise";
       }

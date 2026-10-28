@@ -36,6 +36,6 @@ LANGUAGE plpgsql
 IMMUTABLE
 AS $$
 BEGIN
-  RETURN (("outer")."inner").count > 10 AND ("outer").label <> '';
+  RETURN (("outer")."inner").count > 10 AND (("outer")."inner").count <> 'NaN'::double precision AND ("outer").label <> '';
 END;
 $$;

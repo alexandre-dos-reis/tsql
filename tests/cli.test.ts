@@ -114,6 +114,13 @@ describe("the CLI compiles the files it is given", () => {
     expect(stdout).not.toContain("can_create_todo");
   });
 
+  test("the `tsql` schema is reserved for the helper functions, and is refused as --schema", async () => {
+    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--schema", "tsql", ...PROJECT]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("reserved");
+    expect(stderr).not.toContain("at <anonymous>");
+  });
+
   test("a missing project names the path, and says none is needed", async () => {
     const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--project", "nowhere/tsconfig.json"]);
     expect(exitCode).toBe(1);

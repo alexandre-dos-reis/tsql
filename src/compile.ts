@@ -9,6 +9,7 @@ import {
 } from "typescript/unstable/ast";
 import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
+import { TSQL_SCHEMA } from "./helpers.ts";
 import type { Paint } from "./style.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
@@ -71,6 +72,11 @@ export interface CompileResult {
  * preserved, lower, emit.
  */
 export async function compileProject(options: CompileOptions): Promise<CompileResult> {
+  if (options.emit?.schema === TSQL_SCHEMA) {
+    throw new Error(
+      `The schema \`${TSQL_SCHEMA}\` is reserved: tsql installs its own helper functions there (\`${TSQL_SCHEMA}.math_round\`…). Pick another schema for your functions.`,
+    );
+  }
   // With a tsconfig, only files under its directory are the project's own;
   // without one, the files named are the project.
   const projectRoot = options.tsconfig === undefined ? undefined : dirname(resolve(options.tsconfig));

@@ -117,6 +117,8 @@ $$;
 Point your migration tool at the generated file. Running it again is safe: it creates what is missing,
 brings a changed union or enum in line, and fails loudly rather than drop or rewrite anything.
 
+When a function uses `Math`, the migration also installs a few helpers in a `tsql` schema of its own. The role that applies the migration must be allowed to create it (and to be the same one every time), and a role that only calls your functions needs `GRANT USAGE ON SCHEMA tsql`, as it does on your own schema. [Details](docs/design.md#the-tsql-schema).
+
 ## Commands
 
 | Command | Does | Writes |
@@ -173,7 +175,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | a named `interface` or object `type` | a composite type; a field of a named object type is a column of its composite |
 | `readonly T[]` | `t[]` |
 | `a / b` | always `double precision`, as in TypeScript |
-| `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or SQL written to match it |
+| `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or a `tsql.math_*` helper the migration installs |
 | `` `${a}-${b}` ``, `??`, `c ? a : b` | `\|\|`, `COALESCE`, `CASE` |
 
 ## What's supported
@@ -274,7 +276,7 @@ API, which may move between 7.x minors. Tested on PostgreSQL 18, in CI and throu
   objects, named types, arrays, the parity harness.
 - [docs/architecture.md](docs/architecture.md) — how the compiler is built, file by file.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — toolchain, tests, CI, releases.
-- [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`with-postgrest`](examples/with-postgrest) and [`with-postgraphile`](examples/with-postgraphile), PostgreSQL behind PostgREST or PostGraphile, and a React page sharing one rule.
+- [examples/](examples/) — projects to copy: [`simple`](examples/simple), one type and one function; [`numeric`](examples/numeric), `Integer`, `Float` and the `int()` guard; [`math`](examples/math), the `Math` members that compile and the `tsql` helpers they call; [`with-postgrest`](examples/with-postgrest) and [`with-postgraphile`](examples/with-postgraphile), PostgreSQL behind PostgREST or PostGraphile, and a React page sharing one rule.
 
 ## Licence and trademarks
 

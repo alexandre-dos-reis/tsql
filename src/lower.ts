@@ -68,6 +68,7 @@ import {
   type StmtIR,
 } from "./ir.ts";
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
+import { type HelperName } from "./helpers.ts";
 import { mathConstant, mathFunction, unsupportedMathMessage } from "./math.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
@@ -94,8 +95,8 @@ interface State extends TypeCtx {
   readonly used: Set<string>;
   readonly returns: PgType;
   readonly targets: Target[];
-  /** Names for the values a rewrite binds once (`bind`), numbered per function. */
-  readonly temps: { count: number };
+  /** The helpers of `src/helpers.ts` this function calls. */
+  readonly helpers: Set<HelperName>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -186,7 +187,7 @@ export async function lowerFunction(
     used: new Set(signature.params.map((p) => p.sqlName)),
     returns: signature.returns,
     targets: [],
-    temps: { count: 0 },
+    helpers: new Set(),
   };
 
   const { fn } = exported;
@@ -211,6 +212,7 @@ export async function lowerFunction(
     returns: signature.returns,
     locals: state.locals,
     body,
+    helpers: [...state.helpers].sort(),
   };
 }
 
@@ -1198,125 +1200,12 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
   return operand;
 }
 
-/** `-e`, undoing a negation rather than stacking one, and folding a numeric literal. */
-function negate(expr: ExprIR): ExprIR {
-  if (expr.kind === "neg") return expr.operand;
-  if (expr.kind === "lit" && typeof expr.value === "number" && !Number.isNaN(expr.value)) {
-    return { ...expr, value: -expr.value };
-  }
-  return { kind: "neg", operand: expr, type: expr.type as ScalarType };
-}
-
-/**
- * How much work an expression is to run, counted in nodes — or `Infinity` when it
- * is not just arithmetic on values (a call to a compiled function, a `bind`…).
- */
-function weight(expr: ExprIR): number {
-  switch (expr.kind) {
-    case "ref":
-    case "lit":
-      return 1;
-    case "field":
-    case "cast":
-    case "neg":
-      return 1 + weight(expr.operand);
-    case "binary":
-      return 1 + weight(expr.left) + weight(expr.right);
-    case "builtin":
-      return 1 + expr.args.reduce((sum, arg) => sum + weight(arg), 0);
-    default:
-      return Infinity;
-  }
-}
-
-/**
- * The most an argument may weigh and still be written again where a rewrite reads
- * it several times. Measured (PGlite, 200 000 calls): repeating `abs(a)` costs
- * what `abs(a)` costs once, 2.6 µs a call, while binding it in a sub-select costs
- * 8.2 µs, because PL/pgSQL no longer evaluates it as a simple expression.
- */
-const REPEATABLE = 6;
-
-/**
- * Runs `body` on `value` read several times without running it several times:
- * written again where that costs nothing (a name, a literal, a few operations on
- * them), bound to a name otherwise (`bind`) — a call to a compiled function, or an
- * expression big enough that repeating it would swell the SQL.
- */
-function once(value: ExprIR, s: State, body: (atom: ExprIR) => ExprIR): ExprIR {
-  if (weight(value) <= REPEATABLE) return body(value);
-  const name = `_tsql_${++s.temps.count}`;
-  const inner = body({ kind: "ref", sqlName: name, type: value.type });
-  return { kind: "bind", name, value, body: inner, type: inner.type };
-}
-
 const DOUBLE = scalarType("double precision");
-const BOOLEAN = scalarType("boolean");
-const num = (value: number): ExprIR => ({ kind: "lit", value, type: DOUBLE });
-const test = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: BOOLEAN });
-const arith = (op: BinOp, left: ExprIR, right: ExprIR): ExprIR => ({ kind: "binary", op, left, right, type: DOUBLE });
-const fn = (sql: string, ...args: ExprIR[]): ExprIR => ({ kind: "builtin", sql, args, type: DOUBLE });
-const pick = (cond: ExprIR, whenTrue: ExprIR, whenFalse: ExprIR): ExprIR => ({
-  kind: "case",
-  cond,
-  whenTrue,
-  whenFalse,
-  type: DOUBLE,
-});
 
-/** The edges of `real`: its largest value, and the point from which rounding goes to infinity. */
-const REAL_MAX = (2 - 2 ** -23) * 2 ** 127;
-const REAL_OVERFLOW = REAL_MAX + 2 ** 103;
-/** Half the smallest `real`: at or below it, rounding goes to zero. */
-const REAL_UNDERFLOW = 2 ** -150;
-
-/** `Math.round(x)`: ties go up, and a result of -0 is kept for -0.5 ≤ x < 0. */
-function roundRule(x: ExprIR): ExprIR {
-  const floor = fn("floor", x);
-  const up = arith("+", floor, num(1));
-  const isTie = test(">=", arith("-", x, floor), num(0.5));
-  const negativeZero = test("and", test("=", up, num(0)), test("<", x, num(0)));
-  return pick(isTie, pick(negativeZero, num(-0), up), floor);
-}
-
-/** `Math.fround(x)`: the nearest `real`, with `Infinity` and `0` where PostgreSQL's cast raises. */
-function froundRule(x: ExprIR): ExprIR {
-  const magnitude = fn("abs", x);
-  const asIs = test(
-    "or",
-    test("or", test("=", x, num(NaN)), test("=", x, num(0))),
-    test("=", magnitude, num(Infinity)),
-  );
-  const cast: ExprIR = { kind: "toReal", operand: x, type: DOUBLE };
-  return pick(
-    asIs,
-    x,
-    pick(
-      test(">=", magnitude, num(REAL_OVERFLOW)),
-      arith("*", fn("sign", x), num(Infinity)),
-      pick(test("<=", magnitude, num(REAL_UNDERFLOW)), arith("*", fn("sign", x), num(0)), cast),
-    ),
-  );
-}
-
-/** Is this zero the negative one? `atan2(-0, -1)` is -π, `atan2(0, -1)` is π. */
-const isNegativeZero = (x: ExprIR): ExprIR => test("<", fn("atan2", x, num(-1)), num(0));
-
-/** `Math.max(a, b)` / `Math.min(a, b)` on doubles, `NaN` and the order of the two zeros included. */
-function extremumRule(rule: "min" | "max", a: ExprIR, b: ExprIR): ExprIR {
-  const bothZero = test("and", test("=", a, num(0)), test("=", b, num(0)));
-  if (rule === "max") {
-    return pick(
-      bothZero,
-      pick(test("and", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)),
-      fn("greatest", a, b),
-    );
-  }
-  return pick(bothZero, pick(test("or", isNegativeZero(a), isNegativeZero(b)), num(-0), num(0)), {
-    kind: "neg",
-    operand: fn("greatest", negate(a), negate(b)),
-    type: DOUBLE,
-  });
+/** A call to a helper tsql installs (`src/helpers.ts`), recorded so the migration installs it. */
+function helper(s: State, name: HelperName, args: ExprIR[], type: ScalarType): ExprIR {
+  s.helpers.add(name);
+  return { kind: "helper", name, args, type };
 }
 
 /**
@@ -1413,25 +1302,20 @@ async function lowerMathCall(
     }
     case "float": {
       const operand = args[0]!;
-      // An `Integer` has no NaN, no infinity and no negative zero, but it is widened
-      // first, so the rules below read a double either way.
+      // An `Integer` is widened first, so the rules read a double either way.
       const x = coerce(operand, DOUBLE);
       switch (entry.rule) {
         case "round":
-          return once(x, s, roundRule);
         case "fround":
-          return once(x, s, froundRule);
         case "sqrt":
-          // PostgreSQL raises on a negative argument where `Math.sqrt` is `NaN`.
-          return once(x, s, (a) => pick(test("<", a, num(0)), num(NaN), fn("sqrt", a)));
+          return helper(s, `math_${entry.rule}`, [x], DOUBLE);
         case "sign":
-          // `sign('NaN')` and `sign(-0)` are 0: hand a `NaN` or a zero back as it is.
-          // An `Integer` has neither.
+          // An `Integer` has no `NaN` and no negative zero: `sign` is exact on it.
           return isExactly(operand.type, "integer")
-            ? fn("sign", x)
-            : once(x, s, (a) => pick(test("or", test("=", a, num(0)), test("=", a, num(NaN))), a, fn("sign", a)));
+            ? { kind: "builtin", sql: "sign", args: [x], type: DOUBLE }
+            : helper(s, "math_sign", [x], DOUBLE);
         default:
-          return fn(entry.sql!, x);
+          return { kind: "builtin", sql: entry.sql!, args: [x], type: DOUBLE };
       }
     }
     case "widest": {
@@ -1447,18 +1331,10 @@ async function lowerMathCall(
       }
       // Pairwise, left to right, as `Math.max(a, b, c)` is `max(max(a, b), c)`.
       const rule = entry.rule as "min" | "max";
-      let result = widened[0]!;
-      for (const next of widened.slice(1)) {
-        const left = result;
-        result = once(left, s, (a) => once(next, s, (b) => extremumRule(rule, a, b)));
-      }
-      return result;
+      return widened.slice(1).reduce((acc, next) => helper(s, `math_${rule}`, [acc, next], DOUBLE), widened[0]!);
     }
-    case "int32": {
-      const integer = scalarType("integer");
-      if (entry.rule === "clz32") return { kind: "clz32", operand: args[0]!, type: integer };
-      return { kind: "imul", left: args[0]!, right: args[1]!, type: integer };
-    }
+    case "int32":
+      return helper(s, `math_${entry.rule as "clz32" | "imul"}`, args, scalarType("integer"));
   }
 }
 
@@ -1924,7 +1800,32 @@ function strictEquality(leftOperand: ExprIR, rightOperand: ExprIR, negated: bool
   // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
   const nullable = left.type.nullable || right.type.nullable;
   const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
-  return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+  const core: ExprIR = { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+  // PostgreSQL's `NaN` equals itself; JavaScript's never equals anything. When the left side is equal to
+  // the right and is not `NaN`, the right is not either, so one side decides.
+  if (!canBeNaN(left)) return core;
+  const isNaN: ExprIR = {
+    kind: "binary",
+    op: nullable ? "is not distinct from" : "=",
+    left,
+    right: NAN,
+    type: scalarType("boolean"),
+  };
+  if (negated) return { kind: "binary", op: "or", left: core, right: isNaN, type: scalarType("boolean") };
+  const notNaN: ExprIR = { ...isNaN, op: nullable ? "is distinct from" : "<>" };
+  return { kind: "binary", op: "and", left: core, right: notNaN, type: scalarType("boolean") };
+}
+
+const NAN: ExprIR = { kind: "lit", value: Number.NaN, type: scalarType("double precision") };
+
+/**
+ * Whether an operand can hold `NaN`: a `Float` that is not a literal (a literal is never `NaN`: `NaN` is
+ * refused as a name) and not an `Integer` made into one.
+ */
+function canBeNaN(expr: ExprIR): boolean {
+  if (!isExactly(expr.type, "double precision")) return false;
+  if (expr.kind === "lit") return false;
+  return !(expr.kind === "cast" && !isExactly(expr.operand.type, "double precision"));
 }
 
 async function lowerBinary(node: BinaryExpression, s: State, guarded = false): Promise<ExprIR> {
@@ -1998,12 +1899,24 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
             : op === SyntaxKind.GreaterThanToken
               ? ">"
               : ">=";
-      return {
+      const comparison: ExprIR = {
         kind: "binary",
         op: binOp,
         left,
         right,
         type: scalarType("boolean", left.type.nullable || right.type.nullable),
+      };
+      // PostgreSQL sorts `NaN` above every number, so `NaN > 1` and `1 < NaN` are true there; in
+      // JavaScript every ordering with a `NaN` is false. The side that PostgreSQL makes wrongly true
+      // is the one that is `NaN`: the left of `>` and `>=`, the right of `<` and `<=`.
+      const checked = binOp === ">" || binOp === ">=" ? left : right;
+      if (!canBeNaN(checked)) return comparison;
+      return {
+        kind: "binary",
+        op: "and",
+        left: comparison,
+        right: { kind: "binary", op: "<>", left: checked, right: NAN, type: scalarType("boolean") },
+        type: comparison.type,
       };
     }
 
