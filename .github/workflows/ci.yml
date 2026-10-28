@@ -10,6 +10,20 @@ permissions:
 
 jobs:
   test:
+    # Skip the release path. The "Version Packages" PR, and the commit merging
+    # it, only move version numbers and the CHANGELOG — no source changes — and
+    # `prepublishOnly` runs the build, the type checker and the whole suite
+    # inside `npm publish` anyway, so the release is still gated on green.
+    #
+    # `github.head_ref` is set on pull_request only, and `head_commit` on push
+    # only; each comparison is vacuously true for the other event, so the set
+    # covers both without splitting the job. The message is checked two ways
+    # because how the PR lands decides what the commit is called: a squash takes
+    # the PR title, a merge commit names the branch it came from.
+    if: >-
+      github.head_ref != 'changeset-release/main' &&
+      !startsWith(github.event.head_commit.message, 'chore: version packages') &&
+      !contains(github.event.head_commit.message, 'changeset-release/')
     runs-on: ubuntu-latest
     # A real PostgreSQL, so `tsql parity --db-url` and `bun test` is exercised against a server
     # and not only against PGlite.
