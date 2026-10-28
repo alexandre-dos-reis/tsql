@@ -252,7 +252,7 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
-The one table of names runs the other way, and is closed: `src/math.ts` lists the members of `Math` that
+The tables of names run the other way, and are closed. `src/math.ts` lists the members of `Math` that
 *compile* (`abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul`, plus the
 constants) — a PostgreSQL function under its own name, or SQL written to return the same double (`rule`) —
 measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
@@ -263,6 +263,26 @@ platform-defined (`sin`, `exp`, `pow`…) are refused on purpose. A member whose
 refuses a database holding a newer revision. **Changing a helper's body is a decision**: run `bun scripts/helpers.ts lock` (it appends the hash to
 `src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
+
+`src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
+JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
+so it lowers to `tsql.number_parse_int(s, radix)` — 10 for base ten, 0 for an omitted radix, which reads a leading `0x` as
+hexadecimal, as JavaScript spells it. Any other radix, or one that is not a literal, is refused: the radix decides
+which helper the call becomes. It **must sit inside `int(...)`** and is then an `Integer` — unguarded it is
+refused. `NaN` and values past 32 bits are among `parseInt`'s answers, and `int` is what accounts for them:
+it throws on both in TypeScript, and the cast it stands for lives **inside the helper**, which returns
+`integer` outright and raises on both in PostgreSQL. Nothing is emitted for the guard at the call site, so
+`int()` erases itself here as it does around arithmetic. The cast suffices because it matches `int` on every
+value `parseInt` can produce — they differ only on a fraction, which `parseInt` cannot return. That is the
+rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/number.ts`), so
+`int()` around `Float` arithmetic stays refused. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
+naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
+no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. It **inlines**: reading hexadecimal needs no
+aggregate, because more than eight significant digits cannot fit an `integer` whatever they are, so that case
+only has to push the final cast out of range. Measured at 1.0 µs a call against 15.2 µs for the aggregate it
+replaced, and `tests/helpers.test.ts` pins it. It is also one helper rather than two, taking the radix, which
+is what lets the base-ten expression live in one place: a helper cannot call another, `runtimeSql` creating
+them alphabetically and a migration carrying only the ones its functions use.
 
 ## Types and composites
 

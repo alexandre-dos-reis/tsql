@@ -49,6 +49,60 @@ export interface Helper {
 const D = "double precision";
 
 /**
+ * JavaScript's StrWhiteSpace, as a bracket expression. Contiguous runs are
+ * ranges — `\t-\r` is U+0009..U+000D, and U+2000..U+200A the general
+ * punctuation spaces — which a regular expression understands and `ltrim`'s
+ * character *set* does not. That is why the trim lives inside each pattern
+ * rather than in a separate `ltrim` call: one construct instead of two, and the
+ * class written once per pattern instead of once per call.
+ */
+const WHITESPACE = "\\t-\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
+
+/** `substring` anchored past any leading whitespace. Schema-qualified, so two arguments and never `from`. */
+const after = (pattern: string): string => `pg_catalog.substring(s, E'^[${WHITESPACE}]*${pattern}')`;
+
+/** The longest prefix JavaScript would read in base ten: a sign and digits. NULL when there is none. */
+const MATCHED = after("([+-]?[0-9]+)");
+/**
+ * The `0x` prefix with its sign, NULL when there is none. Detecting the prefix
+ * is separate from reading the digits because JavaScript *commits* to base 16
+ * on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are NaN, not the 0 that
+ * falling back to base ten would read off the leading zero.
+ */
+const HEX_PREFIX = after("([+-]?0[xX])");
+/** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
+const HEX = after("[+-]?0[xX]([0-9a-fA-F]+)");
+
+/**
+ * Base ten, as a double. Short because the helper returns `integer`: a value
+ * that will not fit has to raise, and `numeric::double precision` raising on
+ * overflow — the thing the double-returning version had to work around — is now
+ * exactly what is wanted. There is no `-0` case either, `integer` having no
+ * negative zero, and no `Infinity` case, an infinity and a merely-too-large
+ * value both being out of range. `COALESCE` rather than a `CASE` on NULL, so
+ * the match is written once.
+ */
+const DECIMAL = `COALESCE(${MATCHED}::numeric, 'NaN'::${D})`;
+
+/**
+ * The value of the hexadecimal digits, leading zeros removed.
+ *
+ * No aggregate, so the helper inlines, and no length test either: nine
+ * significant hexadecimal digits are already 16^8, past `integer`, so taking
+ * the leading nine is enough to make the cast at the end raise for anything
+ * longer — which is the answer. Eight or fewer are exact through `bit(64)`.
+ * Without that, the digits would have to be written twice, once to measure and
+ * once to convert. Measured at 1.0 µs a call against 15.2 µs for the aggregate
+ * this replaced.
+ *
+ * NULL when there were no digits, which the `COALESCE` in the body turns into
+ * the `NaN` JavaScript gives for `'0x'`.
+ */
+const HEX_VALUE = `('x' || pg_catalog.lpad(pg_catalog.left(pg_catalog.ltrim(${HEX}, '0'), 9), 16, '0'))::bit(64)::bigint::numeric`;
+/** The sign as a factor, so the value is written once rather than once per sign. */
+const HEX_SIGN = `CASE WHEN pg_catalog.left(${HEX_PREFIX}, 1) = '-' THEN -1 ELSE 1 END`;
+
+/**
  * Written so that each returns the same double as the JavaScript function, for
  * every input including `NaN`, the infinities and `-0`; `docs/design.md` ("Math")
  * says what each one is for, and `tests/specialValues.test.ts` checks them.
@@ -112,6 +166,35 @@ export const HELPERS = {
     returns: "integer",
     body: "SELECT (((a::bigint * b::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer",
   },
+  // `Number.parseInt`, which the compiler only ever emits inside `int(...)`, so
+  // the cast `int` stands for lives here and the helper returns `integer`
+  // outright. The double is what the arithmetic produces — `NaN` for text with
+  // no digits, an infinity past the double range — and casting it is what
+  // raises, on exactly the values TypeScript's `int` throws on. The only other
+  // thing the cast does, rounding a fraction, cannot arise: reading stops at the
+  // `.`, so the value is always whole.
+  //
+  // The radix is a parameter, as it is in JavaScript, where an omitted one is 0
+  // and means "read an `0x` prefix as hexadecimal". One helper rather than two
+  // keeps the base-ten expression in one place and means no helper calls
+  // another — which the migration could not order anyway, `runtimeSql` creating
+  // them alphabetically and carrying only the ones its functions use.
+  //
+  // This is a parser, not a cast: `'12abc'::integer` would raise where
+  // `parseInt` answers 12. Measured against V8 (`docs/design.md`,
+  // "Number.parseInt", and `tests/parseIntValues.test.ts`).
+  //
+  // One `SELECT` with no `FROM`, so PostgreSQL inlines it — `HEX_VALUE` says why
+  // the hexadecimal side needs no aggregate to stay exact.
+  number_parse_int: {
+    params: "s text, radix integer",
+    signature: "text, integer",
+    returns: "integer",
+    body:
+      `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
+      `ELSE COALESCE((${HEX_SIGN}) * (${HEX_VALUE}), 'NaN'::${D}) END)::integer`,
+  },
+
 } as const satisfies Record<string, Helper>;
 
 export type HelperName = keyof typeof HELPERS;

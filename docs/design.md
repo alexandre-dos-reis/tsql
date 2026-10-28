@@ -321,6 +321,122 @@ Each refusal says which of these it is.
 
 What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL raises where JavaScript makes an infinity or a `NaN` out of finite operands (`1e308 * 10`, `0 / 0`). That is the section on numbers, not `Math`.
 
+## `Number.parseInt`
+
+The behaviour reproduced here is the one written down at
+[MDN's `parseInt`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt),
+and every example on that page for the two forms tsql compiles is a test
+(`tests/parseIntValues.test.ts`), checked against the *documented* answer rather than against whatever V8
+returns — so the SQL is pinned to the language and not to one engine. The examples for a radix tsql refuses
+(2, 8, 13, 16, 36) are left out, the compiler rejecting those at build time.
+
+
+`Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
+longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
+`'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
+parser, in the `tsql` schema: `tsql.number_parse_int`.
+
+**It must sit inside `int(...)`, and is then an `Integer`.** The helper returns `double precision`, because
+`NaN` and values past 32 bits are among the answers — `NaN` is what *any* unreadable string gives, and ten
+digits leave `integer` behind. Neither is representable as an `integer`, so the result is not one until
+something has said what becomes of them. `int` is that something: it throws on both in TypeScript, and the
+cast it lowers to raises on both in PostgreSQL, so the two sides agree — including when they agree by both
+raising, which the parity harness counts as agreement. Unguarded, `Number.parseInt` is refused.
+
+The cast `int` stands for lives **inside the helper**, which therefore returns `integer` outright. The double
+is what the arithmetic produces — `NaN` for text with no digits, an infinity past the double range — and
+casting it is what raises. Nothing is emitted for the guard at the call site, so `int(...)` erases itself here
+exactly as it does around arithmetic. The cast is enough on its own because it already matches `int` on every
+value `parseInt` can produce:
+
+| Value | `int()` | `::integer` |
+| --- | --- | --- |
+| an exact integer in range | the value | the value |
+| `NaN`, `±Infinity` | throws | raises |
+| past 32 bits | throws | raises |
+| **a fraction** | **throws** | **rounds** |
+
+Only the last row disagrees, and `parseInt` cannot produce it: it reads a run of digits and stops at the `.`,
+so `"12.9"` is `12`. That is why the rule is narrow — a `Number` member folds the cast into its helper when
+its value is *necessarily whole*, which `src/number.ts` records per member as `whole`, not because its
+arithmetic happens to be done in a double. `int()` around arbitrary `Float` arithmetic stays refused, for
+exactly the fraction case, and a member that could return a fraction would be `whole: false` and stay a
+`Float`.
+
+One difference is deliberate and unobservable: `parseInt("-0")` is `-0`, which TypeScript's `int` returns as
+it is while `integer` has no negative zero and the cast gives `0`. Nothing an `integer` can do tells them
+apart, and `src/parity.ts` already compares ±0 as equal.
+
+The helpers are named for their namespace, like `tsql.math_round`: the `number_` prefix says this is not a
+general-purpose SQL function but the SQL that reproduces one JavaScript call exactly — here
+`int(Number.parseInt(s))`, the only form the compiler emits, which is why the signature can be
+`text → integer` and read as what it is.
+
+**Two forms compile**, because two were measured: `parseInt(s)`, which reads a leading `0x` as hexadecimal,
+and `parseInt(s, 10)`, which does not and so stops at the `x`. Any other radix, or one that is not a literal,
+is refused — the radix decides which helper the call becomes, so it has to be readable at build time, and the
+compiler does not emit SQL whose agreement with TypeScript nobody has checked.
+
+### What the page makes explicit
+
+Three rules are easy to assume wrongly, and all three are tested:
+
+- **A leading zero is not octal.** `parseInt("077")` is 77, in both forms.
+- **Only `0x` is auto-detected.** `0b101` reads as `0`, stopping at the `b`; `0o17` likewise. The binary and
+  octal prefixes are not recognised, where the hexadecimal one is.
+- **Anything invalid stops the read, it does not fail it.** `"15px"`, `"15,123"`, `"15 * 3"`, `"15e2"` and
+  `"123_456"` are all 15, 15, 15, 15 and 123 — the exponent and the numeric separator are just invalid
+  characters, and `e` is only a digit when the radix makes it one.
+
+### What PostgreSQL does differently
+
+Three things, each closed in the helper and measured against V8 on 48 inputs through both forms:
+
+| | JavaScript | PostgreSQL, written naively | What the helper does |
+| --- | --- | --- | --- |
+| `'1' + 400 zeros` | `Infinity` | **raises**, `numeric::double precision` overflows | digit count, then an exact compare against the rounding boundary |
+| `'-0'`, `'-000'` | `-0` | `0` — `numeric` has no negative zero | answers `-0` directly |
+| `'abc'`, `''` | `NaN` | raises, or NULL | `'NaN'::double precision` |
+
+The overflow boundary is exact rather than approximate: a double rounds to infinity from `2^1024 - 2^970`, the
+midpoint between the largest double and `2^1024`, and the comparison is made in `numeric` so no rounding
+happens before it. `'9'×309` is finite and `'9'×310` is not; one less than the boundary is the largest double
+and the boundary itself is `Infinity`. The digit-count guard comes first so a million-digit argument never
+builds a `numeric` at all.
+
+The `0x` prefix is detected separately from the digits that follow it, because JavaScript *commits* to base 16
+on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are `NaN`, not the `0` that falling back to base ten
+would read off the leading zero. That one was found by measurement, not by reading the specification.
+
+### Why the hexadecimal side needs no aggregate
+
+Reading hexadecimal exactly at *any* width takes an aggregate over the digits — which needs a `FROM`, so the
+helper would not inline. It does not need to be exact at any width: the helper returns `integer`, and **more
+than eight significant hexadecimal digits cannot fit one whatever they are**. That case needs no arithmetic
+at all, only a value past the range so the cast at the end raises, which is the answer. Eight or fewer go
+through `bit(64)` in one expression, exact.
+
+So the body is one `SELECT` with no `FROM`, and PostgreSQL inlines it. Measured on PGlite over 200 000 rows:
+**1.0 µs a call against 15.2 µs** for the aggregate it replaced, a factor of thirteen.
+
+The generality that was lost was never used. It is worth noticing that it only became unnecessary once the
+helper returned `integer` rather than a double — while it returned a double it genuinely had to represent
+every value `parseInt` can produce, up to the 256 hexadecimal digits where a double becomes `Infinity`.
+`tests/helpers.test.ts` checks the inlining, so losing it again fails the build.
+
+The body is written to be read as well as to run: `COALESCE` rather than a `CASE` testing a match for NULL,
+so each pattern is named once; the sign as a factor rather than the value written out per sign; the leading
+nine hexadecimal digits rather than a length test, so the digits are not written twice to be measured and
+then converted; and the whitespace class as a bracket expression with its contiguous runs as ranges, which
+also lets the trim live inside each pattern instead of in a separate `ltrim` call. That is 768 characters
+against 2 330 for the same behaviour.
+
+What is left is near the floor for a body that inlines: 37% of it is the whitespace class, written once per
+pattern, and the four patterns cannot share one trimmed string without binding it — which takes a `FROM` or
+a `LATERAL`, and that is exactly what stops PostgreSQL inlining. Two things are being traded against each
+other, and the faster one won. With the radix a constant the planner folds the base-choosing branch away entirely, so
+`number_parse_int(s, 10)` pays nothing for the hexadecimal side it cannot reach.
+
 ## The `tsql` schema
 
 A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x - floor(x) >= 0.5 …`). Written out where it is used, that is a line of several hundred characters, and a heavy argument (a call to a compiled function) would either run several times or need a sub-select, which PL/pgSQL no longer evaluates as a simple expression: measured on PGlite, 200 000 calls, 20 µs against 6.6 µs for a helper function and 3.4 µs for an inlined one. So the rewrites are functions in a schema of tsql's own, `tsql`, and a compiled function calls them: `RETURN tsql.math_min(tsql.math_max(x, lo), hi);`.

@@ -104,6 +104,27 @@ describe("a migration brings the helpers up to date", () => {
     expect(text).not.toContain(`${TSQL_SCHEMA}.math_round(`);
     expect(text).toContain("CASE");
   });
+
+  // The hexadecimal side was once an aggregate over the digits, which needs a
+  // FROM and so cannot inline: measured at 15.2 µs a call against 1.2 µs for
+  // the form that replaced it. Nothing about `integer` needs that generality —
+  // more than eight significant hexadecimal digits cannot fit one whatever they
+  // are — so losing it again would be a regression worth failing for.
+  test("number_parse_int stays inlinable: an aggregate over the digits would not", async () => {
+    const db = new PGlite();
+    await apply(db);
+    await db.exec("CREATE TEMP TABLE texts (s text)");
+    const plan = await db.query<{ "QUERY PLAN": string }>(
+      `EXPLAIN (VERBOSE, COSTS OFF) SELECT ${TSQL_SCHEMA}.number_parse_int(s, 10) FROM texts`,
+    );
+    const text = plan.rows.map((row) => row["QUERY PLAN"]).join("\n");
+    expect(text).not.toContain(`${TSQL_SCHEMA}.number_parse_int(`);
+    // The parser itself, inlined. Not `CASE`: with the radix a constant, the
+    // planner folds the branch that chooses a base away entirely, so a call
+    // written `(s, 10)` costs nothing for the hexadecimal side it cannot reach.
+    expect(text).toContain("substring");
+    expect(text).toContain("COALESCE");
+  });
 });
 
 describe("what a build writes", () => {

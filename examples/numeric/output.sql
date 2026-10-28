@@ -3,6 +3,52 @@
 
 CREATE SCHEMA IF NOT EXISTS app;
 
+-- tsql runtime, revision 2: the helpers the functions below call.
+CREATE SCHEMA IF NOT EXISTS tsql;
+CREATE TABLE IF NOT EXISTS tsql.runtime (
+  only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+  revision integer NOT NULL
+);
+DO $tsql$
+DECLARE
+  installed integer;
+  helper text;
+  sql text;
+  before text;
+  after text;
+BEGIN
+  SELECT revision INTO installed FROM tsql.runtime;
+  IF installed > 2 THEN
+    RAISE EXCEPTION 'this database holds tsql runtime revision %, newer than the revision 2 this tsql writes: update tsql before compiling again', installed;
+  END IF;
+  FOR helper, sql IN SELECT * FROM (VALUES
+    ('tsql.number_parse_int(text, integer)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_int(s text, radix integer)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE PARALLEL SAFE
+AS $body$SELECT (CASE WHEN radix = 10 OR pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?0[xX])') IS NULL THEN COALESCE(pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?[0-9]+)')::numeric, 'NaN'::double precision) ELSE COALESCE((CASE WHEN pg_catalog.left(pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?0[xX])'), 1) = '-' THEN -1 ELSE 1 END) * (('x' || pg_catalog.lpad(pg_catalog.left(pg_catalog.ltrim(pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*[+-]?0[xX]([0-9a-fA-F]+)'), '0'), 9), 16, '0'))::bit(64)::bigint::numeric), 'NaN'::double precision) END)::integer$body$$def$)
+  ) AS t(helper, sql) LOOP
+    SELECT prosrc INTO before FROM pg_catalog.pg_proc WHERE oid = pg_catalog.to_regprocedure(helper);
+    EXECUTE sql;
+    SELECT prosrc INTO after FROM pg_catalog.pg_proc WHERE oid = pg_catalog.to_regprocedure(helper);
+    IF before IS NOT NULL AND before <> after THEN
+      RAISE NOTICE 'tsql: % was replaced (runtime revision 2). Rebuild what was computed with the old one: indexes, stored generated columns, materialized views.', helper;
+    END IF;
+  END LOOP;
+  INSERT INTO tsql.runtime (revision) VALUES (2)
+    ON CONFLICT (only_row) DO UPDATE SET revision = excluded.revision;
+END
+$tsql$;
+
+-- input.ts: anyBaseFromText()
+CREATE OR REPLACE FUNCTION app.any_base_from_text(
+  text text
+)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+RETURN tsql.number_parse_int(text, 0);
+
 -- input.ts: asEuros()
 CREATE OR REPLACE FUNCTION app.as_euros(
   cents integer
@@ -11,6 +57,15 @@ RETURNS double precision
 LANGUAGE sql
 IMMUTABLE
 RETURN cents::double precision / 100;
+
+-- input.ts: centsFromText()
+CREATE OR REPLACE FUNCTION app.cents_from_text(
+  text text
+)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+RETURN tsql.number_parse_int(text, 10);
 
 -- input.ts: invoiceCents()
 CREATE OR REPLACE FUNCTION app.invoice_cents(

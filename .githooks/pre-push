@@ -26,14 +26,19 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     *) continue ;;
   esac
 
-  # A branch the remote has never seen has an all-zero remote sha. Compare
-  # against the default branch so only this branch's own commits count, not
-  # every commit since the beginning of the repository.
-  case "$remote_sha" in
-    *[!0]*) base="$remote_sha" ;;
-    *) base=$(git merge-base "$local_sha" "$remote_name/main" 2>/dev/null || true) ;;
-  esac
-  [ -n "$base" ] || continue
+  # Always measure from where this branch left the default branch, never from
+  # the remote tip of the branch itself: a second push to a branch that already
+  # carries a changeset would otherwise be judged on its increment alone and
+  # refused, which is the opposite of judging the branch as a whole. Pushing to
+  # main gives the same answer either way, the merge-base there being the old
+  # tip. Falls back to the remote sha when there is no merge-base to find.
+  base=$(git merge-base "$local_sha" "$remote_name/main" 2>/dev/null || true)
+  if [ -z "$base" ]; then
+    case "$remote_sha" in
+      *[!0]*) base="$remote_sha" ;;
+      *) continue ;;
+    esac
+  fi
 
   shipped=$(git diff --name-only "$base" "$local_sha" -- src bin)
   [ -n "$shipped" ] || continue

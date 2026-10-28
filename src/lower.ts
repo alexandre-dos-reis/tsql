@@ -70,6 +70,7 @@ import {
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
 import { type HelperName } from "./helpers.ts";
 import { mathConstant, mathFunction, unsupportedMathMessage } from "./math.ts";
+import { numberFunction, unsupportedNumberMessage } from "./number.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -1144,6 +1145,7 @@ async function lowerCall(node: CallExpression, s: State, guarded = false): Promi
     const array = await arrayOperand(access.expression, s);
     if (array) return lowerArrayMethod(node, access, array, s);
     if (await isMathGlobal(access.expression, s)) return lowerMathCall(node, access, s, guarded);
+    if (await isNumberGlobal(access.expression, s)) return lowerNumberCall(node, access, s, guarded);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
@@ -1225,6 +1227,12 @@ async function isMathGlobal(node: Expression, s: State): Promise<boolean> {
   return (await classifyReference("Math", node, s)).kind === "runtime-global";
 }
 
+async function isNumberGlobal(node: Expression, s: State): Promise<boolean> {
+  if (node.kind !== SyntaxKind.Identifier || (node as Identifier).text !== "Number") return false;
+  if (s.scope.has("Number")) return false;
+  return (await classifyReference("Number", node, s)).kind === "runtime-global";
+}
+
 /**
  * `Math.floor(x)`, `Math.max(a, b)` … for the members whose PostgreSQL
  * function is the same one under another name (`src/math.ts`).
@@ -1247,6 +1255,100 @@ async function isMathGlobal(node: Expression, s: State): Promise<boolean> {
  * PostgreSQL and is `NaN` in JavaScript. Both are recorded in `docs/design.md`
  * ("Math"); the harness finds the divergence when an input reaches it.
  */
+/**
+ * `Number.parseInt(s)` and `Number.parseInt(s, 10)` (`src/number.ts`).
+ *
+ * It lowers to a helper rather than a cast because it is a *parser*:
+ * JavaScript reads the longest prefix it understands and ignores the rest, so
+ * `parseInt('12abc')` is 12 where `'12abc'::integer` raises, and `parseInt('x')`
+ * is `NaN` where the cast raises again. What lowering has to prove:
+ *
+ * - **The argument is a `string` that cannot be null.** `parseInt(null)` is
+ *   `NaN` in JavaScript, where every SQL function here would answer NULL — a
+ *   different value, in a type (`Float`) that already has its own `NaN`. No
+ *   valid case reaches this today: `parseInt` is declared to take a `string`,
+ *   and the two ways past that (`text!`, `text as string`) are refused before
+ *   lowering gets here. It is kept so the rule is stated where it belongs, and
+ *   holds if either is ever accepted — which is why it has no rejection case.
+ * - **The result is a `Float`, never an `Integer`.** It can be `NaN`, and it
+ *   can land far outside 32 bits (`parseInt('2147483648')`), so calling it an
+ *   `Integer` would be a lie TypeScript also refuses.
+ * - **The radix is absent or the literal `10`.** Those are the two forms that
+ *   were measured. A radix that is not a literal cannot be checked at build
+ *   time at all, and the compiler does not emit SQL it has not measured.
+ */
+async function lowerNumberCall(
+  node: CallExpression,
+  access: PropertyAccessExpression,
+  s: State,
+  guarded: boolean,
+): Promise<ExprIR> {
+  const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const entry = numberFunction(member);
+  if (!entry) throw CompileError.at(access, unsupportedNumberMessage(member));
+  const label = `Number.${member}`;
+
+  for (const argument of node.arguments) {
+    if (argument.kind === SyntaxKind.SpreadElement) {
+      throw CompileError.at(
+        argument,
+        `\`${label}\` does not take a spread argument: how many values it gets is not known at build time. Pass the string, and the radix if you need one.`,
+      );
+    }
+  }
+  if (node.arguments.length === 0 || node.arguments.length > 2) {
+    throw CompileError.at(
+      node,
+      `\`${label}\` takes the string to read, and optionally the radix \`10\`, got ${node.arguments.length} arguments.`,
+    );
+  }
+
+  const radix = node.arguments.length === 2 ? (node.arguments[1] as Expression) : undefined;
+  if (radix && (radix.kind !== SyntaxKind.NumericLiteral || (radix as NumericLiteral).text !== "10")) {
+    throw CompileError.at(
+      radix,
+      `\`${label}\` accepts the radix \`10\` written as a literal, or no radix at all — which reads a leading \`0x\` as hexadecimal, as TypeScript does. ` +
+        `Another radix, or one that is not a literal, would be SQL whose agreement with TypeScript has not been measured.`,
+    );
+  }
+
+  // A whole-valued member must sit directly inside `int(...)`, which is what
+  // makes the two sides agree: TypeScript's `int` throws on `NaN` and past 32
+  // bits, and PostgreSQL's cast raises on exactly those. Unguarded, the value
+  // would be a `Float` carrying a `NaN` that nothing had to account for.
+  //
+  // Checked *after* the radix, so a call with an unusable radix is told about
+  // the radix rather than handed a rewrite that would be refused in turn.
+  if (entry.whole && !guarded) {
+    throw CompileError.at(
+      node,
+      `\`${label}\` must sit directly inside \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adrdp/tsql"\`), which makes it an \`Integer\`. ` +
+        `It answers \`NaN\` for text it cannot read and is not bounded by 32 bits, and \`${INT_GUARD}\` raises on both — as PostgreSQL does, so the two agree. ` +
+        `Write \`${INT_GUARD}(${label}(${node.arguments.map((a) => a.getText()).join(", ")}))\`.`,
+    );
+  }
+
+  const text = await lowerExpr(node.arguments[0] as Expression, s);
+  if (!isScalar(text.type) || !isExactly(text.type, "text") || text.type.nullable) {
+    throw CompileError.at(
+      node.arguments[0] as Node,
+      `\`${label}\` reads a \`string\` that cannot be null, not \`${describe(text.type)}${text.type.nullable ? " | null" : ""}\`. ` +
+        `\`${label}(null)\` is \`NaN\` in TypeScript, where SQL would answer NULL — a different value, and \`Float\` already carries its own \`NaN\`.`,
+    );
+  }
+
+  // The helpers return `integer`: the cast `int(...)` stands for is inside them,
+  // where it raises on exactly the values TypeScript's `int` throws on. Nothing
+  // is emitted here for the guard, which is why `lowerIntGuard` sees an
+  // `integer` and erases itself as it does around arithmetic.
+  const INTEGER = scalarType("integer");
+
+  // The radix goes to the helper as JavaScript spells it: 10 for base ten, 0
+  // for an omitted one, which reads a leading `0x` as hexadecimal.
+  const base: ExprIR = { kind: "lit", value: radix ? 10 : 0, type: INTEGER };
+  return helper(s, entry.helper, [text, base], INTEGER);
+}
+
 async function lowerMathCall(
   node: CallExpression,
   access: PropertyAccessExpression,
@@ -1544,6 +1646,13 @@ async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
     const name = (node as PropertyAccessExpression).name;
     const value = name.kind === SyntaxKind.Identifier ? mathConstant((name as Identifier).text) : undefined;
     if (value !== undefined) return { kind: "lit", value, type: DOUBLE };
+  }
+  // `Number.MAX_SAFE_INTEGER`, `Number.EPSILON` — no member of `Number` is a
+  // value that compiles, so say so here rather than letting it read as a field.
+  if (node.kind === SyntaxKind.PropertyAccessExpression && (await isNumberGlobal(operand, s))) {
+    const name = (node as PropertyAccessExpression).name;
+    const member = name.kind === SyntaxKind.Identifier ? (name as Identifier).text : name.getText();
+    throw CompileError.at(node, unsupportedNumberMessage(member));
   }
   const array = await arrayOperand(operand, s);
   if (array) {
