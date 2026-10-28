@@ -9,10 +9,7 @@ CREATE OR REPLACE FUNCTION app.is_eligible_for_trial(
   referral text
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan = 'free' AND NOT had_trial AND referral IS NOT NULL;
-END;
-$$;
+RETURN plan = 'free' AND NOT had_trial AND referral IS NOT NULL;
+

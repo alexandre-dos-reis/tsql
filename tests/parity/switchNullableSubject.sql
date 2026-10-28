@@ -7,13 +7,10 @@ CREATE OR REPLACE FUNCTION app.greeting(
   name text
 )
 RETURNS text
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE name
-    WHEN 'bob' THEN 'hi bob'
-    ELSE 'hi'
-  END;
+RETURN CASE name
+  WHEN 'bob' THEN 'hi bob'
+  ELSE 'hi'
 END;
-$$;
+

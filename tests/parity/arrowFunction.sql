@@ -7,13 +7,9 @@ CREATE OR REPLACE FUNCTION app.grade_points(
   grade app.grade
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE WHEN grade = 'a' THEN 3 ELSE 1 END;
-END;
-$$;
+RETURN CASE WHEN grade = 'a' THEN 3 ELSE 1 END;
 
 CREATE OR REPLACE FUNCTION app.passes(
   grade app.grade,

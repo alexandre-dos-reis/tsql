@@ -26,29 +26,21 @@ BEGIN
 END
 $$;
 
+-- functions/todos.ts: todoLimit()
+CREATE OR REPLACE FUNCTION app.todo_limit(
+  plan app.plan
+)
+RETURNS integer
+LANGUAGE sql
+IMMUTABLE
+RETURN CASE WHEN plan = 'free' THEN 3 ELSE 100 END;
+
 -- functions/todos.ts: canAddTodo()
 CREATE OR REPLACE FUNCTION app.can_add_todo(
   plan app.plan,
   count integer
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN count < app.todo_limit(plan);
-END;
-$$;
-
--- functions/todos.ts: todoLimit()
-CREATE OR REPLACE FUNCTION app.todo_limit(
-  plan app.plan
-)
-RETURNS integer
-LANGUAGE plpgsql
-IMMUTABLE
-AS $$
-BEGIN
-  RETURN CASE WHEN plan = 'free' THEN 3 ELSE 100 END;
-END;
-$$;
+RETURN count < app.todo_limit(plan);

@@ -70,13 +70,9 @@ CREATE OR REPLACE FUNCTION app.below_pi(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(x, 3.141592653589793::double precision);
-END;
-$$;
+RETURN tsql.math_min(x, 3.141592653589793::double precision);
 
 -- input.ts: clamp()
 CREATE OR REPLACE FUNCTION app.clamp(
@@ -85,39 +81,27 @@ CREATE OR REPLACE FUNCTION app.clamp(
   hi double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(tsql.math_max(x, lo), hi);
-END;
-$$;
+RETURN tsql.math_min(tsql.math_max(x, lo), hi);
 
 -- input.ts: leadingZeros()
 CREATE OR REPLACE FUNCTION app.leading_zeros(
   n integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_clz32(n);
-END;
-$$;
+RETURN tsql.math_clz32(n);
 
 -- input.ts: magnitude()
 CREATE OR REPLACE FUNCTION app.magnitude(
   n integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN abs(n);
-END;
-$$;
+RETURN abs(n);
 
 -- input.ts: mix()
 CREATE OR REPLACE FUNCTION app.mix(
@@ -125,49 +109,33 @@ CREATE OR REPLACE FUNCTION app.mix(
   b integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_imul(a, b);
-END;
-$$;
+RETURN tsql.math_imul(a, b);
 
 -- input.ts: nearest()
 CREATE OR REPLACE FUNCTION app.nearest(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_round(x);
-END;
-$$;
+RETURN tsql.math_round(x);
 
 -- input.ts: root()
 CREATE OR REPLACE FUNCTION app.root(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_sqrt(x);
-END;
-$$;
+RETURN tsql.math_sqrt(x);
 
 -- input.ts: wholeMagnitude()
 CREATE OR REPLACE FUNCTION app.whole_magnitude(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN abs(floor(x));
-END;
-$$;
+RETURN abs(floor(x));

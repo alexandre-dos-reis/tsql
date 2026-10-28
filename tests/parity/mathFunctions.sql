@@ -7,37 +7,25 @@ CREATE OR REPLACE FUNCTION app.math_abs_float(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN abs(x);
-END;
-$$;
+RETURN abs(x);
 
 CREATE OR REPLACE FUNCTION app.math_abs_int(
   x integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN abs(x);
-END;
-$$;
+RETURN abs(x);
 
 CREATE OR REPLACE FUNCTION app.math_ceil(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN ceil(x);
-END;
-$$;
+RETURN ceil(x);
 
 CREATE OR REPLACE FUNCTION app.math_clamp(
   x double precision,
@@ -45,87 +33,59 @@ CREATE OR REPLACE FUNCTION app.math_clamp(
   hi double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(tsql.math_max(x, lo), hi);
-END;
-$$;
+RETURN tsql.math_min(tsql.math_max(x, lo), hi);
 
 CREATE OR REPLACE FUNCTION app.math_clz32(
   x integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_clz32(x);
-END;
-$$;
+RETURN tsql.math_clz32(x);
 
 CREATE OR REPLACE FUNCTION app.math_floor(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN floor(x);
-END;
-$$;
+RETURN floor(x);
 
 CREATE OR REPLACE FUNCTION app.math_floor_int(
   x integer
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN floor(x::double precision);
-END;
-$$;
+RETURN floor(x::double precision);
 
 CREATE OR REPLACE FUNCTION app.math_fround(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_fround(x);
-END;
-$$;
+RETURN tsql.math_fround(x);
 
 CREATE OR REPLACE FUNCTION app.math_imul(
   a integer,
   b integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_imul(a, b);
-END;
-$$;
+RETURN tsql.math_imul(a, b);
 
 CREATE OR REPLACE FUNCTION app.math_max(
   a double precision,
   b double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_max(a, b);
-END;
-$$;
+RETURN tsql.math_max(a, b);
 
 CREATE OR REPLACE FUNCTION app.math_max_of_three(
   a double precision,
@@ -133,52 +93,36 @@ CREATE OR REPLACE FUNCTION app.math_max_of_three(
   c double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_max(tsql.math_max(a, abs(b)), c);
-END;
-$$;
+RETURN tsql.math_max(tsql.math_max(a, abs(b)), c);
 
 CREATE OR REPLACE FUNCTION app.math_min_float(
   a double precision,
   b double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(a, b);
-END;
-$$;
+RETURN tsql.math_min(a, b);
 
 CREATE OR REPLACE FUNCTION app.math_min_int(
   a integer,
   b integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN least(a, b);
-END;
-$$;
+RETURN least(a, b);
 
 CREATE OR REPLACE FUNCTION app.math_min_mixed(
   a integer,
   b double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(tsql.math_min(a::double precision, b), 10);
-END;
-$$;
+RETURN tsql.math_min(tsql.math_min(a::double precision, b), 10);
 
 CREATE OR REPLACE FUNCTION app.math_min_of_three(
   a double precision,
@@ -186,95 +130,64 @@ CREATE OR REPLACE FUNCTION app.math_min_of_three(
   c double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_min(tsql.math_min(a, abs(b)), c);
-END;
-$$;
+RETURN tsql.math_min(tsql.math_min(a, abs(b)), c);
 
 CREATE OR REPLACE FUNCTION app.math_round(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_round(x);
-END;
-$$;
+RETURN tsql.math_round(x);
 
 CREATE OR REPLACE FUNCTION app.math_round_abs(
   a double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_round(abs(a));
-END;
-$$;
+RETURN tsql.math_round(abs(a));
 
 CREATE OR REPLACE FUNCTION app.math_round_called(
   a double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_round(app.math_abs_float(a));
-END;
-$$;
+RETURN tsql.math_round(app.math_abs_float(a));
 
 CREATE OR REPLACE FUNCTION app.math_sign(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_sign(x);
-END;
-$$;
+RETURN tsql.math_sign(x);
 
 CREATE OR REPLACE FUNCTION app.math_sqrt(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_sqrt(x);
-END;
-$$;
+RETURN tsql.math_sqrt(x);
 
 CREATE OR REPLACE FUNCTION app.math_trunc(
   x double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN trunc(x);
-END;
-$$;
+RETURN trunc(x);
 
 CREATE OR REPLACE FUNCTION app.math_widest(
   a integer,
   b double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN tsql.math_max(tsql.math_max(a::double precision, b), 0);
-END;
-$$;
+RETURN tsql.math_max(tsql.math_max(a::double precision, b), 0);
+

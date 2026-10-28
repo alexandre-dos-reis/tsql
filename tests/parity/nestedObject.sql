@@ -20,22 +20,15 @@ CREATE OR REPLACE FUNCTION app.inner_of(
   "outer" app."outer"
 )
 RETURNS app."inner"
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN ("outer")."inner";
-END;
-$$;
+RETURN ("outer")."inner";
 
 CREATE OR REPLACE FUNCTION app.is_big(
   "outer" app."outer"
 )
 RETURNS boolean
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN (("outer")."inner").count > 10 AND (("outer")."inner").count <> 'NaN'::double precision AND ("outer").label <> '';
-END;
-$$;
+RETURN (("outer")."inner").count > 10 AND (("outer")."inner").count <> 'NaN'::double precision AND ("outer").label <> '';
+

@@ -12,10 +12,7 @@ CREATE OR REPLACE FUNCTION app.next_count(
   ticket app.ticket
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN (ticket).count + 1;
-END;
-$$;
+RETURN (ticket).count + 1;
+

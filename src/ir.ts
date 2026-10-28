@@ -244,6 +244,14 @@ export interface FunctionIR {
   readonly body: readonly StmtIR[];
   /** The helpers of `src/helpers.ts` this function calls: the migration installs them first. */
   readonly helpers: readonly string[];
+  /** The compiled functions this one calls (SQL names), sorted. */
+  readonly calls: readonly string[];
+  /**
+   * `sql` when the body is one `return` of an expression: PostgreSQL then inlines the call into the
+   * query that makes it, where a PL/pgSQL function stays opaque to the planner (no index, one call per
+   * row). Chosen by `src/language.ts`, once every function has been lowered.
+   */
+  readonly language: "sql" | "plpgsql";
 }
 
 export type StmtIR =
@@ -382,4 +390,44 @@ export interface SignatureIR {
   readonly sqlName: string;
   readonly params: readonly ParamIR[];
   readonly returns: PgType;
+}
+
+/**
+ * Whether `test` holds for an expression or any expression inside it. Exhaustive on purpose: a new kind
+ * of expression will not compile until it says where its operands are.
+ */
+export function someExpr(expr: ExprIR, test: (expr: ExprIR) => boolean): boolean {
+  if (test(expr)) return true;
+  const any = (children: readonly ExprIR[]) => children.some((child) => someExpr(child, test));
+  switch (expr.kind) {
+    case "ref":
+    case "lit":
+      return false;
+    case "field":
+    case "not":
+    case "neg":
+    case "nullTest":
+    case "cast":
+    case "arrayLength":
+    case "arrayCast":
+      return any([expr.operand]);
+    case "binary":
+    case "coalesce":
+      return any([expr.left, expr.right]);
+    case "case":
+      return any([expr.cond, expr.whenTrue, expr.whenFalse]);
+    case "simpleCaseExpr":
+      return any([expr.subject, ...expr.whens.flatMap((w) => [w.value, w.result]), expr.orElse]);
+    case "searchedCaseExpr":
+      return any([...expr.whens.flatMap((w) => [w.cond, w.result]), expr.orElse]);
+    case "call":
+    case "builtin":
+    case "helper":
+    case "row":
+      return any(expr.args);
+    case "arrayIncludes":
+      return any([expr.array, expr.value]);
+    case "arrayLiteral":
+      return any(expr.parts.flatMap((part) => (part.kind === "items" ? part.items : [part.array])));
+  }
 }

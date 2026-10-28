@@ -26,6 +26,10 @@ IF to_regtype('app.basket') IS NULL THEN
     tags app.tag[]
   );
 
+FOREACH line IN ARRAY lines LOOP
+  total := total + (line).quantity % 100 * ((line).unit_cents % 1000);
+END LOOP;
+
 RETURN app.lines_total_cents((basket).lines);
 
 CREATE OR REPLACE FUNCTION app.biggest_line(
@@ -55,9 +59,5 @@ RETURN array_position((basket).tags, 'gift') IS NOT NULL;
 
 lines := (basket).lines;
 RETURN cardinality(lines);
-
-FOREACH line IN ARRAY lines LOOP
-  total := total + (line).quantity % 100 * ((line).unit_cents % 1000);
-END LOOP;
 
 RETURN ROW(ROW('gold')::app.basket_customer, (basket).lines, (basket).tags)::app.basket;

@@ -126,7 +126,10 @@ properties of that resolver are load-bearing:
    `const` bound to an arrow function (`ExportedFunction`; an arrow's expression body means `return` it) — collected into a map, so a
    call between compiled functions type-checks regardless of declaration order. SQL-name collisions
    are detected here.
-4. **Pass 2**: `lowerFunction` for each body, against those signatures.
+4. **Pass 2**: `lowerFunction` for each body, against those signatures; then `chooseLanguages`
+   (`src/language.ts`) decides, with the call graph known, which functions are `LANGUAGE sql` — one
+   `return` of an expression, no cycle of SQL functions, no enum literal — so PostgreSQL inlines them.
+   `emitMigration` creates a SQL function after the functions it calls (`creationOrder`).
 5. **Pass 3**: `mapTypeDeclaration` for every *exported* `interface`, `type` and `enum`
    (`exportedTypes`), so a type is created even when no function mentions it. Last, so a type reached
    from a parameter is still reported at that parameter.

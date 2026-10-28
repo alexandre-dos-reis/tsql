@@ -8,13 +8,9 @@ CREATE OR REPLACE FUNCTION app.as_euros(
   cents integer
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN cents::double precision / 100;
-END;
-$$;
+RETURN cents::double precision / 100;
 
 -- input.ts: invoiceCents()
 CREATE OR REPLACE FUNCTION app.invoice_cents(
@@ -23,13 +19,9 @@ CREATE OR REPLACE FUNCTION app.invoice_cents(
   unit_cents integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN setup_cents + seats * unit_cents;
-END;
-$$;
+RETURN setup_cents + seats * unit_cents;
 
 -- input.ts: seatTotalCents()
 CREATE OR REPLACE FUNCTION app.seat_total_cents(
@@ -37,36 +29,24 @@ CREATE OR REPLACE FUNCTION app.seat_total_cents(
   unit_cents integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN seats * unit_cents;
-END;
-$$;
+RETURN seats * unit_cents;
 
 -- input.ts: shardOf()
 CREATE OR REPLACE FUNCTION app.shard_of(
   id integer
 )
 RETURNS integer
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN id % 16;
-END;
-$$;
+RETURN id % 16;
 
 -- input.ts: withVat()
 CREATE OR REPLACE FUNCTION app.with_vat(
   amount double precision
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN amount * 1.2::double precision;
-END;
-$$;
+RETURN amount * 1.2::double precision;

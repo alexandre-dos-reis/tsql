@@ -12,13 +12,9 @@ CREATE OR REPLACE FUNCTION app.plan_label(
   region text
 )
 RETURNS text
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN plan || '-' || region;
-END;
-$$;
+RETURN plan || '-' || region;
 
 RETURN '"' || name || '" isn''t empty';
 

@@ -13,22 +13,15 @@ CREATE OR REPLACE FUNCTION app.grant_seat(
   seat app.seat
 )
 RETURNS app.seat
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
-END;
-$$;
+RETURN ROW((seat).plan, (seat).count + 1)::app.seat;
 
 CREATE OR REPLACE FUNCTION app.seat_count(
   seat app.seat
 )
 RETURNS double precision
-LANGUAGE plpgsql
+LANGUAGE sql
 IMMUTABLE
-AS $$
-BEGIN
-  RETURN (app.grant_seat(seat)).count;
-END;
-$$;
+RETURN (app.grant_seat(seat)).count;
+

@@ -89,6 +89,7 @@ src/typemap.ts          TypeScript types -> PostgreSQL types
 src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
 src/lower.ts            AST -> IR; every restriction is enforced here
+src/language.ts         which functions are `LANGUAGE sql` (inlined), and the order they are created in
 src/emit.ts             IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
