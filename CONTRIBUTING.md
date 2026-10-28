@@ -73,6 +73,8 @@ README.md               for users: what tsql does and how to use it
 docs/design.md          why: every semantic mapping and every refusal, with its reason
 CONTRIBUTING.md         this file
 examples/simple/        a project to copy: one type, one function, no tsconfig
+examples/numeric/       a project to copy: Integer, Float and the int() guard
+examples/math/          a project to copy: the Math members that compile, and the tsql.math_* helpers they call
 examples/with-postgrest/  a project to copy: PostgreSQL + PostgREST (Docker) and a React page sharing one rule
 examples/with-postgraphile/  the same with PostGraphile 5 (GraphQL)
 scripts/examples.ts     points the examples at the published version (sync) or at this checkout (link)

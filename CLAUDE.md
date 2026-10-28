@@ -77,7 +77,7 @@ shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adr/tsql` at
 `^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
-and checked for drift in CI), `with-postgrest` and
+and checked for drift in CI), `numeric` and `math` (one `input.ts` each, `output.sql` checked in: `Integer`/`Float`/`int()`, and the `Math` members with the `tsql.math_*` helpers they call), `with-postgrest` and
 `with-postgraphile` (the same todo list: PostgreSQL via Docker, a trigger calling the compiled
 function, a React page on Vite importing the same TypeScript, behind PostgREST or PostGraphile 5).
 PostGraphile 5 masks database errors, so its `graphile.config.mjs` lets a check violation (SQLSTATE
