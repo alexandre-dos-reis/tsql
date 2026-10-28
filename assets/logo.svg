@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 545" width="900" height="545" role="img" aria-labelledby="t d">
   <title id="t">tsql</title>
-  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM…) and PostgreSQL's world (tables, triggers, RLS, indexes…). Where they overlap — parity — tsql makes both give the same results.</desc>
+  <desc id="d">The tsql wordmark above two overlapping circles: TypeScript's world (fetch, window, the DOM…) and PostgreSQL's world (tables, triggers, RLS, indexes…). Where they overlap — TS = SQL — tsql makes both give the same results.</desc>
 
   <g transform="translate(450.0 0) scale(0.77) translate(-450.0 0)">
   <!-- tsql, drawn from Geist Mono SemiBold (SIL Open Font License 1.1) so it is the same everywhere -->
@@ -68,8 +68,8 @@
   <text x="684" y="419" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">tables</text>
   <text x="612" y="459" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">indexes</text>
 
-  <!-- Where they overlap: what tsql keeps identical: the same results on both sides, which `tsql parity` checks. -->
-  <text x="450.0" y="282" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700" letter-spacing="2.5">PARITY</text>
+  <!-- Where they overlap: what tsql keeps identical: TS = SQL, the same results on both sides, which `tsql parity` checks. -->
+  <text x="450.0" y="282" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.9" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="700" letter-spacing="1.5">TS = SQL</text>
   <text x="450.0" y="326" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="800">same</text>
   <text x="450.0" y="362" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="30" font-weight="800">results</text>
   </g>
