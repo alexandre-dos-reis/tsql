@@ -20,10 +20,11 @@ export function languageCaller(x: number): number {
   return languageLeaf(x) + 1;
 }
 
-// A local and a loop: no single expression, so PL/pgSQL.
+// A local and a loop: no single expression, so PL/pgSQL. The bound keeps a generated input from looping for seconds.
 export function languageLoop(n: Integer): Integer {
   let total = 0;
-  for (let i = 0; i < n; i = int(i + 1)) {
+  const last = n % 1000;
+  for (let i = 0; i < last; i = int(i + 1)) {
     total = int(total + i);
   }
   return total;

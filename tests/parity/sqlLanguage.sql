@@ -64,11 +64,13 @@ IMMUTABLE
 AS $$
 DECLARE
   total integer;
+  last integer;
   i integer;
 BEGIN
   total := 0;
+  last := n % 1000;
   i := 0;
-  WHILE i < n LOOP
+  WHILE i < last LOOP
     total := total + i;
     i := i + 1;
   END LOOP;
