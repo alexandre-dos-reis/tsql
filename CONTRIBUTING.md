@@ -66,6 +66,8 @@ should read, by hand.
 
 **A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
+**A push is refused when `src/` or `bin/` changed and no changeset describes it.** `pre-push` judges the branch as a whole against what the remote already has, so commit as you like and add the changeset any time before pushing. Only those two directories are checked, because they are what `files` ships: tests, docs, examples, workflows and the hooks reach nobody who installs the package, and demanding a changeset for them teaches writing empty ones to get past the hook. When there genuinely is nothing to announce, say so deliberately with `bun run changeset -- --empty` — that counts. `git push --no-verify` skips it.
+
 ## Layout
 
 ```

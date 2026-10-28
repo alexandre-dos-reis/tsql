@@ -379,9 +379,12 @@ test file. `tests/README.md` explains the three.
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
 
-**Commits are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at `.githooks`;
-its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be committed
-(`--no-verify` skips it, deliberately).
+**Commits and pushes are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at
+`.githooks`; its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be
+committed. `pre-push` refuses a branch that changed `src/` or `bin/` — what `files` ships — without a
+changeset among its commits, measured against what the remote already has, so the branch is judged as
+a whole rather than each commit. `bun run changeset -- --empty` is the deliberate "nothing to
+announce". Both are skipped by `--no-verify`, deliberately.
 
 ## Constraints to preserve
 

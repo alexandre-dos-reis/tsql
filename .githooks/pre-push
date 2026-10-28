@@ -1,0 +1,59 @@
+#!/bin/sh
+# No push of a change a user would see without a changeset describing it.
+#
+# Only `src/` and `bin/` are checked, because they are what the package ships
+# (`files` in package.json): a change there is what a release note is about.
+# Tests, docs, examples, the workflows and these hooks never reach anyone who
+# installs @adrdp/tsql, and demanding a changeset for them teaches writing empty
+# ones to get past the hook — which is worse than none, since the CHANGELOG is
+# read by people deciding whether to upgrade.
+#
+# The branch is judged as a whole, not each commit: commit as you like, and add
+# the changeset any time before pushing.
+#
+# Installed by `bun install` (the `prepare` script sets core.hooksPath to
+# .githooks). `git push --no-verify` skips it.
+set -e
+
+remote_name="$1"
+status=0
+
+# git feeds pre-push one line per ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # A branch being deleted has an all-zero local sha — nothing to inspect.
+  case "$local_sha" in
+    *[!0]*) ;;
+    *) continue ;;
+  esac
+
+  # A branch the remote has never seen has an all-zero remote sha. Compare
+  # against the default branch so only this branch's own commits count, not
+  # every commit since the beginning of the repository.
+  case "$remote_sha" in
+    *[!0]*) base="$remote_sha" ;;
+    *) base=$(git merge-base "$local_sha" "$remote_name/main" 2>/dev/null || true) ;;
+  esac
+  [ -n "$base" ] || continue
+
+  shipped=$(git diff --name-only "$base" "$local_sha" -- src bin)
+  [ -n "$shipped" ] || continue
+
+  # Any .changeset/*.md added in the range counts, including the one `--empty`
+  # writes: saying "no release note needed" is a decision, and a deliberate one
+  # is fine. config.json and README.md are the folder's own files, not changesets.
+  added=$(
+    git diff --name-only --diff-filter=A "$base" "$local_sha" -- .changeset |
+      grep -E '\.changeset/[^/]+\.md$' |
+      grep -v '\.changeset/README\.md$' || true
+  )
+  [ -n "$added" ] && continue
+
+  printf '\nsrc/ changed on this branch, but no changeset was added:\n' >&2
+  printf '%s\n' "$shipped" | sed 's/^/  /' >&2
+  printf '\nDescribe the change:   bun run changeset\n' >&2
+  printf 'No user-facing change: bun run changeset -- --empty\n' >&2
+  printf '\n(git push --no-verify skips this)\n\n' >&2
+  status=1
+done
+
+exit "$status"
