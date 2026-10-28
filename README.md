@@ -2,7 +2,7 @@
 
 <img src="assets/logo.svg" alt="tsql: TypeScript's world (fetch, window, the DOM) and PostgreSQL's world (tables, triggers, RLS) overlap on immutable, pure code, which tsql makes give the same answer on both sides" width="100%">
 
-### Write each function once, in TypeScript — tsql compiles it to PostgreSQL and proves both give the same answer.
+### Write your functions and types once, in TypeScript — tsql compiles them to PostgreSQL and proves both give the same answer.
 
 [![CI](https://github.com/alexandre-dos-reis/tsql/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-dos-reis/tsql/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@adr/tsql)](https://www.npmjs.com/package/@adr/tsql)

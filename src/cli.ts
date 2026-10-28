@@ -78,7 +78,7 @@ interface ParityOptions extends ProjectOptions {
 }
 
 const program = new Command("tsql")
-  .description("Compile TypeScript functions to PL/pgSQL, and prove the two agree.")
+  .description("Compile TypeScript functions and types to PostgreSQL, and prove the two agree.")
   .usage("<command> <files...> [options]")
   .version(VERSION, "-v, --version", "print the version")
   .helpOption("-h, --help", "show this help")
@@ -114,7 +114,7 @@ function projectCommand(name: string, summary: string): Command {
 
 projectCommand("compile", "type check, translate, and write the migration")
   .description(
-    "Type check the functions, translate them to PL/pgSQL, and write the migration. Point your migration tool at it. With --manifest, also write tsql-manifest.json beside it: the functions and types it holds, for tooling.",
+    "Type check the functions and types, translate them to PostgreSQL, and write the migration. Point your migration tool at it. With --manifest, also write tsql-manifest.json beside it: the functions and types it holds, for tooling.",
   )
   .option("--out <file>", "the migration to write", "generated/0001_functions.sql")
   .option("--manifest", `also write ${MANIFEST} beside the migration, describing what it holds`)
@@ -134,7 +134,7 @@ projectCommand("compile", "type check, translate, and write the migration")
 
 projectCommand("check", "type check and translate, writing nothing")
   .description(
-    "Type check the functions and translate them, writing nothing: the build fails on anything outside the subset, with the reason. Put it in CI next to your type checker.",
+    "Type check the functions and types and translate them, writing nothing: the build fails on anything outside the subset, with the reason. Put it in CI next to your type checker.",
   )
   .option("-w, --watch", "check again whenever a file of the project changes, and keep running")
   .addHelpText("after", "\nExamples:\n  tsql check functions/*.ts\n  tsql check functions/*.ts --watch")

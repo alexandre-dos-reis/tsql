@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`tsql` compiles a deliberately restricted subset of TypeScript functions to PL/pgSQL, refusing
+`tsql` compiles a deliberately restricted subset of TypeScript functions and types to PostgreSQL (PL/pgSQL functions, composite types, domains and enums), refusing
 anything whose semantics it cannot preserve, and proves the two implementations agree with generated
 parity tests. `docs/design.md` is the design document: it records *why* each restriction and each
 semantic mapping exists. Read the relevant section there before changing behaviour — most of what looks
@@ -373,7 +373,7 @@ its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cann
   a product feature: `tsql parity` runs the fast-check harness (`src/parity.ts`) against PGlite or, with
   `--db-url`, a real server through postgres.js. The harness is internal, not exported: its `RowQuery`
   callback is what lets `src/runParity.ts` swap one database for the other.
-- **Compile functions only** — no database operations. A function of its arguments alone is portable; obtaining the
+- **Compile functions and types only** — no database operations. A function of its arguments alone is portable; obtaining the
   trusted plan and counting rows belongs in PostgreSQL.
 - **Semantics are decided, not inferred.** Division always yields `double precision`; fractional
   literals are emitted as `1.5::double precision` (an unadorned `1.5` is `numeric`); nullable equality

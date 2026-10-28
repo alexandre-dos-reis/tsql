@@ -10,7 +10,7 @@ the compiler is put together, file by file; [`docs/design.md`](docs/design.md) e
 | --- | --- | --- |
 | Bun | 1.4.4 | runtime, package manager, test runner, type checker |
 | TypeScript | 7.0.2 (peer) | the compiler API the translator reads, and the native checker it drives |
-| PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated PL/pgSQL in tests |
+| PGlite | 0.5.11 | PostgreSQL 18 as WebAssembly, in process — runs the generated SQL in tests |
 | fast-check | 4.10.2 | input generation for parity tests |
 | oxfmt | 0.74.0 | formatter (`bun run format`) |
 
@@ -89,7 +89,7 @@ src/typemap.ts          TypeScript types -> PostgreSQL types
 src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
 src/lower.ts            AST -> IR; every restriction is enforced here
-src/emit.ts             IR -> PL/pgSQL, with precedence-aware parenthesising
+src/emit.ts             IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
 src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int,
