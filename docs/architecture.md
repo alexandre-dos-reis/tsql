@@ -1,6 +1,6 @@
 # Architecture
 
-How the compiler is built: the pipeline from a TypeScript file to a PL/pgSQL migration, the parity
+How the compiler is built: the pipeline from a TypeScript file to a PostgreSQL migration, the parity
 harness that checks the result, and which file in [`src/`](../src) does what.
 [`design.md`](design.md) is the *why* of each semantic choice; this document is the *where*.
 

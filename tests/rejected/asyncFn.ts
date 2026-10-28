@@ -2,7 +2,7 @@
  * Rejected: `async` functions.
  *
  * A PL/pgSQL function runs synchronously inside the query that calls it; there is
- * no Promise to return and nothing to await. A compiled function is a pure,
+ * no Promise to return and nothing to await. A compiled function is a
  * synchronous computation.
  *
  * Expected: `async` and `await` are not supported
