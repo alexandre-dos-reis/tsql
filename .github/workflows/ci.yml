@@ -1,9 +1,34 @@
 name: CI
 
 on:
+  # Prose and repository furniture are skipped: nothing in them can change what
+  # the compiler emits or whether it builds. Written as what to *skip* rather
+  # than what to run, so a directory added later is tested by default — an
+  # allowlist would silently stop covering it. Everything else still triggers,
+  # including package.json, bun.lock and tsconfig.json, which decide what the
+  # build and the packaging tests see. GitHub does not expand YAML anchors, so
+  # the list is repeated per event.
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md" # README, CLAUDE, CONTRIBUTING, CHANGELOG, docs/, tests/README
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
+      - ".changeset/**" # release metadata; the Release workflow reads it, not this one
+      - ".githooks/**" # local gates, never run here
+      - ".envrc"
+      - ".gitignore"
   pull_request:
+    paths-ignore:
+      - "**/*.md" # README, CLAUDE, CONTRIBUTING, CHANGELOG, docs/, tests/README
+      - "docs/**"
+      - "assets/**"
+      - "LICENSE"
+      - ".changeset/**" # release metadata; the Release workflow reads it, not this one
+      - ".githooks/**" # local gates, never run here
+      - ".envrc"
+      - ".gitignore"
 
 permissions:
   contents: read
