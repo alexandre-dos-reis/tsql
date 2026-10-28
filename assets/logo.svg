@@ -5,21 +5,10 @@
   <g transform="translate(450.0 0) scale(0.77) translate(-450.0 0)">
   <!-- tsql, drawn from Geist Mono SemiBold (SIL Open Font License 1.1) so it is the same everywhere -->
   <path d="M362.1 100.0Q352.468 100.0 347.87600000000003 95.576Q343.28400000000005 91.152 343.28400000000005 82.08V50.943999999999996H325.252V40.192H343.28400000000005V26.191999999999993H356.5V40.192H379.23600000000005V50.943999999999996H356.5V81.072Q356.5 89.248 364.452 89.248H379.23600000000005V100.0ZM418.684 101.344Q410.284 101.344 404.572 98.656Q398.86 95.968 395.72400000000005 91.376Q392.588 86.78399999999999 392.14 81.184L405.356 80.624Q406.252 84.88 409.5 87.4Q412.748 89.92 418.796 89.92Q430.108 89.92 430.108 83.872Q430.108 81.968 429.156 80.624Q428.204 79.28 425.404 78.328Q422.60400000000004 77.376 417.116 76.256Q408.156 74.576 403.004 72.16799999999999Q397.85200000000003 69.75999999999999 395.668 66.17599999999999Q393.48400000000004 62.592 393.48400000000004 57.44Q393.48400000000004 49.6 399.476 44.224000000000004Q405.468 38.848 417.34000000000003 38.848Q425.85200000000003 38.848 431.22800000000007 41.647999999999996Q436.60400000000004 44.448 439.46000000000004 48.928Q442.31600000000003 53.408 442.988 58.56L429.66 59.232Q428.87600000000003 55.312 425.74 52.792Q422.60400000000004 50.272 417.452 50.272Q411.964 50.272 409.5 52.4Q407.036 54.528 407.036 57.44Q407.036 61.024 410.004 62.647999999999996Q412.97200000000004 64.27199999999999 421.036 65.84Q429.884 67.52 434.812 69.75999999999999Q439.74 72.0 441.70000000000005 75.36Q443.66 78.72 443.66 83.75999999999999Q443.66 91.936 436.94000000000005 96.64Q430.22 101.344 418.684 101.344ZM508.532 116.8H495.31600000000003V91.824Q492.74 96.528 488.148 98.936Q483.556 101.344 477.62 101.344Q469.332 101.344 463.9 97.088Q458.468 92.832 455.836 85.776Q453.204 78.72 453.204 70.096Q453.204 61.472 455.836 54.36Q458.468 47.248 463.9 43.048Q469.332 38.848 477.62 38.848Q490.276 38.848 495.652 49.936L495.876 40.192H508.532ZM480.98 89.472Q487.36400000000003 89.472 491.34000000000003 84.656Q495.31600000000003 79.84 495.31600000000003 70.096Q495.31600000000003 60.352 491.34000000000003 55.536Q487.36400000000003 50.72 480.98 50.72Q474.372 50.72 470.67600000000004 55.592Q466.98 60.464 466.98 70.096Q466.98 79.728 470.67600000000004 84.6Q474.372 89.472 480.98 89.472ZM518.524 100.0V89.248H541.26V38.4Q541.26 31.232 534.0920000000001 31.232H520.764V20.480000000000004H536.1080000000001Q554.476 20.480000000000004 554.476 38.96V89.248H574.076V100.0Z" fill="#3178C6" />
-
-  <!-- A horizontal line has no height, so the gradient is in user space, not the line's bounding box. -->
-  <!-- Underlined by the direction of travel: from TypeScript, on the left, to PostgreSQL, on the right -->
-  <defs>
-    <linearGradient id="travel" gradientUnits="userSpaceOnUse" x1="345.0" y1="0" x2="565.0" y2="0">
-      <stop offset="0" stop-color="#3178C6" />
-      <stop offset="1" stop-color="#336791" />
-    </linearGradient>
-  </defs>
-  <path d="M 345.0 134 H 545.0" stroke="url(#travel)" stroke-width="4" stroke-linecap="round" fill="none" />
-  <path d="M 539.0 122 L 565.0 134 L 539.0 146 Z" fill="#336791" />
   </g>
 
   <g transform="translate(0 0)">
-  <circle cx="330" cy="325" r="195" fill="#3178C6" fill-opacity="0.10" stroke="#3178C6" stroke-opacity="0.55" stroke-width="2.5" />
+  <circle cx="330" cy="325" r="195" fill="#326FAB" stroke="#326FAB" stroke-width="2.5" />
   <circle cx="570" cy="325" r="195" fill="#336791" fill-opacity="0.12" stroke="#336791" stroke-opacity="0.65" stroke-width="2.5" />
 
   <!-- The overlap, filled: TypeScript's blue fading into PostgreSQL's -->
@@ -33,14 +22,14 @@
   <circle cx="570" cy="325" r="195" fill="url(#both)" clip-path="url(#ts-world)" />
 
   <!-- TypeScript's own world -->
-  <rect x="233" y="273" width="104" height="104" rx="21" fill="#3178C6" />
-  <text x="285" y="342" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="-1.5">TS</text>
-  <text x="300" y="209" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">setTimeout</text>
-  <text x="228" y="252" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
-  <text x="182" y="305" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
-  <text x="180" y="359" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">JSON</text>
-  <text x="216" y="419" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
-  <text x="288" y="459" text-anchor="middle" fill="#7C8BA1" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
+  <rect x="233" y="273" width="104" height="104" rx="21" fill="#FFFFFF" />
+  <text x="285" y="342" text-anchor="middle" fill="#3178C6" font-family="ui-sans-serif, -apple-system, Segoe UI, Helvetica, Arial, sans-serif" font-size="47" font-weight="700" letter-spacing="-1.5">TS</text>
+  <text x="300" y="209" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">setTimeout</text>
+  <text x="228" y="252" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">window</text>
+  <text x="182" y="305" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">DOM</text>
+  <text x="180" y="359" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">JSON</text>
+  <text x="216" y="419" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">fetch</text>
+  <text x="288" y="459" text-anchor="middle" fill="#FFFFFF" fill-opacity="0.85" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20">localStorage</text>
 
   <!-- PostgreSQL's own world: the elephant, from the project's own artwork -->
   <g transform="translate(565 268) scale(0.235)">
