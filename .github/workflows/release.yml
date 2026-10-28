@@ -11,13 +11,24 @@ name: Release
 #     release is reviewable before it happens, and nothing is published.
 #   - None exist, and package.json's version is not on the registry → it runs
 #     `bun run release` (`changeset publish`), which publishes to npm, tags
-#     `v<version>`, and creates the GitHub Release from the CHANGELOG entry.
+#     `v<version>`, and creates the GitHub Release from the same CHANGELOG entry.
 #
 # So merging the "Version Packages" PR is the single action that produces both
 # the npm release and the GitHub Release — they cannot drift apart.
 #
 # `prepublishOnly` (build, typecheck, test) runs inside `npm publish`, so a tree
 # that does not build is never published, whatever this workflow does.
+#
+# Authentication is npm **trusted publishing** (OIDC): there is no NPM_TOKEN and
+# no long-lived credential anywhere. GitHub mints a short-lived identity token
+# for this job, npm verifies it against the trusted publisher configured on the
+# package, and hands back a token good for one publish — which is also why the
+# interactive one-time password does not apply here. npm records build
+# provenance from the same token, linking the tarball to this workflow run.
+#
+# The trusted publisher on npmjs.com pins THIS FILENAME (`release.yml`), the
+# owner and the repository, and none of it can be edited afterwards — renaming
+# or moving this file breaks publishing until a new publisher is created.
 
 on:
   push:
@@ -33,6 +44,7 @@ concurrency:
 permissions:
   contents: write # commit the version bump, push the tag, create the Release
   pull-requests: write # open and update the "Version Packages" PR
+  id-token: write # mint the OIDC token that trusted publishing exchanges
 
 jobs:
   release:
@@ -49,22 +61,23 @@ jobs:
         with:
           bun-version: 1.4.4
 
-      # tests/cli.test.ts spawns the CLI under `node`, and `engines` asks for
-      # >=22.18. `prepublishOnly` runs those tests here.
+      # `changeset publish` shells out to `npm publish`, so npm is what talks
+      # OIDC: trusted publishing needs >= 11.5.1, and Node 24 ships 11.x.
+      # tests/cli.test.ts also spawns the CLI under `node`, and `engines` asks
+      # for >= 22.18.
       - uses: actions/setup-node@v4
         with:
           node-version: 24
 
       - run: bun install --frozen-lockfile
 
-      - uses: changesets/action@v1
+      # The combined action; `changesets/action/version` and
+      # `changesets/action/publish` can be split into separate jobs if the
+      # publish step should hold `id-token` without `contents`/`pull-requests`.
+      - uses: changesets/action@v2
         with:
-          version: bun run version
-          publish: bun run release
-          commit: "chore: version packages"
-          title: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # A granular automation token, which bypasses the one-time password
-          # this account requires for an interactive publish.
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          version-script: bun run version
+          publish-script: bun run release
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
+          create-github-releases: true

@@ -124,10 +124,10 @@ So merging the "Version Packages" PR is the single action producing both the npm
 
 Two pieces of setup the workflow depends on:
 
-- **`NPM_TOKEN`**, a repository secret holding a *granular automation token* with publish rights on `@adrdp/*`. It has to be an automation token: this account requires a one-time password for an interactive publish, and the npm two-factor setting must be "require two-factor authentication **or** automation tokens" rather than the variant that disallows tokens.
+- **A trusted publisher on npmjs.com** (the package's Settings → Trusted Publisher), set to GitHub Actions, owner `alexandre-dos-reis`, repository `tsql`, workflow filename `release.yml`, with *Allow `npm publish`* ticked. This is [trusted publishing](https://docs.npmjs.com/trusted-publishers): GitHub mints a short-lived OIDC token for the job, npm verifies it and returns a credential good for one publish. There is **no `NPM_TOKEN` and no long-lived secret**, the interactive one-time password does not apply, and npm records build provenance linking the tarball to the workflow run. The publisher pins the workflow *filename* and cannot be edited after creation — renaming or moving `release.yml` breaks publishing until a new publisher is made.
 - **"Allow GitHub Actions to create and approve pull requests"**, under Settings → Actions → General. Without it the action cannot open the "Version Packages" PR, and fails rather than publishing.
 
-To publish by hand instead — a broken workflow, say — `bun run release` still works, but it only publishes and tags *locally*: `git push --follow-tags` and the GitHub Release are then yours to do. npm credentials come from wherever npm finds them; if yours live outside `~/.npmrc`, point npm at them per-invocation (`NPM_CONFIG_USERCONFIG=~/.npmrc.local bun run release`) rather than committing the path into `package.json`, which would break the workflow above.
+To publish by hand instead — a broken workflow, say — `bun run release` still works, but it only publishes and tags *locally*: `git push --follow-tags` and the GitHub Release are then yours to do, and the tarball carries no provenance. A local publish authenticates as you, so it needs the one-time password trusted publishing avoids. npm credentials come from wherever npm finds them; if yours live outside `~/.npmrc`, point npm at them per-invocation (`NPM_CONFIG_USERCONFIG=~/.npmrc.local bun run release`) rather than committing the path into `package.json`, which would break the workflow above.
 
 Three decisions worth stating:
 

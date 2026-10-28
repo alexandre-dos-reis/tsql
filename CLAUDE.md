@@ -172,6 +172,10 @@ bun run changeset   # describe a change (interactive — needs a TTY)
 tags only locally and leaves the push and the GitHub Release to do. `release` must stay free of
 machine-specific paths — the workflow runs that script, where a `~/.npmrc.local` would not exist.
 
+npm authentication in CI is **trusted publishing** (OIDC, `id-token: write`): no `NPM_TOKEN`, no
+long-lived secret, and provenance recorded against the run. The trusted publisher configured on
+npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must keep that name.
+
 - **No compiled binary, deliberately.** `bun build --compile` was implemented and then removed. The
   embedded Bun runtime is the whole weight — a `console.log("hi")` binary is 104 MB and this compiler
   adds 0.5 MB to it; `strip` is a no-op because the runtime ships stripped. Five platforms cost
