@@ -297,7 +297,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
       // Lower it first: if it reaches for a runtime global, that is the more
       // useful error to report.
       await lowerExpr(expression, s);
-      throw CompileError.at(node, "This statement's value is discarded, which has no effect in a pure function.");
+      throw CompileError.at(node, "This statement's value is discarded, which has no effect in a compiled function.");
     }
 
     default:
@@ -362,7 +362,7 @@ async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
  * - **When every branch only returns a value**, the whole `switch` becomes
  *   `RETURN CASE … END`: the expression form, with the same matching rules. SQL's
  *   expression takes one value per `WHEN`, so grouped labels each get their own
- *   `WHEN` with the same result — a pure expression, of which only one runs.
+ *   `WHEN` with the same result — an expression with no effect, of which only one runs.
  */
 async function lowerSwitch(node: SwitchStatement, s: State): Promise<StmtIR[]> {
   const clauses = node.caseBlock.clauses;

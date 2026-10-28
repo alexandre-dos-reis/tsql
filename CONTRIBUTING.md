@@ -99,7 +99,7 @@ bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      CI: type check, tests, parity, example drift
 ```
 
-No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib: ["ESNext"]` itself (`FORCED_OPTIONS` in `src/program.ts`), so a pure function cannot reach for a Bun, Node or browser global that the database side has no equivalent for.
+No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib: ["ESNext"]` itself (`FORCED_OPTIONS` in `src/program.ts`), so a compiled function cannot reach for a Bun, Node or browser global that the database side has no equivalent for.
 
 ## Publishing
 

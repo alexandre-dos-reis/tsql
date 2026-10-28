@@ -78,7 +78,7 @@ interface ParityOptions extends ProjectOptions {
 }
 
 const program = new Command("tsql")
-  .description("Compile pure TypeScript functions to PL/pgSQL, and prove the two agree.")
+  .description("Compile TypeScript functions to PL/pgSQL, and prove the two agree.")
   .usage("<command> <files...> [options]")
   .version(VERSION, "-v, --version", "print the version")
   .helpOption("-h, --help", "show this help")

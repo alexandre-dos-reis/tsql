@@ -772,7 +772,7 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `break` anywhere but the end of a `switch` clause | it would need control flow a `CASE` branch does not model |
 | reassigning a parameter; an assignment used as a value; `??=`, `\|\|=`, `&&=`, `**=` | copy the parameter into a `let`; assign on a line of its own; write logical assignments out |
 | a fraction assigned to an integer `let` | a `let` takes the type of its initial value; PostgreSQL would round, so annotate it wider |
-| `n + 1;` as a statement | a discarded value has no effect in a pure function |
+| `n + 1;` as a statement | a discarded value has no effect in a compiled function |
 | `a < b` on text | ordering would follow the database collation, not TypeScript's UTF-16 order |
 | a fractional or nullable value in a template literal, a tagged template | the two languages print fractions differently; `\|\| NULL` is NULL where TypeScript writes `null`; a tag is a function call |
 | `%` on `double precision` | the operator does not exist for `float8` in PostgreSQL |
