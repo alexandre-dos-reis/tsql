@@ -328,15 +328,35 @@ longest prefix it understands and ignores whatever follows, so `parseInt('12abc'
 `'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
 parser, in the `tsql` schema: `tsql.number_parse_int` and `tsql.number_parse_int_10`.
 
-**The result is a `Float`, never an `Integer`.** It can be `NaN`, and it is not bounded by 32 bits
-(`parseInt('2147483648')`), so calling it an `Integer` would be a lie TypeScript also refuses. Neither of
-those is an edge case: `NaN` is what *any* unparseable string gives, which for a parser is the ordinary
-failure path, and ten digits leave `integer` behind. TypeScript agrees — `parseInt` is declared to return
-`number`, and TypeScript has no integer type at all. "parseInt" names what is *parsed*, a run of digits with
-no fraction, not the type that comes back.
+**It must sit inside `int(...)`, and is then an `Integer`.** The helper returns `double precision`, because
+`NaN` and values past 32 bits are among the answers — `NaN` is what *any* unreadable string gives, and ten
+digits leave `integer` behind. Neither is representable as an `integer`, so the result is not one until
+something has said what becomes of them. `int` is that something: it throws on both in TypeScript, and the
+cast it lowers to raises on both in PostgreSQL, so the two sides agree — including when they agree by both
+raising, which the parity harness counts as agreement. Unguarded, `Number.parseInt` is refused.
 
-That is why `tsql.number_parse_int` returns `double precision`, which reads oddly as SQL until the prefix is
-read: like `tsql.math_round`, which also returns a double, the `number_` prefix says this is not a
+`int(...)` here is a *conversion*, where around arithmetic it is a *guard* that erases itself. It lowers to a
+plain `::integer` cast, and no helper is needed for it, because the cast already matches `int` on every value
+`parseInt` can produce:
+
+| Value | `int()` | `::integer` |
+| --- | --- | --- |
+| an exact integer in range | the value | the value |
+| `NaN`, `±Infinity` | throws | raises |
+| past 32 bits | throws | raises |
+| **a fraction** | **throws** | **rounds** |
+
+Only the last row disagrees, and `parseInt` cannot produce it: it reads a run of digits and stops at the `.`,
+so `"12.9"` is `12`. That is why the rule is narrow — `int()` lowers to a cast when its argument's value is
+*necessarily whole*, which `src/number.ts` records per member as `whole`, not whenever its argument is a
+double. `int()` around arbitrary `Float` arithmetic stays refused, for exactly the fraction case.
+
+One difference is deliberate and unobservable: `parseInt("-0")` is `-0`, which TypeScript's `int` returns as
+it is while `integer` has no negative zero and the cast gives `0`. Nothing an `integer` can do tells them
+apart, and `src/parity.ts` already compares ±0 as equal.
+
+That is also why `tsql.number_parse_int` returns `double precision`, which reads oddly as SQL until the prefix
+is read: like `tsql.math_round`, which also returns a double, the `number_` prefix says this is not a
 general-purpose SQL function but the SQL that reproduces one JavaScript function exactly. A helper named
 `parse_int` returning a double would be a trap; named for its namespace, the signature is the point.
 

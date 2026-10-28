@@ -49,23 +49,23 @@ export function withVat(amount: Float): Float {
 }
 
 /**
- * Reading a number out of text is `Number.parseInt`, and the result is a
- * `Float` rather than an `Integer`: it is `NaN` when there are no digits, and
- * it is not bounded by 32 bits.
+ * Reading a number out of text is `Number.parseInt`, and it must sit inside
+ * `int(...)` like any other source of an `Integer`: it answers `NaN` for text
+ * it cannot read and is not bounded by 32 bits, and `int` raises on both — as
+ * PostgreSQL's cast does, so the two agree.
  *
  * It is a parser, not a cast. JavaScript reads the longest prefix it
  * understands and ignores the rest, so `"12abc"` is 12 where `'12abc'::integer`
  * would raise. That is `tsql.number_parse_int_10` in `output.sql`.
  */
-export function centsFromText(text: string): Float {
-  return Number.parseInt(text, 10);
+export function centsFromText(text: string): Integer {
+  return int(Number.parseInt(text, 10));
 }
 
 /**
  * Without a radix, a leading `0x` is read as hexadecimal, exactly as TypeScript
  * does — `"0x1F"` is 31, where the call above stops at the `x` and gives 0.
- * That one compiles to `tsql.number_parse_int`.
  */
-export function anyBaseFromText(text: string): Float {
-  return Number.parseInt(text);
+export function anyBaseFromText(text: string): Integer {
+  return int(Number.parseInt(text));
 }

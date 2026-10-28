@@ -1145,7 +1145,7 @@ async function lowerCall(node: CallExpression, s: State, guarded = false): Promi
     const array = await arrayOperand(access.expression, s);
     if (array) return lowerArrayMethod(node, access, array, s);
     if (await isMathGlobal(access.expression, s)) return lowerMathCall(node, access, s, guarded);
-    if (await isNumberGlobal(access.expression, s)) return lowerNumberCall(node, access, s);
+    if (await isNumberGlobal(access.expression, s)) return lowerNumberCall(node, access, s, guarded);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
@@ -1277,7 +1277,12 @@ async function isNumberGlobal(node: Expression, s: State): Promise<boolean> {
  *   were measured. A radix that is not a literal cannot be checked at build
  *   time at all, and the compiler does not emit SQL it has not measured.
  */
-async function lowerNumberCall(node: CallExpression, access: PropertyAccessExpression, s: State): Promise<ExprIR> {
+async function lowerNumberCall(
+  node: CallExpression,
+  access: PropertyAccessExpression,
+  s: State,
+  guarded: boolean,
+): Promise<ExprIR> {
   const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
   const entry = numberFunction(member);
   if (!entry) throw CompileError.at(access, unsupportedNumberMessage(member));
@@ -1298,6 +1303,31 @@ async function lowerNumberCall(node: CallExpression, access: PropertyAccessExpre
     );
   }
 
+  const radix = node.arguments.length === 2 ? (node.arguments[1] as Expression) : undefined;
+  if (radix && (radix.kind !== SyntaxKind.NumericLiteral || (radix as NumericLiteral).text !== "10")) {
+    throw CompileError.at(
+      radix,
+      `\`${label}\` accepts the radix \`10\` written as a literal, or no radix at all — which reads a leading \`0x\` as hexadecimal, as TypeScript does. ` +
+        `Another radix, or one that is not a literal, would be SQL whose agreement with TypeScript has not been measured.`,
+    );
+  }
+
+  // A whole-valued member must sit directly inside `int(...)`, which is what
+  // makes the two sides agree: TypeScript's `int` throws on `NaN` and past 32
+  // bits, and PostgreSQL's cast raises on exactly those. Unguarded, the value
+  // would be a `Float` carrying a `NaN` that nothing had to account for.
+  //
+  // Checked *after* the radix, so a call with an unusable radix is told about
+  // the radix rather than handed a rewrite that would be refused in turn.
+  if (entry.whole && !guarded) {
+    throw CompileError.at(
+      node,
+      `\`${label}\` must sit directly inside \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adrdp/tsql"\`), which makes it an \`Integer\`. ` +
+        `It answers \`NaN\` for text it cannot read and is not bounded by 32 bits, and \`${INT_GUARD}\` raises on both — as PostgreSQL does, so the two agree. ` +
+        `Write \`${INT_GUARD}(${label}(${node.arguments.map((a) => a.getText()).join(", ")}))\`.`,
+    );
+  }
+
   const text = await lowerExpr(node.arguments[0] as Expression, s);
   if (!isScalar(text.type) || !isExactly(text.type, "text") || text.type.nullable) {
     throw CompileError.at(
@@ -1307,18 +1337,17 @@ async function lowerNumberCall(node: CallExpression, access: PropertyAccessExpre
     );
   }
 
-  // No radix: JavaScript reads an `0x` prefix as hexadecimal, which the helper does.
-  if (node.arguments.length === 1) return helper(s, entry.helper, [text], DOUBLE);
+  // The helper returns a double — `NaN` and values past 32 bits are among its
+  // answers — and the cast is what `int(...)` becomes: it raises on exactly the
+  // values TypeScript's `int` throws on, and its one other behaviour, rounding a
+  // fraction, cannot arise because `parseInt` stops at the `.`.
+  const whole = (value: ExprIR): ExprIR =>
+    entry.whole ? { kind: "cast", operand: value, to: "integer", type: scalarType("integer") } : value;
 
-  const radix = node.arguments[1] as Expression;
-  if (radix.kind !== SyntaxKind.NumericLiteral || (radix as NumericLiteral).text !== "10") {
-    throw CompileError.at(
-      radix,
-      `\`${label}\` accepts the radix \`10\` written as a literal, or no radix at all — which reads a leading \`0x\` as hexadecimal, as TypeScript does. ` +
-        `Another radix, or one that is not a literal, would be SQL whose agreement with TypeScript has not been measured.`,
-    );
-  }
-  return helper(s, entry.decimalHelper, [text], DOUBLE);
+  // No radix: JavaScript reads an `0x` prefix as hexadecimal, which the helper does.
+  if (!radix) return whole(helper(s, entry.helper, [text], DOUBLE));
+
+  return whole(helper(s, entry.decimalHelper, [text], DOUBLE));
 }
 
 async function lowerMathCall(

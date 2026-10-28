@@ -9,6 +9,7 @@
  * Expected: accepts the radix `10` written as a literal
  * Expected: has not been measured
  * Not expected: is not supported
+ * Not expected: must sit directly inside
  */
 export function fromHex(text: string): number {
   return Number.parseInt(text, 16); // ← rejected here

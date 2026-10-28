@@ -20,10 +20,20 @@ export interface NumberFunction {
   readonly helper: "number_parse_int";
   /** The helper it becomes when the radix is the literal 10. */
   readonly decimalHelper: "number_parse_int_10";
+  /**
+   * Whether the result is necessarily a whole number. `parseInt` reads a run of
+   * digits and stops at the `.`, so it is — `"12.9"` is 12 — and the value is
+   * therefore either an exact integer, `NaN`, or an infinity. That is what lets
+   * `int(...)` lower to a plain cast: PostgreSQL's `double precision::integer`
+   * raises on all three of the cases `int` throws on, and rounds only on a
+   * fraction, which cannot arrive here. A member whose result could be
+   * fractional would be `false`, and would stay a `Float`.
+   */
+  readonly whole: boolean;
 }
 
 export const NUMBER_FUNCTIONS: Readonly<Record<string, NumberFunction>> = {
-  parseInt: { helper: "number_parse_int", decimalHelper: "number_parse_int_10" },
+  parseInt: { helper: "number_parse_int", decimalHelper: "number_parse_int_10", whole: true },
 };
 
 /** `Object.hasOwn`, so `Number.constructor` and `Number.toString` are not mistaken for members. */

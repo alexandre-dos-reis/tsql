@@ -49,10 +49,10 @@ $tsql$;
 CREATE OR REPLACE FUNCTION app.any_base_from_text(
   text text
 )
-RETURNS double precision
+RETURNS integer
 LANGUAGE sql
 IMMUTABLE
-RETURN tsql.number_parse_int(text);
+RETURN tsql.number_parse_int(text)::integer;
 
 -- input.ts: asEuros()
 CREATE OR REPLACE FUNCTION app.as_euros(
@@ -67,10 +67,10 @@ RETURN cents::double precision / 100;
 CREATE OR REPLACE FUNCTION app.cents_from_text(
   text text
 )
-RETURNS double precision
+RETURNS integer
 LANGUAGE sql
 IMMUTABLE
-RETURN tsql.number_parse_int_10(text);
+RETURN tsql.number_parse_int_10(text)::integer;
 
 -- input.ts: invoiceCents()
 CREATE OR REPLACE FUNCTION app.invoice_cents(

@@ -6,6 +6,7 @@
  * already have been written for base ten.
  *
  * Expected: written as a literal
+ * Not expected: must sit directly inside
  */
 export function read(text: string, radix: number): number {
   return Number.parseInt(text, radix); // ← rejected here
