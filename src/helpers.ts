@@ -55,20 +55,11 @@ const D = "double precision";
 const WHITESPACE =
   "\\t\\n\\x0B\\f\\r \\u00a0\\u1680\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
 
-/**
- * The value from which a double rounds to Infinity: the midpoint between the
- * largest double and 2^1024, which is 2^1024 - 2^970. Exact, as a decimal
- * integer, so the comparison happens in `numeric` and not in floating point.
- */
-const INFINITE_AT = (2n ** 1024n - 2n ** 970n).toString();
 
 /** The input with leading whitespace removed. A schema-qualified `substring` takes two arguments, never `from`. */
 const TRIMMED = `pg_catalog.ltrim(s, E'${WHITESPACE}')`;
 /** The longest prefix JavaScript would read in base ten: a sign and digits. NULL when there is none. */
 const MATCHED = `pg_catalog.substring(${TRIMMED}, '^[+-]?[0-9]+')`;
-const NEGATIVE = `pg_catalog.left(${MATCHED}, 1) = '-'`;
-/** The digits alone, without sign or leading zeros, so `''` means the value is a zero. */
-const DIGITS = `pg_catalog.ltrim(pg_catalog.ltrim(${MATCHED}, '+-'), '0')`;
 /**
  * The `0x` prefix with its sign, NULL when there is none. Detecting the prefix
  * is separate from reading the digits because JavaScript *commits* to base 16
@@ -77,12 +68,19 @@ const DIGITS = `pg_catalog.ltrim(pg_catalog.ltrim(${MATCHED}, '+-'), '0')`;
  */
 const HEX_PREFIX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]')`;
 /**
- * Base ten, as an expression rather than a call: `number_parse_int` falls back to it
- * when there is no `0x` prefix, and a helper calling another helper would need
- * the migration to carry and create them in dependency order, which it does not
- * — it installs the helpers its *functions* use.
+ * Base ten, as a double. Short because the helper returns `integer`: a value
+ * that will not fit has to raise, and `numeric::double precision` raising on
+ * overflow — the thing the double-returning version had to work around — is
+ * now exactly what is wanted. There is no `-0` case either, `integer` having no
+ * negative zero, and no `Infinity` case, an infinity and a merely-too-large
+ * value both being out of range.
+ *
+ * An expression rather than a call to `number_parse_int_10`, because
+ * `runtimeSql` creates the helpers in alphabetical order — which puts
+ * `number_parse_int` first — and a migration carries only the helpers its
+ * *functions* use, so the callee might not be installed at all.
  */
-const DECIMAL = `CASE WHEN ${MATCHED} IS NULL THEN 'NaN'::${D} WHEN ${DIGITS} = '' THEN CASE WHEN ${NEGATIVE} THEN '-0'::${D} ELSE 0::${D} END WHEN pg_catalog.length(${DIGITS}) > 309 OR ${DIGITS}::numeric >= ${INFINITE_AT}::numeric THEN CASE WHEN ${NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END ELSE ${MATCHED}::numeric::${D} END`;
+const DECIMAL = `CASE WHEN ${MATCHED} IS NULL THEN 'NaN'::${D} ELSE ${MATCHED}::numeric END`;
 /** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
 const HEX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]([0-9a-fA-F]+)')`;
 const HEX_NEGATIVE = `pg_catalog.left(${HEX_PREFIX}, 1) = '-'`;
@@ -187,8 +185,7 @@ export const HELPERS = {
     returns: "integer",
     body:
       `SELECT (CASE WHEN ${HEX_PREFIX} IS NULL THEN ${DECIMAL} WHEN ${HEX} IS NULL THEN 'NaN'::${D} ` +
-      `WHEN v >= ${INFINITE_AT}::numeric THEN CASE WHEN ${HEX_NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END ` +
-      `WHEN v = 0 AND ${HEX_NEGATIVE} THEN '-0'::${D} WHEN ${HEX_NEGATIVE} THEN -v::${D} ELSE v::${D} END)::integer ` +
+      `WHEN ${HEX_NEGATIVE} THEN -v ELSE v END)::integer ` +
       `FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v ` +
       `FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(${HEX}), '') WITH ORDINALITY AS t(d, n)) q`,
   },
