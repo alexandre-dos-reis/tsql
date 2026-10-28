@@ -107,4 +107,4 @@ test("every Math function agrees with JavaScript on NaN, infinities and signed z
     }
   }
   expect(failures).toEqual([]);
-});
+}, 60_000); // one round trip per function and value: slow on a real server
