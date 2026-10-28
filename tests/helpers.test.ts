@@ -119,7 +119,11 @@ describe("a migration brings the helpers up to date", () => {
     );
     const text = plan.rows.map((row) => row["QUERY PLAN"]).join("\n");
     expect(text).not.toContain(`${TSQL_SCHEMA}.number_parse_int(`);
-    expect(text).toContain("CASE");
+    // The parser itself, inlined. Not `CASE`: with the radix a constant, the
+    // planner folds the branch that chooses a base away entirely, so a call
+    // written `(s, 10)` costs nothing for the hexadecimal side it cannot reach.
+    expect(text).toContain("substring");
+    expect(text).toContain("COALESCE");
   });
 });
 

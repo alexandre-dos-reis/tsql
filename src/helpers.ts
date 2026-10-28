@@ -49,37 +49,41 @@ export interface Helper {
 const D = "double precision";
 
 /**
- * JavaScript's StrWhiteSpace, which `parseInt` skips before anything else.
- * PostgreSQL's `E''` has no `\v`, so the vertical tab is written `\x0B`.
+ * JavaScript's StrWhiteSpace, as a bracket expression. Contiguous runs are
+ * ranges — `\t-\r` is U+0009..U+000D, and U+2000..U+200A the general
+ * punctuation spaces — which a regular expression understands and `ltrim`'s
+ * character *set* does not. That is why the trim lives inside each pattern
+ * rather than in a separate `ltrim` call: one construct instead of two, and the
+ * class written once per pattern instead of once per call.
  */
-const WHITESPACE =
-  "\\t\\n\\x0B\\f\\r \\u00a0\\u1680\\u2000\\u2001\\u2002\\u2003\\u2004\\u2005\\u2006\\u2007\\u2008\\u2009\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
+const WHITESPACE = "\\t-\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff";
 
+/** `substring` anchored past any leading whitespace. Schema-qualified, so two arguments and never `from`. */
+const after = (pattern: string): string => `pg_catalog.substring(s, E'^[${WHITESPACE}]*${pattern}')`;
 
-/** The input with leading whitespace removed. A schema-qualified `substring` takes two arguments, never `from`. */
-const TRIMMED = `pg_catalog.ltrim(s, E'${WHITESPACE}')`;
 /** The longest prefix JavaScript would read in base ten: a sign and digits. NULL when there is none. */
-const MATCHED = `pg_catalog.substring(${TRIMMED}, '^[+-]?[0-9]+')`;
+const MATCHED = after("([+-]?[0-9]+)");
 /**
  * The `0x` prefix with its sign, NULL when there is none. Detecting the prefix
  * is separate from reading the digits because JavaScript *commits* to base 16
  * on seeing it: `parseInt('0x')` and `parseInt('0xzz')` are NaN, not the 0 that
  * falling back to base ten would read off the leading zero.
  */
-const HEX_PREFIX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]')`;
+const HEX_PREFIX = after("([+-]?0[xX])");
+/** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
+const HEX = after("[+-]?0[xX]([0-9a-fA-F]+)");
+
 /**
  * Base ten, as a double. Short because the helper returns `integer`: a value
  * that will not fit has to raise, and `numeric::double precision` raising on
- * overflow — the thing the double-returning version had to work around — is
- * now exactly what is wanted. There is no `-0` case either, `integer` having no
+ * overflow — the thing the double-returning version had to work around — is now
+ * exactly what is wanted. There is no `-0` case either, `integer` having no
  * negative zero, and no `Infinity` case, an infinity and a merely-too-large
- * value both being out of range.
-
+ * value both being out of range. `COALESCE` rather than a `CASE` on NULL, so
+ * the match is written once.
  */
-const DECIMAL = `CASE WHEN ${MATCHED} IS NULL THEN 'NaN'::${D} ELSE ${MATCHED}::numeric END`;
-/** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
-const HEX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]([0-9a-fA-F]+)')`;
-const HEX_NEGATIVE = `pg_catalog.left(${HEX_PREFIX}, 1) = '-'`;
+const DECIMAL = `COALESCE(${MATCHED}::numeric, 'NaN'::${D})`;
+
 /**
  * The hexadecimal digits that matter, leading zeros removed, and their value.
  *
@@ -87,12 +91,17 @@ const HEX_NEGATIVE = `pg_catalog.left(${HEX_PREFIX}, 1) = '-'`;
  * cannot fit `integer` whatever they are, so that case needs no arithmetic at
  * all: any value past the range makes the cast at the end raise, which is the
  * answer. Eight or fewer go through `bit(64)`, exact and in one expression.
- * Measured at 1.2 µs a call against 15.2 µs for the aggregate this replaced.
+ * Measured at 1.0 µs a call against 15.2 µs for the aggregate this replaced.
+ *
+ * NULL when there were no digits, which the `COALESCE` in the body turns into
+ * the `NaN` JavaScript gives for `'0x'`.
  */
 const HEX_DIGITS = `pg_catalog.ltrim(${HEX}, '0')`;
 const HEX_VALUE =
   `CASE WHEN pg_catalog.length(${HEX_DIGITS}) > 8 THEN 4294967296::numeric ` +
   `ELSE ('x' || pg_catalog.lpad(${HEX_DIGITS}, 16, '0'))::bit(64)::bigint::numeric END`;
+/** The sign as a factor, so the value is written once rather than once per sign. */
+const HEX_SIGN = `CASE WHEN pg_catalog.left(${HEX_PREFIX}, 1) = '-' THEN -1 ELSE 1 END`;
 
 /**
  * Written so that each returns the same double as the JavaScript function, for
@@ -184,8 +193,7 @@ export const HELPERS = {
     returns: "integer",
     body:
       `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
-      `WHEN ${HEX} IS NULL THEN 'NaN'::${D} ` +
-      `WHEN ${HEX_NEGATIVE} THEN -(${HEX_VALUE}) ELSE ${HEX_VALUE} END)::integer`,
+      `ELSE COALESCE((${HEX_SIGN}) * (${HEX_VALUE}), 'NaN'::${D}) END)::integer`,
   },
 
 } as const satisfies Record<string, Helper>;

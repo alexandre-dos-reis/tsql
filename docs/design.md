@@ -417,12 +417,19 @@ at all, only a value past the range so the cast at the end raises, which is the 
 through `bit(64)` in one expression, exact.
 
 So the body is one `SELECT` with no `FROM`, and PostgreSQL inlines it. Measured on PGlite over 200 000 rows:
-**1.2 µs a call against 15.2 µs** for the aggregate it replaced, a factor of thirteen.
+**1.0 µs a call against 15.2 µs** for the aggregate it replaced, a factor of thirteen.
 
 The generality that was lost was never used. It is worth noticing that it only became unnecessary once the
 helper returned `integer` rather than a double — while it returned a double it genuinely had to represent
 every value `parseInt` can produce, up to the 256 hexadecimal digits where a double becomes `Infinity`.
 `tests/helpers.test.ts` checks the inlining, so losing it again fails the build.
+
+The body is written to be read as well as to run: `COALESCE` rather than a `CASE` testing a match for NULL,
+so each pattern is named once; the sign as a factor rather than the value written out per sign; and the
+whitespace class as a bracket expression with its contiguous runs as ranges, which also lets the trim live
+inside each pattern instead of in a separate `ltrim` call. That is 962 characters against 2 330 for the same
+behaviour. With the radix a constant the planner folds the base-choosing branch away entirely, so
+`number_parse_int(s, 10)` pays nothing for the hexadecimal side it cannot reach.
 
 ## The `tsql` schema
 

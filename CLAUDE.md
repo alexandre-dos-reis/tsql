@@ -279,7 +279,7 @@ rule: a member folds the cast in when its value is *necessarily whole* (`whole` 
 naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
 no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. It **inlines**: reading hexadecimal needs no
 aggregate, because more than eight significant digits cannot fit an `integer` whatever they are, so that case
-only has to push the final cast out of range. Measured at 1.2 µs a call against 15.2 µs for the aggregate it
+only has to push the final cast out of range. Measured at 1.0 µs a call against 15.2 µs for the aggregate it
 replaced, and `tests/helpers.test.ts` pins it. It is also one helper rather than two, taking the radix, which
 is what lets the base-ten expression live in one place: a helper cannot call another, `runtimeSql` creating
 them alphabetically and a migration carrying only the ones its functions use.

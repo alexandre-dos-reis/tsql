@@ -10,5 +10,5 @@
  */
 export const HELPER_HASHES: readonly string[] = [
   "bc6e2ac59d076aebba3326e3480d769316be8214e898b4944b5ac2b5ace98b81",
-  "54589a197c03fd4a9bdc646339c9b313a618d5411f1733fb58aa840037ede40a",
+  "bcb5cd88aa8e5d02a07029ac133ec7e71c04a4936b9a0a8da2a5d83726d0901f",
 ];
