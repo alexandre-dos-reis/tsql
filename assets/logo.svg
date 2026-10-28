@@ -19,7 +19,7 @@
   </g>
 
   <g transform="translate(0 0)">
-  <circle cx="330" cy="325" r="195" fill="#3178C6" fill-opacity="0.10" stroke="#3178C6" stroke-opacity="0.55" stroke-width="2.5" />
+  <circle cx="330" cy="325" r="195" fill="#326FAB" fill-opacity="0.12" stroke="#326FAB" stroke-opacity="0.65" stroke-width="2.5" />
   <circle cx="570" cy="325" r="195" fill="#336791" fill-opacity="0.12" stroke="#336791" stroke-opacity="0.65" stroke-width="2.5" />
 
   <!-- The overlap, filled: TypeScript's blue fading into PostgreSQL's -->
