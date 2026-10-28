@@ -12,7 +12,11 @@
  *   own chunk, loaded only by that command.
  * - Not minified: a stack trace from a user should be readable as it is.
  *
- * The types stay the sources: `exports` maps `types` to `src/*.ts`.
+ * The types are emitted beside it: `tsc --emitDeclarationOnly` writes
+ * `dist/index.d.ts`, which `exports` maps `types` to. Shipping the source
+ * instead would work — `src/index.ts` imports nothing, so it stands alone — but
+ * a declaration is what every consumer's editor and type checker expects, costs
+ * them no parse of our implementation, and keeps `src/` out of the package.
  */
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -33,6 +37,40 @@ export async function build(outdir = join(root, "dist")): Promise<void> {
   if (!result.success) {
     throw new AggregateError(result.logs, "The build failed.");
   }
+  await declarations(outdir);
+}
+
+/**
+ * `dist/index.d.ts`, from the authoring module.
+ *
+ * It lives here rather than chained after this script in `package.json` because
+ * `build` takes the directory to write to, and `tests/packaging.test.ts` calls
+ * it with a throwaway one to assemble a complete installed package — which the
+ * declaration has to land in too, or the types the test resolves are the ones
+ * in this repository rather than the ones that ship.
+ *
+ * `--ignoreConfig` because naming a file on the command line makes `tsc` refuse
+ * the tsconfig rather than ignore it, and this emit wants neither the repo's
+ * `include` (which reaches the tests) nor its `types`. Nothing else is needed:
+ * `index.ts` imports nothing and annotates everything it exports, so target,
+ * module resolution and `strict` cannot change a declaration that is only the
+ * annotations already written.
+ */
+async function declarations(outdir: string): Promise<void> {
+  const proc = Bun.spawn(
+    [
+      join(root, "node_modules", ".bin", "tsc"),
+      join(root, "src", "index.ts"),
+      "--ignoreConfig",
+      "--declaration",
+      "--emitDeclarationOnly",
+      "--outDir",
+      outdir,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+  if ((await proc.exited) !== 0) throw new Error(`Emitting index.d.ts failed:\n${out}${err}`);
 }
 
 if (import.meta.main) {

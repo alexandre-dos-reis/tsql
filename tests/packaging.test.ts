@@ -98,26 +98,26 @@ describe("the published layout is coherent", () => {
     expect(Object.keys(manifest.peerDependencies ?? {})).toEqual(["typescript"]);
   });
 
-  // Types come from the sources, code from the build: `dist/` is not in the
-  // repository, so only its place in `files` is checked here, and the
-  // installed-copy test below builds it and runs it.
-  test("every exported entry point ships: its types from src, its code from dist", async () => {
+  // Types and code both come from the build, so `dist/` is the whole of what an
+  // entry point resolves to. It is not in the repository — only its place in
+  // `files` is checked here, and the installed-copy test below builds it, runs
+  // it, and type checks against the declaration it emitted.
+  test("every exported entry point ships, types and code alike, from dist", async () => {
     for (const [entry, target] of Object.entries(manifest.exports)) {
       expect(entry.startsWith(".")).toBe(true);
       if (typeof target === "string") {
         expect(target).toBe("./package.json");
         continue;
       }
-      expect(target.types).toMatch(/^\.\/src\/.+\.ts$/);
-      expect(await Bun.file(target.types).exists()).toBe(true);
+      expect(target.types).toMatch(/^\.\/dist\/.+\.d\.ts$/);
       expect(target.default).toMatch(/^\.\/dist\/.+\.mjs$/);
-      // The types entry must be listed in `files` by name. Only `src/index.ts`
-      // ships: it imports nothing, so every other file in `src/` would be bytes
-      // no consumer can resolve.
-      expect(manifest.files).toContain(target.types.replace(/^\.\//, ""));
     }
     expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist"]));
+    // No source ships: the declaration is what a consumer resolves, so `src/`
+    // would be bytes nothing reaches — and `src/*.ts` would be unresolvable
+    // anyway under the forced options a compiled project type checks with.
     expect(manifest.files).not.toContain("src");
+    expect(manifest.files.some((name) => name.startsWith("src/"))).toBe(false);
   });
 
   test("the launcher ships, and runs the build", async () => {
@@ -137,7 +137,7 @@ describe("the published layout is coherent", () => {
   // failed. Build, install a copy there with its dependencies beside it, and run
   // it under node: the CLI, and the authoring module too.
   test("an installed copy runs under node, from node_modules", async () => {
-    const { cpSync, symlinkSync, rmSync } = await import("node:fs");
+    const { cpSync, symlinkSync, rmSync, writeFileSync } = await import("node:fs");
     const root = mkdtempSync(join(tmpdir(), "tsql-installed-"));
     try {
       const installed = join(root, "node_modules", ...manifest.name.split("/"));
@@ -184,6 +184,40 @@ describe("the published layout is coherent", () => {
       );
       expect((await new Response(authoring.stdout).text()).trim()).toBe("function 42 true");
       expect(await new Response(authoring.stderr).text()).toBe("");
+
+      // And the types resolve from that same installed layout. `exports` points
+      // `types` at a file the build emits, so a wrong path or a missing emit
+      // would leave every consumer with an untyped import and nothing here
+      // would have noticed: the code would still run.
+      writeFileSync(
+        join(root, "consumer.ts"),
+        `import { int, type Integer, type Float } from ${JSON.stringify(manifest.name)};\n` +
+          "export const n: Integer = int(1 + 1);\n" +
+          "export const f: Float = 1.5;\n" +
+          // `int` returns a number, so assigning it to a string must be an error:
+          // proves the declaration is being read, not silently treated as `any`.
+          "// @ts-expect-error int returns a number\n" +
+          "export const bad: string = int(1);\n",
+      );
+      const types = Bun.spawn(
+        [
+          join(resolve("node_modules"), ".bin", "tsc"),
+          join(root, "consumer.ts"),
+          "--ignoreConfig",
+          "--noEmit",
+          "--strict",
+          "--target",
+          "esnext",
+          "--module",
+          "esnext",
+          "--moduleResolution",
+          "bundler",
+        ],
+        { cwd: root, stdout: "pipe", stderr: "pipe" },
+      );
+      const typeOut = (await new Response(types.stdout).text()) + (await new Response(types.stderr).text());
+      expect(typeOut).toBe("");
+      expect(await types.exited).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
