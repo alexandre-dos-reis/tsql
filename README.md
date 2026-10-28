@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" alt="tsql: TypeScript's world (fetch, window, the DOM) and PostgreSQL's world (tables, triggers, RLS) overlap on immutable, pure code, which tsql makes give the same answer on both sides" width="100%">
+<img src="assets/logo.svg" alt="tsql: TypeScript's world (fetch, window, the DOM) and PostgreSQL's world (tables, triggers, RLS) overlap on TS = SQL: the same results on both sides, which tsql checks" width="100%">
 
 ### Write each pure function once, in TypeScript — tsql compiles it to PostgreSQL and proves both give the same answer.
 
