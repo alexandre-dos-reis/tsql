@@ -9,6 +9,8 @@ CREATE TYPE app.table_status AS ENUM ('open', 'shipped');
 
 CREATE DOMAIN app.table_tier AS text CONSTRAINT table_tier_values CHECK (VALUE = ANY (ARRAY['gold', 'standard']));
 
+CREATE DOMAIN app.table_zone AS text CONSTRAINT table_zone_values CHECK (VALUE = ANY (ARRAY['north', 'south']));
+
 IF to_regtype('app.table_row') IS NULL THEN
   CREATE TYPE app.table_row AS (
     label text,
