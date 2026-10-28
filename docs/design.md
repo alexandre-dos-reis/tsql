@@ -326,7 +326,7 @@ What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL r
 `Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
 longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
 `'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
-parser, in the `tsql` schema: `tsql.number_parse_int` and `tsql.number_parse_int_10`.
+parser, in the `tsql` schema: `tsql.number_parse_int`.
 
 **It must sit inside `int(...)`, and is then an `Integer`.** The helper returns `double precision`, because
 `NaN` and values past 32 bits are among the answers — `NaN` is what *any* unreadable string gives, and ten
@@ -397,10 +397,12 @@ past the 53 bits of the mantissa and round differently from V8 somewhere; this o
 including the ties at `2^53` and the boundary where 256 hexadecimal digits become `Infinity`. Correctness is
 the rule inlining is measured against, not the other way round.
 
-Neither helper calls the other. `number_parse_int` falls back to base ten by repeating the expression rather than
-calling `number_parse_int_10`, because a migration carries the helpers its *functions* use and creates them in no
-particular order — a helper depending on a helper would need both a dependency graph and an ordering, for a
-saving in generated text nobody reads.
+There is **one** helper, not two, and it takes the radix as JavaScript does: 10 for base ten, 0 for an omitted
+one. That keeps the base-ten expression in a single place and means no helper calls another — which a
+migration could not have ordered anyway, `runtimeSql` creating them alphabetically and carrying only the ones
+its functions use. The cost is that base ten no longer inlines either, the hexadecimal aggregate's `FROM`
+being on every call; the regular expression over the string dominates that, and correctness and one
+definition were judged worth it.
 
 ## The `tsql` schema
 

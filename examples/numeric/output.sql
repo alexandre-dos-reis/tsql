@@ -22,16 +22,11 @@ BEGIN
     RAISE EXCEPTION 'this database holds tsql runtime revision %, newer than the revision 2 this tsql writes: update tsql before compiling again', installed;
   END IF;
   FOR helper, sql IN SELECT * FROM (VALUES
-    ('tsql.number_parse_int(text)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_int(s text)
+    ('tsql.number_parse_int(text, integer)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_int(s text, radix integer)
 RETURNS integer
 LANGUAGE sql
 IMMUTABLE PARALLEL SAFE
-AS $body$SELECT (CASE WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]') IS NULL THEN CASE WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+') IS NULL THEN 'NaN'::double precision ELSE pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+')::numeric END WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]([0-9a-fA-F]+)') IS NULL THEN 'NaN'::double precision WHEN pg_catalog.left(pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]'), 1) = '-' THEN -v ELSE v END)::integer FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]([0-9a-fA-F]+)')), '') WITH ORDINALITY AS t(d, n)) q$body$$def$),
-    ('tsql.number_parse_int_10(text)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_int_10(s text)
-RETURNS integer
-LANGUAGE sql
-IMMUTABLE PARALLEL SAFE
-AS $body$SELECT (CASE WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+') IS NULL THEN 'NaN'::double precision ELSE pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+')::numeric END)::integer$body$$def$)
+AS $body$SELECT (CASE WHEN radix = 10 OR pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]') IS NULL THEN CASE WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+') IS NULL THEN 'NaN'::double precision ELSE pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?[0-9]+')::numeric END WHEN pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]([0-9a-fA-F]+)') IS NULL THEN 'NaN'::double precision WHEN pg_catalog.left(pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]'), 1) = '-' THEN -v ELSE v END)::integer FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(pg_catalog.substring(pg_catalog.ltrim(s, E'\t\n\x0B\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '^[+-]?0[xX]([0-9a-fA-F]+)')), '') WITH ORDINALITY AS t(d, n)) q$body$$def$)
   ) AS t(helper, sql) LOOP
     SELECT prosrc INTO before FROM pg_catalog.pg_proc WHERE oid = pg_catalog.to_regprocedure(helper);
     EXECUTE sql;
@@ -52,7 +47,7 @@ CREATE OR REPLACE FUNCTION app.any_base_from_text(
 RETURNS integer
 LANGUAGE sql
 IMMUTABLE
-RETURN tsql.number_parse_int(text);
+RETURN tsql.number_parse_int(text, 0);
 
 -- input.ts: asEuros()
 CREATE OR REPLACE FUNCTION app.as_euros(
@@ -70,7 +65,7 @@ CREATE OR REPLACE FUNCTION app.cents_from_text(
 RETURNS integer
 LANGUAGE sql
 IMMUTABLE
-RETURN tsql.number_parse_int_10(text);
+RETURN tsql.number_parse_int(text, 10);
 
 -- input.ts: invoiceCents()
 CREATE OR REPLACE FUNCTION app.invoice_cents(

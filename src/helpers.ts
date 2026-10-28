@@ -74,11 +74,7 @@ const HEX_PREFIX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]')`;
  * now exactly what is wanted. There is no `-0` case either, `integer` having no
  * negative zero, and no `Infinity` case, an infinity and a merely-too-large
  * value both being out of range.
- *
- * An expression rather than a call to `number_parse_int_10`, because
- * `runtimeSql` creates the helpers in alphabetical order — which puts
- * `number_parse_int` first — and a migration carries only the helpers its
- * *functions* use, so the callee might not be installed at all.
+
  */
 const DECIMAL = `CASE WHEN ${MATCHED} IS NULL THEN 'NaN'::${D} ELSE ${MATCHED}::numeric END`;
 /** The hexadecimal digits after that prefix, NULL when the prefix is followed by none. */
@@ -151,44 +147,36 @@ export const HELPERS = {
   },
   // `Number.parseInt`, which the compiler only ever emits inside `int(...)`, so
   // the cast `int` stands for lives here and the helper returns `integer`
-  // outright. The double is still what the arithmetic produces — `NaN` for text
-  // with no digits, an infinity past the double range — and casting it is what
+  // outright. The double is what the arithmetic produces — `NaN` for text with
+  // no digits, an infinity past the double range — and casting it is what
   // raises, on exactly the values TypeScript's `int` throws on. The only other
   // thing the cast does, rounding a fraction, cannot arise: reading stops at the
   // `.`, so the value is always whole.
   //
-  // JavaScript reads a prefix and ignores the rest, so this is a parser, not a cast: `'12abc'::integer` would raise where `parseInt`
-  // answers 12. Measured against V8 on whitespace, signs, trailing garbage,
-  // `-0`, the 2^53 rounding ties and the overflow boundary (`docs/design.md`,
-  // "Number.parseInt").
+  // The radix is a parameter, as it is in JavaScript, where an omitted one is 0
+  // and means "read an `0x` prefix as hexadecimal". One helper rather than two
+  // keeps the base-ten expression in one place and means no helper calls
+  // another — which the migration could not order anyway, `runtimeSql` creating
+  // them alphabetically and carrying only the ones its functions use.
   //
-  // Three things PostgreSQL does differently, each closed here:
-  //   - `numeric::double precision` RAISES past the double range; JavaScript
-  //     gives Infinity. Guarded by the digit count first, so a million-digit
-  //     argument never builds a numeric, then by the exact rounding boundary.
-  //   - `numeric` has no `-0`, so "-0" and "-000" are answered directly.
-  //   - no digits at all is `NaN`, not NULL and not an error.
-  number_parse_int_10: {
-    params: "s text",
-    signature: "text",
-    returns: "integer",
-    body: `SELECT (${DECIMAL})::integer`,
-  },
-  // `Number.parseInt` with no radix, which reads an `0x` prefix as hexadecimal.
-  // Summing the digits weighted by position is exact at every width, including
-  // the 2^53 ties and the 256-hex-digit overflow boundary; it needs an
-  // aggregate, so this is the one helper that does not inline. Correctness wins:
-  // a shorter form would have to truncate past the mantissa and round wrongly.
+  // This is a parser, not a cast: `'12abc'::integer` would raise where
+  // `parseInt` answers 12. Measured against V8 (`docs/design.md`,
+  // "Number.parseInt", and `tests/parseIntValues.test.ts`).
+  //
+  // Summing the hexadecimal digits weighted by position is exact at every
+  // width; it needs an aggregate, so this helper does not inline.
   number_parse_int: {
-    params: "s text",
-    signature: "text",
+    params: "s text, radix integer",
+    signature: "text, integer",
     returns: "integer",
     body:
-      `SELECT (CASE WHEN ${HEX_PREFIX} IS NULL THEN ${DECIMAL} WHEN ${HEX} IS NULL THEN 'NaN'::${D} ` +
+      `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
+      `WHEN ${HEX} IS NULL THEN 'NaN'::${D} ` +
       `WHEN ${HEX_NEGATIVE} THEN -v ELSE v END)::integer ` +
       `FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v ` +
       `FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(${HEX}), '') WITH ORDINALITY AS t(d, n)) q`,
   },
+
 } as const satisfies Record<string, Helper>;
 
 export type HelperName = keyof typeof HELPERS;

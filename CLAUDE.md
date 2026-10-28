@@ -266,8 +266,8 @@ A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog
 
 `src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
 JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
-so it lowers to `tsql.number_parse_int` (no radix, reads a leading `0x` as hexadecimal) or `tsql.number_parse_int_10` (the
-literal `10`, which does not). Any other radix, or one that is not a literal, is refused: the radix decides
+so it lowers to `tsql.number_parse_int(s, radix)` — 10 for base ten, 0 for an omitted radix, which reads a leading `0x` as
+hexadecimal, as JavaScript spells it. Any other radix, or one that is not a literal, is refused: the radix decides
 which helper the call becomes. It **must sit inside `int(...)`** and is then an `Integer` — unguarded it is
 refused. `NaN` and values past 32 bits are among `parseInt`'s answers, and `int` is what accounts for them:
 it throws on both in TypeScript, and the cast it stands for lives **inside the helper**, which returns

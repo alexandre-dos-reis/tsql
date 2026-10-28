@@ -56,7 +56,7 @@ export function withVat(amount: Float): Float {
  *
  * It is a parser, not a cast. JavaScript reads the longest prefix it
  * understands and ignores the rest, so `"12abc"` is 12 where `'12abc'::integer`
- * would raise. That is `tsql.number_parse_int_10` in `output.sql`.
+ * would raise. That is `tsql.number_parse_int` in `output.sql`.
  */
 export function centsFromText(text: string): Integer {
   return int(Number.parseInt(text, 10));

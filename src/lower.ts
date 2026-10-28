@@ -1343,10 +1343,10 @@ async function lowerNumberCall(
   // `integer` and erases itself as it does around arithmetic.
   const INTEGER = scalarType("integer");
 
-  // No radix: JavaScript reads an `0x` prefix as hexadecimal, which the helper does.
-  if (!radix) return helper(s, entry.helper, [text], INTEGER);
-
-  return helper(s, entry.decimalHelper, [text], INTEGER);
+  // The radix goes to the helper as JavaScript spells it: 10 for base ten, 0
+  // for an omitted one, which reads a leading `0x` as hexadecimal.
+  const base: ExprIR = { kind: "lit", value: radix ? 10 : 0, type: INTEGER };
+  return helper(s, entry.helper, [text, base], INTEGER);
 }
 
 async function lowerMathCall(
