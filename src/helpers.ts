@@ -85,21 +85,20 @@ const HEX = after("[+-]?0[xX]([0-9a-fA-F]+)");
 const DECIMAL = `COALESCE(${MATCHED}::numeric, 'NaN'::${D})`;
 
 /**
- * The hexadecimal digits that matter, leading zeros removed, and their value.
+ * The value of the hexadecimal digits, leading zeros removed.
  *
- * No aggregate, so the helper inlines. More than eight significant digits
- * cannot fit `integer` whatever they are, so that case needs no arithmetic at
- * all: any value past the range makes the cast at the end raise, which is the
- * answer. Eight or fewer go through `bit(64)`, exact and in one expression.
- * Measured at 1.0 µs a call against 15.2 µs for the aggregate this replaced.
+ * No aggregate, so the helper inlines, and no length test either: nine
+ * significant hexadecimal digits are already 16^8, past `integer`, so taking
+ * the leading nine is enough to make the cast at the end raise for anything
+ * longer — which is the answer. Eight or fewer are exact through `bit(64)`.
+ * Without that, the digits would have to be written twice, once to measure and
+ * once to convert. Measured at 1.0 µs a call against 15.2 µs for the aggregate
+ * this replaced.
  *
  * NULL when there were no digits, which the `COALESCE` in the body turns into
  * the `NaN` JavaScript gives for `'0x'`.
  */
-const HEX_DIGITS = `pg_catalog.ltrim(${HEX}, '0')`;
-const HEX_VALUE =
-  `CASE WHEN pg_catalog.length(${HEX_DIGITS}) > 8 THEN 4294967296::numeric ` +
-  `ELSE ('x' || pg_catalog.lpad(${HEX_DIGITS}, 16, '0'))::bit(64)::bigint::numeric END`;
+const HEX_VALUE = `('x' || pg_catalog.lpad(pg_catalog.left(pg_catalog.ltrim(${HEX}, '0'), 9), 16, '0'))::bit(64)::bigint::numeric`;
 /** The sign as a factor, so the value is written once rather than once per sign. */
 const HEX_SIGN = `CASE WHEN pg_catalog.left(${HEX_PREFIX}, 1) = '-' THEN -1 ELSE 1 END`;
 

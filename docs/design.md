@@ -425,10 +425,16 @@ every value `parseInt` can produce, up to the 256 hexadecimal digits where a dou
 `tests/helpers.test.ts` checks the inlining, so losing it again fails the build.
 
 The body is written to be read as well as to run: `COALESCE` rather than a `CASE` testing a match for NULL,
-so each pattern is named once; the sign as a factor rather than the value written out per sign; and the
-whitespace class as a bracket expression with its contiguous runs as ranges, which also lets the trim live
-inside each pattern instead of in a separate `ltrim` call. That is 962 characters against 2 330 for the same
-behaviour. With the radix a constant the planner folds the base-choosing branch away entirely, so
+so each pattern is named once; the sign as a factor rather than the value written out per sign; the leading
+nine hexadecimal digits rather than a length test, so the digits are not written twice to be measured and
+then converted; and the whitespace class as a bracket expression with its contiguous runs as ranges, which
+also lets the trim live inside each pattern instead of in a separate `ltrim` call. That is 768 characters
+against 2 330 for the same behaviour.
+
+What is left is near the floor for a body that inlines: 37% of it is the whitespace class, written once per
+pattern, and the four patterns cannot share one trimmed string without binding it — which takes a `FROM` or
+a `LATERAL`, and that is exactly what stops PostgreSQL inlining. Two things are being traded against each
+other, and the faster one won. With the radix a constant the planner folds the base-choosing branch away entirely, so
 `number_parse_int(s, 10)` pays nothing for the hexadecimal side it cannot reach.
 
 ## The `tsql` schema
