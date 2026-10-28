@@ -77,7 +77,7 @@ const DIGITS = `pg_catalog.ltrim(pg_catalog.ltrim(${MATCHED}, '+-'), '0')`;
  */
 const HEX_PREFIX = `pg_catalog.substring(${TRIMMED}, '^[+-]?0[xX]')`;
 /**
- * Base ten, as an expression rather than a call: `parse_int` falls back to it
+ * Base ten, as an expression rather than a call: `number_parse_int` falls back to it
  * when there is no `0x` prefix, and a helper calling another helper would need
  * the migration to carry and create them in dependency order, which it does not
  * — it installs the helpers its *functions* use.
@@ -163,7 +163,7 @@ export const HELPERS = {
   //     argument never builds a numeric, then by the exact rounding boundary.
   //   - `numeric` has no `-0`, so "-0" and "-000" are answered directly.
   //   - no digits at all is `NaN`, not NULL and not an error.
-  parse_int_10: {
+  number_parse_int_10: {
     params: "s text",
     signature: "text",
     returns: D,
@@ -174,7 +174,7 @@ export const HELPERS = {
   // the 2^53 ties and the 256-hex-digit overflow boundary; it needs an
   // aggregate, so this is the one helper that does not inline. Correctness wins:
   // a shorter form would have to truncate past the mantissa and round wrongly.
-  parse_int: {
+  number_parse_int: {
     params: "s text",
     signature: "text",
     returns: D,

@@ -326,10 +326,19 @@ What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL r
 `Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
 longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
 `'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
-parser, in the `tsql` schema: `tsql.parse_int` and `tsql.parse_int_10`.
+parser, in the `tsql` schema: `tsql.number_parse_int` and `tsql.number_parse_int_10`.
 
 **The result is a `Float`, never an `Integer`.** It can be `NaN`, and it is not bounded by 32 bits
-(`parseInt('2147483648')`), so calling it an `Integer` would be a lie TypeScript also refuses.
+(`parseInt('2147483648')`), so calling it an `Integer` would be a lie TypeScript also refuses. Neither of
+those is an edge case: `NaN` is what *any* unparseable string gives, which for a parser is the ordinary
+failure path, and ten digits leave `integer` behind. TypeScript agrees — `parseInt` is declared to return
+`number`, and TypeScript has no integer type at all. "parseInt" names what is *parsed*, a run of digits with
+no fraction, not the type that comes back.
+
+That is why `tsql.number_parse_int` returns `double precision`, which reads oddly as SQL until the prefix is
+read: like `tsql.math_round`, which also returns a double, the `number_` prefix says this is not a
+general-purpose SQL function but the SQL that reproduces one JavaScript function exactly. A helper named
+`parse_int` returning a double would be a trap; named for its namespace, the signature is the point.
 
 **Two forms compile**, because two were measured: `parseInt(s)`, which reads a leading `0x` as hexadecimal,
 and `parseInt(s, 10)`, which does not and so stops at the `x`. Any other radix, or one that is not a literal,
@@ -358,14 +367,14 @@ would read off the leading zero. That one was found by measurement, not by readi
 
 ### Why the hexadecimal form does not inline
 
-`tsql.parse_int` sums each hexadecimal digit weighted by its position, which needs an aggregate over a set, so
+`tsql.number_parse_int` sums each hexadecimal digit weighted by its position, which needs an aggregate over a set, so
 it is the only helper with a `FROM` and the only one PostgreSQL will not inline. The shorter forms all truncate
 past the 53 bits of the mantissa and round differently from V8 somewhere; this one is exact at every width,
 including the ties at `2^53` and the boundary where 256 hexadecimal digits become `Infinity`. Correctness is
 the rule inlining is measured against, not the other way round.
 
-Neither helper calls the other. `parse_int` falls back to base ten by repeating the expression rather than
-calling `parse_int_10`, because a migration carries the helpers its *functions* use and creates them in no
+Neither helper calls the other. `number_parse_int` falls back to base ten by repeating the expression rather than
+calling `number_parse_int_10`, because a migration carries the helpers its *functions* use and creates them in no
 particular order — a helper depending on a helper would need both a dependency graph and an ordering, for a
 saving in generated text nobody reads.
 

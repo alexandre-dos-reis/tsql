@@ -11,19 +11,19 @@
  * Today the table holds `parseInt` alone. It is not a cast: JavaScript reads a
  * prefix and ignores whatever follows, so `parseInt('12abc')` is 12 where
  * `'12abc'::integer` raises. The SQL that reproduces it lives in
- * `src/helpers.ts` (`tsql.parse_int`, `tsql.parse_int_10`) and was measured
+ * `src/helpers.ts` (`tsql.number_parse_int`, `tsql.number_parse_int_10`) and was measured
  * against V8 — `docs/design.md`, "Number.parseInt".
  */
 
 export interface NumberFunction {
   /** The helper in the `tsql` schema it becomes when no radix is written. */
-  readonly helper: "parse_int";
+  readonly helper: "number_parse_int";
   /** The helper it becomes when the radix is the literal 10. */
-  readonly decimalHelper: "parse_int_10";
+  readonly decimalHelper: "number_parse_int_10";
 }
 
 export const NUMBER_FUNCTIONS: Readonly<Record<string, NumberFunction>> = {
-  parseInt: { helper: "parse_int", decimalHelper: "parse_int_10" },
+  parseInt: { helper: "number_parse_int", decimalHelper: "number_parse_int_10" },
 };
 
 /** `Object.hasOwn`, so `Number.constructor` and `Number.toString` are not mistaken for members. */

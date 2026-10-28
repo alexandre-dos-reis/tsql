@@ -266,12 +266,12 @@ A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog
 
 `src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
 JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
-so it lowers to `tsql.parse_int` (no radix, reads a leading `0x` as hexadecimal) or `tsql.parse_int_10` (the
+so it lowers to `tsql.number_parse_int` (no radix, reads a leading `0x` as hexadecimal) or `tsql.number_parse_int_10` (the
 literal `10`, which does not). Any other radix, or one that is not a literal, is refused: the radix decides
 which helper the call becomes. The result is a `Float`, never an `Integer`: it can be `NaN` and is not bounded
 by 32 bits. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
 naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
-no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. `parse_int` is the one helper that
+no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. `number_parse_int` is the one helper that
 does not inline (an aggregate over the hexadecimal digits, exact at every width) and the one pair that must
 not call each other, since a migration carries the helpers its functions use and orders them not at all.
 
