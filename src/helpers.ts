@@ -151,8 +151,15 @@ export const HELPERS = {
     returns: "integer",
     body: "SELECT (((a::bigint * b::bigint + 2147483648) % 4294967296 + 4294967296) % 4294967296 - 2147483648)::integer",
   },
-  // `Number.parseInt`. JavaScript reads a prefix and ignores the rest, so this
-  // is a parser, not a cast: `'12abc'::integer` would raise where `parseInt`
+  // `Number.parseInt`, which the compiler only ever emits inside `int(...)`, so
+  // the cast `int` stands for lives here and the helper returns `integer`
+  // outright. The double is still what the arithmetic produces — `NaN` for text
+  // with no digits, an infinity past the double range — and casting it is what
+  // raises, on exactly the values TypeScript's `int` throws on. The only other
+  // thing the cast does, rounding a fraction, cannot arise: reading stops at the
+  // `.`, so the value is always whole.
+  //
+  // JavaScript reads a prefix and ignores the rest, so this is a parser, not a cast: `'12abc'::integer` would raise where `parseInt`
   // answers 12. Measured against V8 on whitespace, signs, trailing garbage,
   // `-0`, the 2^53 rounding ties and the overflow boundary (`docs/design.md`,
   // "Number.parseInt").
@@ -166,8 +173,8 @@ export const HELPERS = {
   number_parse_int_10: {
     params: "s text",
     signature: "text",
-    returns: D,
-    body: `SELECT ${DECIMAL}`,
+    returns: "integer",
+    body: `SELECT (${DECIMAL})::integer`,
   },
   // `Number.parseInt` with no radix, which reads an `0x` prefix as hexadecimal.
   // Summing the digits weighted by position is exact at every width, including
@@ -177,8 +184,13 @@ export const HELPERS = {
   number_parse_int: {
     params: "s text",
     signature: "text",
-    returns: D,
-    body: `SELECT CASE WHEN ${HEX_PREFIX} IS NULL THEN ${DECIMAL} WHEN ${HEX} IS NULL THEN 'NaN'::${D} WHEN v >= ${INFINITE_AT}::numeric THEN CASE WHEN ${HEX_NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END WHEN v = 0 AND ${HEX_NEGATIVE} THEN '-0'::${D} WHEN ${HEX_NEGATIVE} THEN -v::${D} ELSE v::${D} END FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(${HEX}), '') WITH ORDINALITY AS t(d, n)) q`,
+    returns: "integer",
+    body:
+      `SELECT (CASE WHEN ${HEX_PREFIX} IS NULL THEN ${DECIMAL} WHEN ${HEX} IS NULL THEN 'NaN'::${D} ` +
+      `WHEN v >= ${INFINITE_AT}::numeric THEN CASE WHEN ${HEX_NEGATIVE} THEN '-Infinity'::${D} ELSE 'Infinity'::${D} END ` +
+      `WHEN v = 0 AND ${HEX_NEGATIVE} THEN '-0'::${D} WHEN ${HEX_NEGATIVE} THEN -v::${D} ELSE v::${D} END)::integer ` +
+      `FROM (SELECT COALESCE(pg_catalog.sum(('x' || d)::bit(4)::integer::numeric * 16::numeric ^ (n - 1)), 0) AS v ` +
+      `FROM pg_catalog.regexp_split_to_table(pg_catalog.reverse(${HEX}), '') WITH ORDINALITY AS t(d, n)) q`,
   },
 } as const satisfies Record<string, Helper>;
 

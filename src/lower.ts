@@ -1337,17 +1337,16 @@ async function lowerNumberCall(
     );
   }
 
-  // The helper returns a double — `NaN` and values past 32 bits are among its
-  // answers — and the cast is what `int(...)` becomes: it raises on exactly the
-  // values TypeScript's `int` throws on, and its one other behaviour, rounding a
-  // fraction, cannot arise because `parseInt` stops at the `.`.
-  const whole = (value: ExprIR): ExprIR =>
-    entry.whole ? { kind: "cast", operand: value, to: "integer", type: scalarType("integer") } : value;
+  // The helpers return `integer`: the cast `int(...)` stands for is inside them,
+  // where it raises on exactly the values TypeScript's `int` throws on. Nothing
+  // is emitted here for the guard, which is why `lowerIntGuard` sees an
+  // `integer` and erases itself as it does around arithmetic.
+  const INTEGER = scalarType("integer");
 
   // No radix: JavaScript reads an `0x` prefix as hexadecimal, which the helper does.
-  if (!radix) return whole(helper(s, entry.helper, [text], DOUBLE));
+  if (!radix) return helper(s, entry.helper, [text], INTEGER);
 
-  return whole(helper(s, entry.decimalHelper, [text], DOUBLE));
+  return helper(s, entry.decimalHelper, [text], INTEGER);
 }
 
 async function lowerMathCall(

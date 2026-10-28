@@ -269,12 +269,13 @@ JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 whe
 so it lowers to `tsql.number_parse_int` (no radix, reads a leading `0x` as hexadecimal) or `tsql.number_parse_int_10` (the
 literal `10`, which does not). Any other radix, or one that is not a literal, is refused: the radix decides
 which helper the call becomes. It **must sit inside `int(...)`** and is then an `Integer` — unguarded it is
-refused. The helper returns a double because `NaN` and values past 32 bits are among its answers, and `int`
-is what accounts for them: it throws on both in TypeScript, and lowers here to a plain `::integer` cast,
-which raises on both in PostgreSQL. No helper is needed for the conversion, because the cast already matches
-`int` on every value `parseInt` can produce — they differ only on a fraction, which `parseInt` cannot return.
-That is the rule: `int()` becomes a cast when its argument is *necessarily whole* (`whole` in
-`src/number.ts`), not whenever its argument is a double, so `int()` around `Float` arithmetic stays refused. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
+refused. `NaN` and values past 32 bits are among `parseInt`'s answers, and `int` is what accounts for them:
+it throws on both in TypeScript, and the cast it stands for lives **inside the helper**, which returns
+`integer` outright and raises on both in PostgreSQL. Nothing is emitted for the guard at the call site, so
+`int()` erases itself here as it does around arithmetic. The cast suffices because it matches `int` on every
+value `parseInt` can produce — they differ only on a fraction, which `parseInt` cannot return. That is the
+rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/number.ts`), so
+`int()` around `Float` arithmetic stays refused. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
 naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
 no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. `number_parse_int` is the one helper that
 does not inline (an aggregate over the hexadecimal digits, exact at every width) and the one pair that must

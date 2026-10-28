@@ -335,9 +335,11 @@ something has said what becomes of them. `int` is that something: it throws on b
 cast it lowers to raises on both in PostgreSQL, so the two sides agree — including when they agree by both
 raising, which the parity harness counts as agreement. Unguarded, `Number.parseInt` is refused.
 
-`int(...)` here is a *conversion*, where around arithmetic it is a *guard* that erases itself. It lowers to a
-plain `::integer` cast, and no helper is needed for it, because the cast already matches `int` on every value
-`parseInt` can produce:
+The cast `int` stands for lives **inside the helper**, which therefore returns `integer` outright. The double
+is what the arithmetic produces — `NaN` for text with no digits, an infinity past the double range — and
+casting it is what raises. Nothing is emitted for the guard at the call site, so `int(...)` erases itself here
+exactly as it does around arithmetic. The cast is enough on its own because it already matches `int` on every
+value `parseInt` can produce:
 
 | Value | `int()` | `::integer` |
 | --- | --- | --- |
@@ -347,18 +349,20 @@ plain `::integer` cast, and no helper is needed for it, because the cast already
 | **a fraction** | **throws** | **rounds** |
 
 Only the last row disagrees, and `parseInt` cannot produce it: it reads a run of digits and stops at the `.`,
-so `"12.9"` is `12`. That is why the rule is narrow — `int()` lowers to a cast when its argument's value is
-*necessarily whole*, which `src/number.ts` records per member as `whole`, not whenever its argument is a
-double. `int()` around arbitrary `Float` arithmetic stays refused, for exactly the fraction case.
+so `"12.9"` is `12`. That is why the rule is narrow — a `Number` member folds the cast into its helper when
+its value is *necessarily whole*, which `src/number.ts` records per member as `whole`, not because its
+arithmetic happens to be done in a double. `int()` around arbitrary `Float` arithmetic stays refused, for
+exactly the fraction case, and a member that could return a fraction would be `whole: false` and stay a
+`Float`.
 
 One difference is deliberate and unobservable: `parseInt("-0")` is `-0`, which TypeScript's `int` returns as
 it is while `integer` has no negative zero and the cast gives `0`. Nothing an `integer` can do tells them
 apart, and `src/parity.ts` already compares ±0 as equal.
 
-That is also why `tsql.number_parse_int` returns `double precision`, which reads oddly as SQL until the prefix
-is read: like `tsql.math_round`, which also returns a double, the `number_` prefix says this is not a
-general-purpose SQL function but the SQL that reproduces one JavaScript function exactly. A helper named
-`parse_int` returning a double would be a trap; named for its namespace, the signature is the point.
+The helpers are named for their namespace, like `tsql.math_round`: the `number_` prefix says this is not a
+general-purpose SQL function but the SQL that reproduces one JavaScript call exactly — here
+`int(Number.parseInt(s))`, the only form the compiler emits, which is why the signature can be
+`text → integer` and read as what it is.
 
 **Two forms compile**, because two were measured: `parseInt(s)`, which reads a leading `0x` as hexadecimal,
 and `parseInt(s, 10)`, which does not and so stops at the `x`. Any other radix, or one that is not a literal,
