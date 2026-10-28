@@ -157,6 +157,19 @@ name](#keeping-integer-honest-once-installed). `INT4_MIN` and `INT4_MAX` are exp
 the compiler reads its own range checks from there, so there is one declaration of the bounds, and a
 caller validating input before it reaches a compiled function can use the same two numbers.
 
+### Comparing a `Float` that is `NaN`
+
+PostgreSQL gives `NaN` a place in the order: it equals itself and sorts above every number. JavaScript gives it none: `NaN === NaN` and every `<`, `<=`, `>`, `>=` with a `NaN` are false. Left alone, `count > 10` would be true in the database for a `NaN`, with the function otherwise correct. So a comparison with an operand that can be `NaN` carries the check for the side that PostgreSQL gets wrong, and only that side:
+
+| TypeScript | PL/pgSQL |
+| --- | --- |
+| `x > y`, `x >= y` | `x > y AND x <> 'NaN'::double precision` |
+| `x < y`, `x <= y` | `x < y AND y <> 'NaN'::double precision` |
+| `x === y` | `x = y AND x <> 'NaN'::double precision` (`IS NOT DISTINCT FROM` / `IS DISTINCT FROM` when nullable) |
+| `x !== y` | `x <> y OR x = 'NaN'::double precision` (`x !== x` is the test for `NaN`, and stays one) |
+
+A literal or an `Integer` cannot be `NaN`, so a comparison whose checked side is one is left as it is (`count > 10` is checked, `10 > x` is not). The checked operand is written twice; it is a pure expression, so only its cost doubles. The cost of choosing this over leaving the divergence is a longer line on every `Float` comparison. `tests/parity/nanComparison.ts` is run on `NaN` strictly (`tests/specialValues.test.ts`), and the parity harness draws `NaN`, both infinities and `-0` itself.
+
 ### Why `Float` and not `DoublePrecision`
 
 `Integer` is PostgreSQL's canonical name, CamelCased. `Float` is not — `'float'::regtype` canonicalises
@@ -304,7 +317,7 @@ Each refusal says which of these it is.
 
 ### How it is checked
 
-`tests/parity/mathFunctions.ts` and `mathConstants.ts` go through the fast-check harness like any case. That harness draws finite doubles and compares `-0` and `0` as equal, so it cannot see the special values; `tests/specialValues.test.ts` runs every function of those two files on a fixed grid of `NaN`, both infinities, both zeros, ties, `2^52 + 1` and the edges of `real`, strictly with `Object.is`. A rewrite that is wrong only there fails it.
+`tests/parity/mathFunctions.ts` and `mathConstants.ts` go through the fast-check harness like any case. The harness draws `NaN`, both infinities and `-0` among its doubles (about one in ten) and compares with `Object.is`, so `-0` is not `0`; `tests/specialValues.test.ts` also runs every function of those two files on a fixed grid of `NaN`, both infinities, both zeros, ties, `2^52 + 1` and the edges of `real`, strictly with `Object.is`. A rewrite that is wrong only there fails it.
 
 What `Math` cannot change is arithmetic: inside a compiled function PostgreSQL raises where JavaScript makes an infinity or a `NaN` out of finite operands (`1e308 * 10`, `0 / 0`). That is the section on numbers, not `Math`.
 

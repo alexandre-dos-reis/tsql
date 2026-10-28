@@ -1800,7 +1800,32 @@ function strictEquality(leftOperand: ExprIR, rightOperand: ExprIR, negated: bool
   // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
   const nullable = left.type.nullable || right.type.nullable;
   const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
-  return { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+  const core: ExprIR = { kind: "binary", op: binOp, left, right, type: scalarType("boolean") };
+  // PostgreSQL's `NaN` equals itself; JavaScript's never equals anything. When the left side is equal to
+  // the right and is not `NaN`, the right is not either, so one side decides.
+  if (!canBeNaN(left)) return core;
+  const isNaN: ExprIR = {
+    kind: "binary",
+    op: nullable ? "is not distinct from" : "=",
+    left,
+    right: NAN,
+    type: scalarType("boolean"),
+  };
+  if (negated) return { kind: "binary", op: "or", left: core, right: isNaN, type: scalarType("boolean") };
+  const notNaN: ExprIR = { ...isNaN, op: nullable ? "is distinct from" : "<>" };
+  return { kind: "binary", op: "and", left: core, right: notNaN, type: scalarType("boolean") };
+}
+
+const NAN: ExprIR = { kind: "lit", value: Number.NaN, type: scalarType("double precision") };
+
+/**
+ * Whether an operand can hold `NaN`: a `Float` that is not a literal (a literal is never `NaN`: `NaN` is
+ * refused as a name) and not an `Integer` made into one.
+ */
+function canBeNaN(expr: ExprIR): boolean {
+  if (!isExactly(expr.type, "double precision")) return false;
+  if (expr.kind === "lit") return false;
+  return !(expr.kind === "cast" && !isExactly(expr.operand.type, "double precision"));
 }
 
 async function lowerBinary(node: BinaryExpression, s: State, guarded = false): Promise<ExprIR> {
@@ -1874,12 +1899,24 @@ function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: BinaryExpres
             : op === SyntaxKind.GreaterThanToken
               ? ">"
               : ">=";
-      return {
+      const comparison: ExprIR = {
         kind: "binary",
         op: binOp,
         left,
         right,
         type: scalarType("boolean", left.type.nullable || right.type.nullable),
+      };
+      // PostgreSQL sorts `NaN` above every number, so `NaN > 1` and `1 < NaN` are true there; in
+      // JavaScript every ordering with a `NaN` is false. The side that PostgreSQL makes wrongly true
+      // is the one that is `NaN`: the left of `>` and `>=`, the right of `<` and `<=`.
+      const checked = binOp === ">" || binOp === ">=" ? left : right;
+      if (!canBeNaN(checked)) return comparison;
+      return {
+        kind: "binary",
+        op: "and",
+        left: comparison,
+        right: { kind: "binary", op: "<>", left: checked, right: NAN, type: scalarType("boolean") },
+        type: comparison.type,
       };
     }
 

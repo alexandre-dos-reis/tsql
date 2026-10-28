@@ -46,6 +46,13 @@ const FLOAT_BOUND = 1e9;
  */
 const FLOAT_TINY = 1e-300;
 
+const finiteDouble = fc
+  .double({ min: -FLOAT_BOUND, max: FLOAT_BOUND, noNaN: true })
+  .filter((x) => x === 0 || Math.abs(x) >= FLOAT_TINY);
+
+/** The values a double can hold that a finite range never reaches. */
+const SPECIAL_DOUBLES: readonly number[] = [Number.NaN, Infinity, -Infinity, -0];
+
 /** NUL and lone surrogates are not representable in a PostgreSQL text value. */
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
@@ -73,9 +80,10 @@ function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
     case "integer":
       return fc.integer({ min: -INT_BOUND, max: INT_BOUND });
     case "double precision":
-      return fc
-        .double({ min: -FLOAT_BOUND, max: FLOAT_BOUND, noNaN: true })
-        .filter((x) => x === 0 || Math.abs(x) >= FLOAT_TINY);
+      return fc.oneof(
+        { weight: 9, arbitrary: finiteDouble },
+        { weight: 1, arbitrary: fc.constantFrom(...SPECIAL_DOUBLES) },
+      );
     case "boolean":
       return fc.boolean();
   }
@@ -116,7 +124,8 @@ export function prepareCall(fn: ManifestFunction, schema: string | null, args: r
   const params: unknown[] = [];
   const value = (type: PgType, input: unknown): string => {
     if (isScalar(type)) {
-      params.push(input);
+      // `String(-0)` is "0": a driver would drop the sign, so the zero is sent as text.
+      params.push(Object.is(input, -0) ? "-0" : input);
       return `$${params.length}::${scalarName(type)}`;
     }
     if (isArray(type)) {
@@ -183,7 +192,8 @@ export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarTyp
     case "double precision": {
       const a = Number(sqlValue);
       const b = Number(tsValue);
-      if (Object.is(a, b) || a === b) return true;
+      // `Object.is`: `-0` and `0` are different doubles, and so are they here.
+      if (Object.is(a, b)) return true;
       // Both sides compute in IEEE-754 doubles, so results normally match
       // exactly; this tolerance only absorbs text round-tripping.
       const scale = Math.max(Math.abs(a), Math.abs(b), 1);
