@@ -117,6 +117,8 @@ $$;
 Point your migration tool at the generated file. Running it again is safe: it creates what is missing,
 brings a changed union or enum in line, and fails loudly rather than drop or rewrite anything.
 
+When a function uses `Math`, the migration also installs a few helpers in a `tsql` schema of its own. The role that applies the migration must be allowed to create it (and to be the same one every time), and a role that only calls your functions needs `GRANT USAGE ON SCHEMA tsql`, as it does on your own schema. [Details](docs/design.md#the-tsql-schema).
+
 ## Commands
 
 | Command | Does | Writes |
