@@ -96,8 +96,13 @@ const NUMERIC_ALIASES: Record<string, PgScalar> = {
  */
 export const PACKAGE_NAME = "@adrdp/tsql";
 
-/** The authoring module, `src/index.ts`, which is what the published types point at; a `.d.ts` or `.js` copy is accepted as well. */
-const AUTHORING_FILE = /(^|\/)index\.(ts|d\.ts|m?js)$/;
+/**
+ * The authoring module: `index.ts` here, and whatever the build emits — the
+ * declaration's extension follows the entry's, so an `.mjs` entry pairs with a
+ * `.d.mts`. Missing a spelling makes `int` and the aliases unrecognised in
+ * every consumer build at once.
+ */
+const AUTHORING_FILE = /(^|\/)index\.(ts|d\.m?ts|m?js)$/;
 
 /** Was this declaration written in tsql's own authoring vocabulary? */
 function isAuthoringModule(path: string): boolean {

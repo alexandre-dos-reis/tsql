@@ -16,18 +16,15 @@
  * friction at call sites — the compiler resolves them by name at build time.
  */
 
-/**
- * The bounds of PostgreSQL's `integer`, and the single place they are written.
- *
- * The compiler borrows them from here (`src/constants.ts`) rather than keeping
- * its own copy, so the guard below and the build-time range checks cannot
- * drift. The dependency only ever points this way: **this module imports
- * nothing**, because a compiled project type checks it under the compiler's
- * forced options, which do not allow a `.ts` import extension — the rest of
- * `src/` relies on exactly that and never reaches a consumer's type graph.
- */
-export const INT4_MIN = -2147483648;
-export const INT4_MAX = 2147483647;
+import { INT4_MAX, INT4_MIN } from "./constants";
+
+// Written in `constants.ts`, re-exported here because 0.3.0 published them from
+// the root. The import must stay **extensionless**: this file is still part of
+// a compiled project's program, and `FORCED_OPTIONS` does not set
+// `allowImportingTsExtensions`, so the `./x.ts` style the rest of `src/` uses
+// is TS5097 in every consumer's build. That is the whole of what the old "must
+// import nothing" rule was protecting, and it still applies to the extension.
+export { INT4_MAX, INT4_MIN };
 
 /**
  * `integer` in PostgreSQL: a signed 32-bit integer.

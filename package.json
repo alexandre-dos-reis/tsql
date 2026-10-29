@@ -35,7 +35,7 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json"
@@ -49,7 +49,7 @@
     "format:check": "oxfmt --check",
     "typecheck": "bun check --no-script",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && git config core.hooksPath .githooks || true",
-    "build": "bun scripts/build.ts",
+    "build": "tsdown",
     "prepublishOnly": "bun run build && bun run typecheck && bun test",
     "changeset": "changeset",
     "version": "changeset version && bun scripts/examples.ts sync && bun install --lockfile-only",
@@ -67,6 +67,7 @@
     "@changesets/cli": "^3.0.3",
     "@types/bun": "1.4.4",
     "oxfmt": "0.74.0",
+    "tsdown": "^0.23.3",
     "typescript": "7.0.2"
   },
   "peerDependencies": {

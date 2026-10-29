@@ -5,7 +5,7 @@
  *
  * It is JavaScript rather than the TypeScript sources because Node will not
  * strip types under `node_modules`, where an installed copy lives
- * (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING). `scripts/build.ts` builds it,
- * and `prepublishOnly` runs that build.
+ * (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING). `tsdown` builds it, and
+ * `prepublishOnly` runs that build.
  */
 await import(new URL("../dist/cli.mjs", import.meta.url).href);
