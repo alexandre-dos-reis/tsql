@@ -208,8 +208,8 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   installed copy lives — so the published code is JavaScript. `tsdown.config.ts` bundles `index.ts` and
   `cli.ts` with **no dependency bundled** (`typescript` must be the consumer's own, with its native
   executable; PGlite loads its WebAssembly from beside itself), splitting so `runParity` and PGlite stay in
-  a chunk only `parity` loads, **not minified** (a stack trace in a bug report should name the functions
-  it came from; it costs 26 kB). It emits the declaration in the same run, as `dist/index.d.mts` — the
+  a chunk only `parity` loads, **not minified** (26 kB saved is invisible for a CLI
+  loaded from disk, and `src/cli.ts` drops the stack from an unexpected error anyway). It emits the declaration in the same run, as `dist/index.d.mts` — the
   extension follows the `.mjs` entry's, which `exports` maps `types` to and `AUTHORING_FILE`
   (`src/typemap.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
   ships**: a declaration is what a consumer's editor and type checker expect, and it costs them no parse
