@@ -196,19 +196,21 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   `Buffer` would be a type error in every consumer's build; keeping the compiler out of the root
   makes that structural rather than a convention. Re-adding a `./compiler` subpath would be additive
   if embedding is ever wanted; there was no consumer for it.
-- **`src/index.ts` must import nothing.** `FORCED_OPTIONS` does not set
-  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses becomes
-  TS5097 in the *consumer's* build as soon as it is reachable from the root — which is where a
-  compiled project starts type checking. This is why `index.ts` owns `INT4_MIN`/`INT4_MAX` and
-  `src/constants.ts` imports them from it, never the reverse. Breaking it fails every compiled
-  case at once, with an error that names `src/index.ts` and looks like the consumer's fault.
+- **`src/index.ts` must not use a `.ts` import extension.** It is still part of a compiled project's
+  program — that is where type checking starts — and `FORCED_OPTIONS` does not set
+  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses is TS5097 in the
+  *consumer's* build. It may import extensionless (`./constants`), which is how `INT4_MIN`/`INT4_MAX`
+  live in `src/constants.ts` and are re-exported here. Getting it wrong fails every compiled case at
+  once, with an error naming `src/index.ts` that looks like the consumer's fault.
+
 - **Everything published comes from `dist/`, code and types alike.** Node strips TypeScript types, but
   refuses to under `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every
-  installed copy lives — so the published code is JavaScript. `scripts/build.ts` runs `Bun.build` on
-  `cli.ts` and `index.ts`: ESM, `target: "node"`, **no dependency bundled** (`typescript` must be the
-  consumer's own, with its native executable; PGlite loads its WebAssembly from beside itself), code
-  splitting so `runParity` and PGlite stay in a chunk only `parity` loads, not minified. It then runs
-  `tsc --emitDeclarationOnly` for `dist/index.d.ts`, which `exports` maps `types` to. **No source
+  installed copy lives — so the published code is JavaScript. `tsdown.config.ts` bundles `index.ts` and
+  `cli.ts` with **no dependency bundled** (`typescript` must be the consumer's own, with its native
+  executable; PGlite loads its WebAssembly from beside itself), splitting so `runParity` and PGlite stay in
+  a chunk only `parity` loads. It emits the declaration in the same run, as `dist/index.d.mts` — the
+  extension follows the `.mjs` entry's, which `exports` maps `types` to and `AUTHORING_FILE`
+  (`src/typemap.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
   ships**: a declaration is what a consumer's editor and type checker expect, and it costs them no parse
   of our implementation. `tests/packaging.test.ts` type checks a consumer against the installed
   declaration, with a `@ts-expect-error` that fails if the module resolved as `any` — so a wrong path or

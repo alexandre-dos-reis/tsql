@@ -109,7 +109,7 @@ describe("the published layout is coherent", () => {
         expect(target).toBe("./package.json");
         continue;
       }
-      expect(target.types).toMatch(/^\.\/dist\/.+\.d\.ts$/);
+      expect(target.types).toMatch(/^\.\/dist\/.+\.d\.m?ts$/);
       expect(target.default).toMatch(/^\.\/dist\/.+\.mjs$/);
     }
     expect(manifest.files).toEqual(expect.arrayContaining(["bin", "dist"]));
@@ -148,8 +148,13 @@ describe("the published layout is coherent", () => {
         mkdirSync(dirname(join(installed, entry)), { recursive: true });
         cpSync(entry, join(installed, entry), { recursive: true });
       }
-      const { build } = await import("../scripts/build.ts");
-      await build(join(installed, "dist"));
+      // The real build, into the installed copy: the declaration has to land
+      // there too, or the types resolved below are this repository's.
+      const built = Bun.spawnSync([join(resolve("node_modules"), ".bin", "tsdown"), "--out-dir", join(installed, "dist")], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      expect(built.exitCode).toBe(0);
       for (const dependency of [...Object.keys(manifest.dependencies ?? {}), "typescript"]) {
         mkdirSync(dirname(join(root, "node_modules", dependency)), { recursive: true });
         symlinkSync(resolve("node_modules", dependency), join(root, "node_modules", dependency), "dir");

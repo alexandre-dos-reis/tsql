@@ -247,7 +247,7 @@ runs compiler → authoring only.
 - **In the repository**, everything runs the TypeScript in `src/` directly, under Bun or Node.
   The sources must stay *erasable* (`erasableSyntaxOnly`): no enums, namespaces or parameter
   properties.
-- **Published**, the code is JavaScript: [`scripts/build.ts`](../scripts/build.ts) builds
+- **Published**, the code is JavaScript: [`tsdown.config.ts`](../tsdown.config.ts) builds
   `dist/cli.mjs` and `dist/index.mjs`, with no dependency bundled, because Node
   refuses to strip types under `node_modules`. The types still come from `src/` through `exports`.
   [`bin/tsql.mjs`](../bin/tsql.mjs) imports `dist/cli.mjs`.
