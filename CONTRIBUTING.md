@@ -100,7 +100,8 @@ src/index.ts            the only public export: the authoring vocabulary (Intege
 src/constants.ts        values more than one stage needs; borrows the bounds from index.ts
 bin/tsql.mjs            the launcher npm puts on PATH
 .github/workflows/      ci.yml: type check, tests, parity, example drift — skipped for
-                          prose-only changes, and for the release path
+                          prose-only changes and for the release path; one run per
+                          branch, a push cancelling the one it supersedes
                         release.yml: the Version Packages PR, npm and the GitHub Release
 ```
 
