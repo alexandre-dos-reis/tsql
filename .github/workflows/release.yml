@@ -1,79 +1,46 @@
 name: Release
 
-# Releases are triggered by merging, not by running a command.
-#
-# On a push to main, `changesets/action` looks for unreleased changesets in
-# `.changeset/`:
-#
-#   - Some exist → it opens (or updates) a "Version Packages" pull request
-#     holding what `bun run version` produces: the bump in package.json, the
-#     CHANGELOG entry, the examples' dependency ranges and the lockfile. The
-#     release is reviewable before it happens, and nothing is published.
-#   - None exist, and package.json's version is not on the registry → it runs
-#     `bun run release` (`changeset publish`), which publishes to npm, tags
-#     `v<version>`, and creates the GitHub Release from the same CHANGELOG entry.
-#
-# So merging the "Version Packages" PR is the single action that produces both
-# the npm release and the GitHub Release — they cannot drift apart.
-#
-# `prepublishOnly` (build, typecheck, test) runs inside `npm publish`, so a tree
-# that does not build is never published, whatever this workflow does.
-#
-# Authentication is npm **trusted publishing** (OIDC): there is no NPM_TOKEN and
-# no long-lived credential anywhere. GitHub mints a short-lived identity token
-# for this job, npm verifies it against the trusted publisher configured on the
-# package, and hands back a token good for one publish — which is also why the
-# interactive one-time password does not apply here. npm records build
-# provenance from the same token, linking the tarball to this workflow run.
-#
-# The trusted publisher on npmjs.com pins THIS FILENAME (`release.yml`), the
-# owner and the repository, and none of it can be edited afterwards — renaming
-# or moving this file breaks publishing until a new publisher is created.
-
+# Triggered automatically ONLY after the CI workflow completes successfully on main.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches: [main]
 
-# Publishing is not idempotent: two runs racing could both try to version or
-# publish. Never cancel a run in progress — cancelling mid-publish could leave
-# npm and the Git tags disagreeing.
 concurrency:
   group: release
   cancel-in-progress: false
 
 permissions:
-  contents: write # commit the version bump, push the tag, create the Release
-  pull-requests: write # open and update the "Version Packages" PR
-  id-token: write # mint the OIDC token that trusted publishing exchanges
+  contents: write
+  pull-requests: write
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # CRITICAL: Ensure we only proceed if CI actually succeeded,
+    # and ignore if CI was cancelled or failed.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
     steps:
-      # Full history and tags: changesets reads them to tell what is released.
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          # Note: workflow_run checks out the default branch (main) head by default,
+          # which is correct for changesets publishing.
 
-      # Same Bun as devenv.nix and ci.yml: `bun check` (used by `typecheck`,
-      # which `prepublishOnly` runs) arrived in 1.4.3.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
 
-      # `changeset publish` shells out to `npm publish`, so npm is what talks
-      # OIDC: trusted publishing needs >= 11.5.1, and Node 24 ships 11.x.
-      # tests/cli.test.ts also spawns the CLI under `node`, and `engines` asks
-      # for >= 22.18.
       - uses: actions/setup-node@v5
         with:
           node-version: 24
 
       - run: bun install --frozen-lockfile
 
-      # The combined action; `changesets/action/version` and
-      # `changesets/action/publish` can be split into separate jobs if the
-      # publish step should hold `id-token` without `contents`/`pull-requests`.
       - uses: changesets/action@v2
         with:
           version-script: bun run version
