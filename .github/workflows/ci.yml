@@ -30,6 +30,22 @@ on:
       - ".envrc"
       - ".gitignore"
 
+# One run per branch at a time. A push supersedes whatever was testing the
+# branch before it, and that older run can only answer a question nobody is
+# asking any more — a thirteen-commit branch started thirteen full suites and
+# twelve of them were obsolete before they finished.
+#
+# `head_ref` on a pull request, `ref` on a push, so a PR and its eventual merge
+# commit are grouped separately: the merge result is a tree neither the branch
+# nor main was tested as, and is worth its own run.
+#
+# The release workflow deliberately does the opposite (`cancel-in-progress:
+# false`): cancelling a publish half-way could leave npm and the git tags
+# disagreeing. Cancelling a test run costs nothing.
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
