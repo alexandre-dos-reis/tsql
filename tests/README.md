@@ -50,7 +50,7 @@ test file.
 | `cli.test.ts` | the `tsql` command as a user runs it, under Bun and Node: refused invocations, messages, exit codes, narrowing to named files, `tsql parity` with PGlite and `--db-url` |
 | `parseIntValues.test.ts` | `Number.parseInt` on a fixed grid of strings, and on every example [MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt) documents for the two forms tsql compiles — the harness draws arbitrary text that almost never parses, so the parity case alone would pass on inputs where both sides merely raise |
 | `packaging.test.ts` | what only breaks once published: alias provenance in an installed layout, locating the native TypeScript executable, the exact runtime dependencies, the exported entry points, a Node-compatible launcher |
-| `architecture.test.ts` | the layering of `src/lower/` and `src/typemap/`: a module imports its own layer or a lower one, code outside goes through each folder's `index.ts`, and neither folder imports a later stage; the rules are shown to fail on made-up violations |
+| `architecture.test.ts` | the layering of `src/lower/`, `src/typemap/` and `src/emit/`: a module imports its own layer or a lower one, code outside goes through each folder's `index.ts`, and neither folder imports a later stage; the rules are shown to fail on made-up violations |
 
 `examples.test.ts` runs every folder in `examples/` through its own `tsql:check`, `tsql:parity` and
 `tsql:compile` scripts, with this checkout's CLI and nothing installed, and checks that each example

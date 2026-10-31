@@ -93,7 +93,8 @@ src/references.ts       classifies a name: parameter, local, compiled function, 
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
 src/lower/              AST -> IR; every restriction is enforced here (map in docs/architecture.md)
 src/language.ts         which functions are `LANGUAGE sql` (inlined), and the order they are created in
-src/emit.ts             IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
+src/emit/               IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
+                        (map in docs/architecture.md)
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
 src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int,

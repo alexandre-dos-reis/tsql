@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
 /**
- * The layering `docs/architecture.md` describes for `src/lower/` and `src/typemap/`, held as a test.
+ * The layering `docs/architecture.md` describes for `src/lower/`, `src/typemap/` and `src/emit/`, held as a test.
  *
  * Inside each folder the modules may import each other (every form recurses through `lowerExpr`,
  * an object's fields come back through `map.ts`), which is why a cycle cannot be what fails. What
@@ -24,6 +24,16 @@ const LAYERS: Record<string, readonly (readonly [string, number])[]> = {
     ["lower/signature.ts", 3],
     ["lower/index.ts", 4],
   ],
+  emit: [
+    ["emit/options.ts", 0],
+    ["emit/qualify.ts", 0],
+    ["emit/expr.ts", 1],
+    ["emit/statements.ts", 2],
+    ["emit/function.ts", 3],
+    ["emit/types.ts", 3],
+    ["emit/migration.ts", 4],
+    ["emit/index.ts", 5],
+  ],
   typemap: [
     ["typemap/context.ts", 0],
     ["typemap/named.ts", 1],
@@ -34,8 +44,15 @@ const LAYERS: Record<string, readonly (readonly [string, number])[]> = {
   ],
 };
 
-/** What the folders above them in the pipeline own: neither folder may import these. */
-const LATER_STAGES = ["compile.ts", "emit.ts", "cli.ts", "parity.ts", "runParity.ts"];
+/** What each folder sits before in the pipeline: it must not import these (a folder is named by its `index.ts`). */
+const LATER_STAGES: Record<string, readonly string[]> = {
+  lower: ["compile.ts", "emit/index.ts", "cli.ts", "parity.ts", "runParity.ts"],
+  typemap: ["compile.ts", "emit/index.ts", "cli.ts", "parity.ts", "runParity.ts"],
+  emit: ["compile.ts", "cli.ts", "parity.ts", "runParity.ts"],
+};
+
+/** Folders that know nothing of the other folders: they take the IR and little else. */
+const ISOLATED = new Set(["typemap", "emit"]);
 
 /** `authoring.ts` answers one question (where does a declaration come from) and needs little. */
 const AUTHORING_MAY_IMPORT = new Set(["ir.ts", "origin.ts", "typemap/index.ts"]);
@@ -85,13 +102,10 @@ export function violations(imports: Readonly<Record<string, readonly string[]>>)
       } else if (into && target !== `${into}/index.ts`) {
         broken.push(`${file} imports ${target}: outside ${into}/, go through ${into}/index.ts`);
       }
-      if (folder && into && folder !== into && folder === "typemap") {
-        broken.push(`${file} imports ${target}: typemap/ sits below lower/ and must not import it`);
+      if (folder && into && folder !== into && ISOLATED.has(folder)) {
+        broken.push(`${file} imports ${target}: ${folder}/ must not import ${into}/`);
       }
-      if (
-        folder &&
-        LATER_STAGES.some((stage) => target === stage || target.startsWith(`${stage.replace(/\.ts$/, "")}/`))
-      ) {
+      if (folder && LATER_STAGES[folder]?.includes(target)) {
         broken.push(`${file} imports ${target}: ${folder}/ comes before that stage and must not import it`);
       }
     }
@@ -99,7 +113,7 @@ export function violations(imports: Readonly<Record<string, readonly string[]>>)
   return broken;
 }
 
-describe("the layering of src/lower/ and src/typemap/", () => {
+describe("the layering of src/lower/, src/typemap/ and src/emit/", () => {
   const root = resolve("src");
   const imports: Record<string, string[]> = {};
   for (const file of new Glob("**/*.ts").scanSync({ cwd: root })) {
@@ -114,6 +128,7 @@ describe("the layering of src/lower/ and src/typemap/", () => {
     const inFolder = (folder: string) => Object.keys(imports).filter((file) => file.startsWith(`${folder}/`));
     expect(inFolder("lower").length).toBeGreaterThan(10);
     expect(inFolder("typemap").length).toBeGreaterThan(4);
+    expect(inFolder("emit").length).toBeGreaterThan(5);
     expect(Object.values(imports).flat().length).toBeGreaterThan(100);
   });
 
@@ -136,8 +151,15 @@ describe("the layering of src/lower/ and src/typemap/", () => {
       expect(violations({ "typemap/map.ts": ["lower/index.ts"] }).length).toBeGreaterThan(0);
     });
 
+    test("emit importing the stages around it", () => {
+      expect(violations({ "emit/expr.ts": ["lower/index.ts"] }).length).toBeGreaterThan(0);
+      expect(violations({ "emit/expr.ts": ["typemap/index.ts"] }).length).toBeGreaterThan(0);
+      expect(violations({ "emit/types.ts": ["compile.ts"] })).toHaveLength(1);
+      expect(violations({ "emit/expr.ts": ["emit/statements.ts"] })).toHaveLength(1);
+    });
+
     test("a folder importing a later stage", () => {
-      expect(violations({ "lower/state.ts": ["emit.ts"] })).toHaveLength(1);
+      expect(violations({ "lower/state.ts": ["emit/index.ts"] })).toHaveLength(1);
       expect(violations({ "typemap/context.ts": ["compile.ts"] })).toHaveLength(1);
     });
 
@@ -156,7 +178,8 @@ describe("the layering of src/lower/ and src/typemap/", () => {
         "typemap/map.ts": ["typemap/composite.ts", "typemap/named.ts", "typemap/context.ts"],
         "typemap/composite.ts": ["typemap/map.ts"],
         "lower/expressions/expr.ts": ["lower/expressions/call.ts", "lower/coerce.ts", "typemap/index.ts"],
-        "compile.ts": ["lower/index.ts", "typemap/index.ts"],
+        "emit/function.ts": ["emit/statements.ts", "emit/expr.ts", "emit/options.ts"],
+        "compile.ts": ["lower/index.ts", "typemap/index.ts", "emit/index.ts"],
       }),
     ).toEqual([]);
   });

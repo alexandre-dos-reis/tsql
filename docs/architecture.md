@@ -5,7 +5,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 [`design.md`](design.md) is the *why* of each semantic choice; this document is the *where*.
 
 ```
- functions/*.ts ──► program.ts ──► compile.ts ──► lower/   ──► IR (ir.ts) ──► emit.ts ──► migration.sql
+ functions/*.ts ──► program.ts ──► compile.ts ──► lower/   ──► IR (ir.ts) ──► emit/ ──► migration.sql
  (+ tsconfig)       open project   orchestrate    AST → IR     types,          IR → SQL
                     type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
@@ -29,7 +29,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 **Lowering enforces every restriction; the emitter is a total function.** Anything that could be
 translated wrongly is refused while building the IR, in [`lower/`](../src/lower) and
 [`typemap/`](../src/typemap). Any IR that exists can be emitted, so
-[`emit.ts`](../src/emit.ts) never validates and never decides semantics: casts, operator choices
+[`emit/`](../src/emit) never validates and never decides semantics: casts, operator choices
 (`=` or `IS NOT DISTINCT FROM`) and NULL handling are already explicit nodes in the IR. When adding
 a feature, the question is always *what must lowering prove so the emitter can stay dumb?*
 
@@ -91,10 +91,10 @@ parameter — so an exported type is created whether or not a function mentions 
 type a function uses is still reported at that use. A generic declaration is refused: a PostgreSQL
 type is one fixed shape.
 
-### 7. Emit: `emit.ts`
+### 7. Emit: `emit/`
 
 `usedTypes` (in `compile.ts`) keeps the composites, domains and enums a successfully lowered
-function mentions, plus those an exported declaration maps to. [`emitMigration`](../src/emit.ts) then writes, in a deterministic order: the
+function mentions, plus those an exported declaration maps to. [`emitMigration`](../src/emit/migration.ts) then writes, in a deterministic order: the
 schema, domains and enums (`emitDomain`, `emitEnum`), composites in dependency order
 (`emitCompositeType`, `dependencyOrder`), then functions (`emitFunction`). The same sources always
 give a byte-identical file.
@@ -233,9 +233,22 @@ Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.a
 which records file, line, column and the source line; `format` prints it like a compiler
 diagnostic, with the construct underlined.
 
-## Emission: `emit.ts`, `names.ts`
+## Emission: `emit/`, `names.ts`
 
-[`emit.ts`](../src/emit.ts) is string building. Its one real job is parenthesising by precedence
+[`emit/`](../src/emit) is string building, one module per concern, each importing its own layer or a lower one
+(`tests/architecture.test.ts`), entered through `emit/index.ts`:
+
+| Module | Holds |
+| --- | --- |
+| `options.ts` | `EmitOptions` and its defaults |
+| `qualify.ts` | schema-qualified names and types, the note for an unenforced union |
+| `expr.ts` | expressions |
+| `statements.ts` | statements of a PL/pgSQL body |
+| `function.ts` | `emitFunction` |
+| `types.ts` | `emitCompositeType`, `emitDomain`, `emitEnum` |
+| `migration.ts` | `dependencyOrder`, `emitMigration` |
+
+Its one real job is parenthesising by precedence in `expr.ts`
 (`PREC`, `BINARY_PRECEDENCE`, `precedenceOf`). It also writes the guards around types:
 `CREATE TYPE` and `CREATE DOMAIN` have no `IF NOT EXISTS`, so each is wrapped in a `DO` block that
 creates the type if missing, compares an existing one with what is expected, and raises on drift —
@@ -313,7 +326,7 @@ editing a test file: the test files run whatever the folders contain.
 1. Read its section in [`design.md`](design.md): it may already be a deliberate refusal.
 2. Decide what lowering must prove for the SQL to agree with the TypeScript in every case,
    including NULL, overflow and collation.
-3. Add an IR node in `ir.ts` only if no existing one expresses it; make `emit.ts` print it.
+3. Add an IR node in `ir.ts` only if no existing one expresses it; make `emit/` print it.
 4. Lower it in `lower/`, refusing every case you cannot prove, with a message that says what to
    write instead.
 5. Add an accepted case in `tests/parity/` and a rejected case per refusal in `tests/rejected/`;

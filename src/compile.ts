@@ -11,7 +11,7 @@ import { dirname, relative, resolve } from "node:path";
 import { CompileError } from "./errors.ts";
 import { TSQL_SCHEMA } from "./helpers.ts";
 import type { Paint } from "./style.ts";
-import { emitMigration, type EmitOptions } from "./emit.ts";
+import { emitMigration, type EmitOptions } from "./emit/index.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower/index.ts";
 import { openProject, typeCheck } from "./program.ts";

@@ -133,7 +133,7 @@ properties of that resolver are load-bearing:
 5. **Pass 3**: `mapTypeDeclaration` for every *exported* `interface`, `type` and `enum`
    (`exportedTypes`), so a type is created even when no function mentions it. Last, so a type reached
    from a parameter is still reported at that parameter.
-6. `emitMigration` (`src/emit.ts`) emits used domains and enums first, then composite types, then
+6. `emitMigration` (`src/emit/migration.ts`) emits used domains and enums first, then composite types, then
    functions.
 
 Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, message)` and collected
@@ -143,7 +143,7 @@ source line.
 ## The central invariant
 
 **Lowering enforces every restriction; the emitter is a total function.** Any IR that exists is
-emittable, so `src/emit.ts` never validates and never decides semantics. Concretely:
+emittable, so `src/emit/` never validates and never decides semantics. Concretely:
 
 - Widening casts are materialised as explicit `cast` IR nodes by `coerce` in `src/lower/coerce.ts` — the
   emitter does not infer them.
@@ -318,7 +318,7 @@ Composites are the subtle part, and the "Object types" section of `docs/design.m
 Arrays (`ArrayType`, `docs/design.md` "Arrays") are `readonly T[]` parameters, locals or composite fields (one
 column of array type) and return values, never nullable, elements a scalar or a
 non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
-and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`, for nested and array fields alike),
+and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit/migration.ts`, for nested and array fields alike),
 and a shape recursive through an array is refused (`TypeCtx.mapping`). `readonly` is required because arrays are passed by value — the
 same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
 `cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
@@ -402,7 +402,7 @@ test file. `tests/README.md` explains the three.
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
-- `tests/architecture.test.ts` holds the layering of `src/lower/` and `src/typemap/`: one way between layers,
+- `tests/architecture.test.ts` holds the layering of `src/lower/`, `src/typemap/` and `src/emit/`: one way between layers,
   each folder entered through its `index.ts`, no import of a later stage. A new module in either folder has to
   be given a layer there, or the test fails.
 
