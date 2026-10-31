@@ -255,7 +255,7 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
-The tables of names run the other way, and are closed. `src/math.ts` lists the members of `Math` that
+The tables of names run the other way, and are closed. `src/globals/math.ts` lists the members of `Math` that
 *compile* (`abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul`, plus the
 constants) — a PostgreSQL function under its own name, or SQL written to return the same double (`rule`) —
 measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
@@ -267,7 +267,7 @@ refuses a database holding a newer revision. **Changing a helper's body is a dec
 `src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
 
-`src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
+`src/globals/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
 JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
 so it lowers to `tsql.number_parse_int(s, radix)` — 10 for base ten, 0 for an omitted radix, which reads a leading `0x` as
 hexadecimal, as JavaScript spells it. Any other radix, or one that is not a literal, is refused: the radix decides
@@ -277,7 +277,7 @@ it throws on both in TypeScript, and the cast it stands for lives **inside the h
 `integer` outright and raises on both in PostgreSQL. Nothing is emitted for the guard at the call site, so
 `int()` erases itself here as it does around arithmetic. The cast suffices because it matches `int` on every
 value `parseInt` can produce — they differ only on a fraction, which `parseInt` cannot return. That is the
-rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/number.ts`), so
+rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/globals/number.ts`), so
 `int()` around `Float` arithmetic stays refused. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
 naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
 no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. It **inlines**: reading hexadecimal needs no

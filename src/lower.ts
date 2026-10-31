@@ -69,8 +69,8 @@ import {
 } from "./ir.ts";
 import { INT4_MAX, INT4_MIN, isInt4 } from "./constants.ts";
 import { type HelperName } from "./helpers.ts";
-import { mathConstant, mathFunction, unsupportedMathMessage } from "./math.ts";
-import { numberFunction, unsupportedNumberMessage } from "./number.ts";
+import { mathConstant, mathFunction, unsupportedMathMessage } from "./globals/math.ts";
+import { numberFunction, unsupportedNumberMessage } from "./globals/number.ts";
 import { toSnakeCase } from "./names.ts";
 import { classifyReference, referenceMessage } from "./references.ts";
 import { enumMember, INT_GUARD, isIntGuard, mapInferredType, mapTypeNode, type TypeCtx } from "./typemap.ts";
@@ -1235,7 +1235,7 @@ async function isNumberGlobal(node: Expression, s: State): Promise<boolean> {
 
 /**
  * `Math.floor(x)`, `Math.max(a, b)` … for the members whose PostgreSQL
- * function is the same one under another name (`src/math.ts`).
+ * function is the same one under another name (`src/globals/math.ts`).
  *
  * Nothing is rewritten: the emitted SQL is the call, with its arguments widened
  * so that no overload decision is left to PostgreSQL. What lowering has to
@@ -1256,7 +1256,7 @@ async function isNumberGlobal(node: Expression, s: State): Promise<boolean> {
  * ("Math"); the harness finds the divergence when an input reaches it.
  */
 /**
- * `Number.parseInt(s)` and `Number.parseInt(s, 10)` (`src/number.ts`).
+ * `Number.parseInt(s)` and `Number.parseInt(s, 10)` (`src/globals/number.ts`).
  *
  * It lowers to a helper rather than a cast because it is a *parser*:
  * JavaScript reads the longest prefix it understands and ignores the rest, so

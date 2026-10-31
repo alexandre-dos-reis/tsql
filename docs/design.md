@@ -281,7 +281,7 @@ otherwise read it as `bigint`.
 
 ## Math
 
-Every member of `Math` whose result can be the **same double** as JavaScript's, for every input including `NaN`, the infinities and `-0`, compiles; the others are refused. The members are a closed table in [`src/math.ts`](../src/math.ts). `Math` itself is recognised by provenance, so a parameter or a module-level value called `Math` is not mistaken for it, and a member the table does not list is refused — anything `Math` grows later stays out until someone adds it and measures it.
+Every member of `Math` whose result can be the **same double** as JavaScript's, for every input including `NaN`, the infinities and `-0`, compiles; the others are refused. The members are a closed table in [`src/globals/math.ts`](../src/math.ts). `Math` itself is recognised by provenance, so a parameter or a module-level value called `Math` is not mistaken for it, and a member the table does not list is refused — anything `Math` grows later stays out until someone adds it and measures it.
 
 | TypeScript | SQL | note |
 | --- | --- | --- |
@@ -358,7 +358,7 @@ value `parseInt` can produce:
 
 Only the last row disagrees, and `parseInt` cannot produce it: it reads a run of digits and stops at the `.`,
 so `"12.9"` is `12`. That is why the rule is narrow — a `Number` member folds the cast into its helper when
-its value is *necessarily whole*, which `src/number.ts` records per member as `whole`, not because its
+its value is *necessarily whole*, which `src/globals/number.ts` records per member as `whole`, not because its
 arithmetic happens to be done in a double. `int()` around arbitrary `Float` arithmetic stays refused, for
 exactly the fraction case, and a member that could return a fraction would be `whole: false` and stay a
 `Float`.

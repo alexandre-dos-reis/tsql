@@ -10,12 +10,13 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                     type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
                                        │
-                                       ├─ typemap.ts    TypeScript types → PgType (composites, domains, enums, arrays)
-                                       ├─ references.ts what a name refers to (parameter, global, package…)
-                                       ├─ math.ts       the closed table of `Math` members that compile, and why the rest do not
-                                       ├─ helpers.ts    the functions installed in the `tsql` schema, and the SQL section that installs them
-                                       ├─ language.ts   which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
-                                       └─ origin.ts     where a declaration lives (project, standard library, package)
+                                       ├─ typemap.ts        TypeScript types → PgType (composites, domains, enums, arrays)
+                                       ├─ references.ts     what a name refers to (parameter, global, package…)
+                                       ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
+                                       ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`), and why the rest do not
+                                       ├─ helpers.ts        the functions installed in the `tsql` schema, and the SQL section that installs them
+                                       ├─ language.ts       which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
+                                       └─ origin.ts         where a declaration lives (project, standard library, package)
 
  migration + manifest ──► runParity.ts ──► parity.ts ──► the same inputs through the TypeScript and through PostgreSQL
                           PGlite or        fast-check
@@ -170,15 +171,15 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   whether its type is callable, so a non-compiled function and a module-level value get different
   advice. `referenceMessage` words the refusal.
 - **`Math` calls**: `isMathGlobal` finds `Math` by the same provenance, and `lowerMathCall` looks the
-  member up in [`math.ts`](../src/math.ts)'s closed table. A member that is there becomes a `builtin`
+  member up in [`globals/math.ts`](../src/globals/math.ts)'s closed table. A member that is there becomes a `builtin`
   IR node — a PostgreSQL function called by its bare name, its arguments already widened — or, for the
   members with a `rule` in the table, a `helper` node: a call to `tsql.math_round` and its kin
   ([`helpers.ts`](../src/helpers.ts)), recorded in `FunctionIR.helpers` so `emitMigration` installs the
   ones the functions use. `Math.PI` and the other constants become a `lit`. A member that is not in the
-  table is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only one that
+  table is refused with the reason `globals/math.ts` keeps for it. `abs` of an `integer` is the only one that
   asks for the `int(...)` guard.
 - **`Number` calls**: `isNumberGlobal` finds `Number` the same way, and `lowerNumberCall` looks the
-  member up in [`number.ts`](../src/number.ts)'s closed table — `parseInt` alone today. It becomes a
+  member up in [`globals/number.ts`](../src/globals/number.ts)'s closed table — `parseInt` alone today. It becomes a
   `helper` node for `tsql.number_parse_int`, taking the radix as JavaScript does: the literal `10`, or 0
   for an omitted one, which reads a leading `0x` as hexadecimal. Any other radix, or one that is not a
   literal, is refused, and that is checked *before* the guard below so the advice names a rewrite that
