@@ -143,7 +143,7 @@ Dependencies run one way: `context.ts` at the bottom, then `named.ts`, then `map
 the recursion itself: an object type's fields are mapped by the same rules as anywhere, so
 `composite.ts` reaches back into `map.ts`. Only function declarations are called at run time, so
 the cycle is safe. `authoring.ts` sits beside [`origin.ts`](../src/origin.ts): both answer "where
-does this declaration come from", and lowering asks it too, for the `int` guard.
+does this declaration come from", and lowering asks it too, for the `int` guard. `tests/architecture.test.ts` holds the direction here as well.
 
 - `Integer` and `Float` are aliases of `number` declared in
   [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
@@ -189,8 +189,8 @@ Dependencies run one way: `coerce.ts` and `state.ts` at the bottom, then `expres
 `statements/`. Inside each folder the modules call each other — every form recurses through
 `lowerExpr` or `lowerStatements` — so those two folders hold import cycles. They are safe because
 only function declarations are called at run time; the constants evaluated at load depend on
-`ir.ts` alone. `assignable`, the predicate behind `requireAssignable`, lives in `ir.ts` with the
-other type predicates.
+`ir.ts` alone. `tests/architecture.test.ts` holds the direction. `assignable`, the predicate behind
+`requireAssignable`, lives in `ir.ts` with the other type predicates.
 
 - **Statements**: `lowerStatement` dispatches to `lowerIf`, `lowerSwitch` (a `CASE`, expression
   form when every branch only returns), `lowerWhile`, `lowerFor`, `lowerForOf` (`FOREACH`),

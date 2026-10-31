@@ -402,6 +402,9 @@ test file. `tests/README.md` explains the three.
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
+- `tests/architecture.test.ts` holds the layering of `src/lower/` and `src/typemap/`: one way between layers,
+  each folder entered through its `index.ts`, no import of a later stage. A new module in either folder has to
+  be given a layer there, or the test fails.
 
 **Commits and pushes are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at
 `.githooks`; its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be

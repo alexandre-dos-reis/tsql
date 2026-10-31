@@ -6,7 +6,7 @@ import { SyntaxKind, type Node, type TypeReferenceNode } from "typescript/unstab
 import { SymbolFlags } from "typescript/unstable/async";
 import { type PgScalar } from "./ir.ts";
 import { isFromPackage } from "./origin.ts";
-import { type TypeCtx } from "./typemap/context.ts";
+import type { TypeCtx } from "./typemap/index.ts";
 
 /** Numeric aliases from src/index.ts, resolved by name at build time. */
 const NUMERIC_ALIASES: Record<string, PgScalar> = {
