@@ -1,5 +1,17 @@
 # @adrdp/tsql
 
+## 0.4.0
+
+### Minor Changes
+
+- 61b1f4f: Compile `Number.parseFloat(s)` to `tsql.number_parse_float(s)`, a `double precision`: it reads the longest decimal prefix as JavaScript does (`"3.14abc"` is 3.14, `".5"`, `"1e3"` and `"-Infinity"` are numbers, unreadable text is `NaN`), and gives `±Infinity`, `0` and `-0` where PostgreSQL's own cast raises. The helper inlines. It is a `Float`, so `int(Number.parseFloat(s))` is refused. Literals beyond what `numeric` holds (about 10^130749, or 10^-16383) raise rather than answer. A new helper is added, so the helpers are at revision 3; no existing helper changed, so nothing already installed behaves differently.
+
+### Patch Changes
+
+- 8d5b13f: Recognise the authoring module (`Integer`, `Float`, `int`) in exactly two files: `src/index.ts` and `dist/index.d.mts`, the one `exports.types` names, still checked against the package's `package.json`. It used to match a wider set of file names. The generated SQL is unchanged. The rest is internal: `lower.ts`, `typemap.ts` and `emit.ts` are folders (`src/lower/`, `src/typemap/`, `src/emit/`) with their layering held by a test, `Math` and `parseInt` live in `src/globals/`, `src/` imports through an `@/` alias without `.ts`, and the repository lints with type-aware oxlint (which also type checks) and sorts imports with oxfmt. Two small fixes came out of the lint: a needless `await` on the synchronous `getProjects()`, and an `unknown` error interpolated into two messages of `tsql parity` (now `String(error)`, the same text).
+- ff2c663: The `kind` of every IR node and the binary operators are named constants in `src/ir.ts` (`EXPR`, `STMT`, `TYPE`, `NAMED`, `PART`, `OP`) instead of string literals scattered through lowering and the emitter. The generated SQL is unchanged.
+- 41e18fa: Remove duplication inside the compiler, with no change to the SQL it generates: the scalar type names and the shared `Integer`, `Float`, boolean and text types are defined once in `src/ir.ts`, the read of a property name and the emission of the two `CASE` statements are written once each.
+
 ## 0.3.2
 
 ### Patch Changes

@@ -8,7 +8,7 @@
     "tsql:parity": "tsql parity input.ts"
   },
   "devDependencies": {
-    "@adrdp/tsql": "^0.3.2",
+    "@adrdp/tsql": "^0.4.0",
     "typescript": "~7.0.2"
   }
 }
