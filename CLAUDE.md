@@ -157,7 +157,7 @@ dumb?"
 ## Publishing
 
 The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` (`bun run build`, run by
-`prepublishOnly`, not committed), whose `index.d.ts` is the types. Releases go through changesets, and
+`prepublishOnly`, not committed), whose `index.d.mts` is the types. Releases go through changesets, and
 are **triggered by merging a PR, not by running a command** (`.github/workflows/release.yml`,
 `CONTRIBUTING.md` "Publishing"): a push to `main` with unreleased changesets opens a "Version
 Packages" PR carrying `bun run version`'s output, and merging it makes `changesets/action` publish to
@@ -366,7 +366,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 **Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
 `examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
-`@adrdp/tsql/pgtypes` resolves through a self-link, `node_modules/@adrdp/tsql` → the repository, which the
+`@adrdp/tsql` resolves through a self-link, `node_modules/@adrdp/tsql` → the repository, which the
 test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
 with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
 committed. Only those three scripts are tested, with no database to set up (parity runs on

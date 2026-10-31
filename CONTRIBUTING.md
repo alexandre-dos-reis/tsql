@@ -110,7 +110,7 @@ No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib:
 
 ## Publishing
 
-The package ships `bin/tsql.mjs` and the build in `dist/` — the JavaScript, and `index.d.ts` for the types — with no source and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets).
+The package ships `bin/tsql.mjs` and the build in `dist/` — the JavaScript, and `index.d.mts` for the types — with no source and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets).
 
 **Releasing is merging a pull request, not running a command.** The only step on your machine is describing the change:
 
