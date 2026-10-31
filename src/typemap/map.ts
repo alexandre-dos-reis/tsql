@@ -16,6 +16,7 @@ import {
   type UnionTypeNode,
 } from "typescript/unstable/ast";
 import { SymbolFlags, TypeFlags, type Checker, type Type, type UnionType } from "typescript/unstable/async";
+
 import { resolveNumericAlias } from "@/authoring";
 import { CompileError } from "@/errors";
 import {
@@ -30,6 +31,7 @@ import {
   type PgType,
 } from "@/ir";
 import { originOfPath } from "@/origin";
+
 import { mapCompositeType } from "./composite";
 import { NULL_ONLY, unparenthesized, type Mapped, type TypeCtx } from "./context";
 import { namedFromSymbol, referencedSymbol } from "./named";

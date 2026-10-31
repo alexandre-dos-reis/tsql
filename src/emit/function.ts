@@ -3,6 +3,7 @@
  */
 import { isArray, type FunctionIR } from "@/ir";
 import { quoteIdentifier } from "@/names";
+
 import { DEFAULTS, type EmitOptions } from "./options";
 import { allowedNote, qualifier, typeName, unenforced } from "./qualify";
 import { emitStatements } from "./statements";

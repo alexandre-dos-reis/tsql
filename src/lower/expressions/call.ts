@@ -9,12 +9,14 @@ import {
   type Node,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
+
+import { INT_GUARD, isIntGuard } from "@/authoring";
 import { CompileError } from "@/errors";
 import { type HelperName } from "@/helpers";
 import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "@/ir";
-import { INT_GUARD, isIntGuard } from "@/authoring";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+
 import { referenceError, rootIdentifier } from "./access";
 import { arrayOperand, lowerArrayMethod } from "./array";
 import { lowerExpr } from "./expr";

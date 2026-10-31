@@ -9,6 +9,7 @@ import {
   type Identifier,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import {
   arrayType,
@@ -27,6 +28,7 @@ import {
 } from "@/ir";
 import { coerce, requireAssignable, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+
 import { resolveAccess, tryReadPath } from "./access";
 import { isNullLiteral, lowerExpr } from "./expr";
 

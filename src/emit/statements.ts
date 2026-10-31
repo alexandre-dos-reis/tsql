@@ -3,6 +3,7 @@
  */
 import { type StmtIR } from "@/ir";
 import { quoteIdentifier } from "@/names";
+
 import { emitExpr } from "./expr";
 import { type Qualifier } from "./qualify";
 

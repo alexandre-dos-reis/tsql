@@ -10,13 +10,15 @@ import {
   type ParenthesizedExpression,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { mathConstant } from "@/globals/math";
 import { unsupportedNumberMessage } from "@/globals/number";
 import { describe, isComposite, namedType, scalarType, type ExprIR } from "@/ir";
+import { type State } from "@/lower/state";
 import { classifyReference, referenceMessage } from "@/references";
 import { enumMember } from "@/typemap";
-import { type State } from "@/lower/state";
+
 import { ARRAY_SUBSET, arrayOperand } from "./array";
 import { DOUBLE } from "./call";
 import { lowerExpr } from "./expr";

@@ -11,11 +11,13 @@ import {
   type SpreadAssignment,
   type StringLiteral,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { describe, isComposite, type ExprIR } from "@/ir";
-import { mapInferredType } from "@/typemap";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+import { mapInferredType } from "@/typemap";
+
 import { lowerExpr } from "./expr";
 
 /**

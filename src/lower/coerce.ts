@@ -2,6 +2,7 @@
  * Type rules on the IR: what may be stored where, what may be compared, and the casts that make it so.
  */
 import { type Node } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import {
   assignable,

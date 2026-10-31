@@ -1,4 +1,5 @@
 {
   "printWidth": 120,
-  "ignorePatterns": ["**/*.md", "tests/parity/**", "tests/rejected/**", "tests/divergent/**"]
+  "ignorePatterns": ["**/*.md", "tests/parity/**", "tests/rejected/**", "tests/divergent/**"],
+  "sortImports": true
 }

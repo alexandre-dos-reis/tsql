@@ -1,7 +1,9 @@
-import { API, DiagnosticCategory, type Project } from "typescript/unstable/async";
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+
+import { API, DiagnosticCategory, type Project } from "typescript/unstable/async";
+
 import { ProjectNotFoundError } from "./errors";
 import { describeSearch, findTscPath } from "./tscPath";
 

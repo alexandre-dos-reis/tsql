@@ -2,9 +2,10 @@
  * Assignments and compound assignments to locals.
  */
 import { SyntaxKind, type BinaryExpression, type Expression, type Identifier } from "typescript/unstable/ast";
+
+import { INT_GUARD } from "@/authoring";
 import { CompileError } from "@/errors";
 import { assignable, describe, isExactly, isNumeric, scalarType, type ExprIR, type StmtIR } from "@/ir";
-import { INT_GUARD } from "@/authoring";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { referenceError } from "@/lower/expressions/access";
 import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "@/lower/expressions/binary";

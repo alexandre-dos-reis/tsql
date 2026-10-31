@@ -10,6 +10,7 @@
  * behave differently.
  */
 import { readFileSync, writeFileSync } from "node:fs";
+
 import { helperFingerprint } from "../src/helpers";
 import { HELPER_HASHES } from "../src/helpersLock";
 

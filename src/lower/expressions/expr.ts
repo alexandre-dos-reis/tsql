@@ -18,11 +18,13 @@ import {
   type StringLiteral,
   type TemplateExpression,
 } from "typescript/unstable/ast";
+
 import { INT4_MAX, INT4_MIN, isInt4 } from "@/constants";
 import { CompileError } from "@/errors";
 import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "@/ir";
 import { coerce, textOf, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+
 import { lowerAccess, lowerNew, referenceError } from "./access";
 import { lowerArrayLiteral } from "./array";
 import { lowerBinary, unguarded } from "./binary";

@@ -1,7 +1,9 @@
-import { Command } from "commander";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+
+import { Command } from "commander";
+
 import { compileProject, formatResult, type CompileResult } from "./compile";
 import { ProjectNotFoundError } from "./errors";
 import { err, out, painter } from "./style";

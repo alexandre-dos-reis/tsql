@@ -9,6 +9,7 @@ import {
   type Node,
   type ParameterDeclaration,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { type ParamIR, type SignatureIR } from "@/ir";
 import { toSnakeCase } from "@/names";

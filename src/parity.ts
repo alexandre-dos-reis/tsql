@@ -1,4 +1,5 @@
 import fc from "fast-check";
+
 import type { ManifestFunction } from "./compile";
 import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir";
 import { quoteIdentifier } from "./names";

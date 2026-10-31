@@ -4,6 +4,7 @@
  */
 import { SyntaxKind, type Node, type TypeReferenceNode } from "typescript/unstable/ast";
 import { SymbolFlags } from "typescript/unstable/async";
+
 import { type PgScalar } from "./ir";
 import { isFromPackage } from "./origin";
 import type { TypeCtx } from "./typemap";

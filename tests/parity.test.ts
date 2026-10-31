@@ -1,7 +1,9 @@
-import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
+import { PGlite } from "@electric-sql/pglite";
+
 import { compileProject, formatResult, type ManifestFunction } from "../src/compile";
 import { checkParity, type RowQuery } from "../src/parity";
 import { openDatabase, type Database } from "../src/runParity";
@@ -78,7 +80,9 @@ describe("each case compiles to its .sql", () => {
           if (block.every((line, k) => emitted[i + k] === line)) at = i;
         }
         if (at === -1) {
-          throw new Error(`${DIR}/${name}.ts: this block of ${name}.sql was not emitted (in order):\n\n${block.join("\n")}\n\nEmitted:\n\n${result.sql}`);
+          throw new Error(
+            `${DIR}/${name}.ts: this block of ${name}.sql was not emitted (in order):\n\n${block.join("\n")}\n\nEmitted:\n\n${result.sql}`,
+          );
         }
         from = at + block.length;
       }
@@ -170,7 +174,9 @@ test.skipIf(!project.ok)("the migration adds an enum value in its place", async 
 });
 
 test.skipIf(!project.ok)("the migration refuses an enum that has a value the functions removed", async () => {
-  const { db, failure } = await applyOver("CREATE TYPE app.area_type AS ENUM ('level-1', 'level-2', 'level-3', 'legacy');");
+  const { db, failure } = await applyOver(
+    "CREATE TYPE app.area_type AS ENUM ('level-1', 'level-2', 'level-3', 'legacy');",
+  );
   try {
     expect(failure?.message).toContain("a value was removed or renamed");
   } finally {
@@ -179,7 +185,8 @@ test.skipIf(!project.ok)("the migration refuses an enum that has a value the fun
 });
 
 test.skipIf(!project.ok)("the migration narrows a domain, and refuses while rows use a removed value", async () => {
-  const wider = "CREATE DOMAIN app.zone AS text CONSTRAINT zone_values CHECK (VALUE = ANY (ARRAY['east', 'north', 'south']));";
+  const wider =
+    "CREATE DOMAIN app.zone AS text CONSTRAINT zone_values CHECK (VALUE = ANY (ARRAY['east', 'north', 'south']));";
 
   const unused = await applyOver(wider);
   try {

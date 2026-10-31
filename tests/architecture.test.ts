@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { Glob } from "bun";
 import { existsSync, readFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
+
+import { Glob } from "bun";
 
 /**
  * The layering `docs/architecture.md` describes for `src/lower/`, `src/typemap/` and `src/emit/`, held as a test.

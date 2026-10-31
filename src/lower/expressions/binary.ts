@@ -2,6 +2,8 @@
  * Binary operators: arithmetic, comparison and the `int(...)` overflow guard.
  */
 import { formatSyntaxKind, SyntaxKind, type BinaryExpression, type Node } from "typescript/unstable/ast";
+
+import { INT_GUARD } from "@/authoring";
 import { CompileError } from "@/errors";
 import {
   describe,
@@ -15,9 +17,9 @@ import {
   type ExprIR,
   type ScalarType,
 } from "@/ir";
-import { INT_GUARD } from "@/authoring";
 import { coerce, textOf, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+
 import { rootIdentifier } from "./access";
 import { canBeNaN, NAN, strictEquality } from "./equality";
 import { isNullLiteral, lowerExpr } from "./expr";

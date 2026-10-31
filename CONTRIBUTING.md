@@ -36,7 +36,7 @@ bun run lint             # oxlint, type-aware (oxlint-tsgolint), configured in .
 bun run format           # oxfmt, pinned as a dev dependency
 ```
 
-`.oxfmtrc.json` sets `printWidth` to 120 and excludes `**/*.md`: oxfmt reflows prose and flattens tables.
+`.oxfmtrc.json` sets `printWidth` to 120, sorts imports (`sortImports`: `node:*` and packages, then `@/`, then relative ones, a blank line between groups) and excludes `**/*.md`: oxfmt reflows prose and flattens tables.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
 

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+
 import type { Path } from "typescript/unstable/ast";
 import type { Project } from "typescript/unstable/async";
 

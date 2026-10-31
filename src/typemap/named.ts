@@ -20,11 +20,13 @@ import {
   type VariableDeclaration,
 } from "typescript/unstable/ast";
 import { SymbolFlags, TypeFlags, type Symbol as TsSymbol, type UnionType } from "typescript/unstable/async";
+
 import { CompileError } from "@/errors";
 import { type NamedText } from "@/ir";
 import { MAX_IDENTIFIER_BYTES, toSnakeCase } from "@/names";
 import { originOfPath } from "@/origin";
 import { relativize } from "@/program";
+
 import { unparenthesized, type TypeCtx } from "./context";
 
 /** The symbol a type reference names, through an import. */

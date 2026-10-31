@@ -17,11 +17,13 @@ import {
   type VariableStatement,
   type WhileStatement,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { type ExprIR, type StmtIR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { lowerExpr } from "@/lower/expressions/expr";
 import { within, type State, type Target } from "@/lower/state";
+
 import { lowerAssignment } from "./assignment";
 import { lowerIf, lowerSwitch } from "./control";
 import { lowerVariableStatement } from "./declarations";

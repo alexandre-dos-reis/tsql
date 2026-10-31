@@ -1,3 +1,5 @@
+import { dirname, relative, resolve } from "node:path";
+
 import {
   NodeFlags,
   SyntaxKind,
@@ -7,15 +9,15 @@ import {
   type SourceFile,
   type VariableStatement,
 } from "typescript/unstable/ast";
-import { dirname, relative, resolve } from "node:path";
+
+import { emitMigration, type EmitOptions } from "./emit";
 import { CompileError } from "./errors";
 import { TSQL_SCHEMA } from "./helpers";
-import type { Paint } from "./style";
-import { emitMigration, type EmitOptions } from "./emit";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir";
+import { chooseLanguages } from "./language";
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower";
 import { openProject, typeCheck } from "./program";
-import { chooseLanguages } from "./language";
+import type { Paint } from "./style";
 import { mapTypeDeclaration, type TypeDeclaration } from "./typemap";
 
 export interface CompileOptions {

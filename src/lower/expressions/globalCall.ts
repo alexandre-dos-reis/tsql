@@ -10,15 +10,17 @@ import {
   type NumericLiteral,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
+
+import { INT_GUARD } from "@/authoring";
 import { INT4_MIN } from "@/constants";
 import { CompileError } from "@/errors";
 import { mathFunction, unsupportedMathMessage } from "@/globals/math";
 import { numberFunction, unsupportedNumberMessage } from "@/globals/number";
 import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType, type ScalarType } from "@/ir";
-import { classifyReference } from "@/references";
-import { INT_GUARD } from "@/authoring";
 import { coerce, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
+import { classifyReference } from "@/references";
+
 import { DOUBLE, helper } from "./call";
 import { lowerExpr } from "./expr";
 

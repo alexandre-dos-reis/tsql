@@ -3,6 +3,7 @@
  */
 import { SyntaxKind, type ParenthesizedTypeNode, type TypeNode } from "typescript/unstable/ast";
 import { type Checker, type Project } from "typescript/unstable/async";
+
 import { type CompositeType, type NamedText, type PgType } from "@/ir";
 
 export interface TypeCtx {

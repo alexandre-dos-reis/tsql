@@ -3,6 +3,7 @@
  */
 import { isArray, isScalar, namedType, type CompositeType, type NamedText, type PgType } from "@/ir";
 import { quoteIdentifier, quoteLiteral } from "@/names";
+
 import { DEFAULTS, type EmitOptions } from "./options";
 import { allowedNote, typeName, unenforced } from "./qualify";
 

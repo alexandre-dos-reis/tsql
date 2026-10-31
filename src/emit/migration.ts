@@ -5,6 +5,7 @@ import { runtimeSql, type HelperName } from "@/helpers";
 import { isArray, isScalar, type CompositeType, type FunctionIR, type NamedText } from "@/ir";
 import { creationOrder } from "@/language";
 import { quoteIdentifier } from "@/names";
+
 import { emitFunction } from "./function";
 import { DEFAULTS, type EmitOptions } from "./options";
 import { emitCompositeType, emitDomain, emitEnum } from "./types";

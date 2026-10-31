@@ -9,12 +9,14 @@ import {
   type Statement,
   type SwitchStatement,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { describe, isArray, isComposite, isExactly, sameNamed, scalarType, type ExprIR, type StmtIR } from "@/ir";
 import { textOf } from "@/lower/coerce";
 import { checkStrictEquality, strictEquality } from "@/lower/expressions/equality";
 import { isNullLiteral, lowerExpr } from "@/lower/expressions/expr";
 import { uniqueName, type State } from "@/lower/state";
+
 import { asStatements, lowerClauseBody, lowerStatements, returnedValue } from "./statement";
 
 export async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {

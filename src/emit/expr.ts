@@ -5,6 +5,7 @@ import { isInt4 } from "@/constants";
 import { TSQL_SCHEMA } from "@/helpers";
 import { type BinOp, type ExprIR } from "@/ir";
 import { quoteIdentifier, quoteLiteral } from "@/names";
+
 import { arrayTypeName, type Qualifier } from "./qualify";
 
 /**

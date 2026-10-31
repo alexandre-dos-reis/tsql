@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+
 import type { ManifestFunction } from "../src/compile";
 import { checkParity, type RowQuery } from "../src/parity";
 import { openDatabase, type Database } from "../src/runParity";

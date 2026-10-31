@@ -7,8 +7,10 @@ import {
   type InterfaceDeclaration,
   type TypeAliasDeclaration,
 } from "typescript/unstable/ast";
+
 import { CompileError } from "@/errors";
 import { namedType, type PgType } from "@/ir";
+
 import { type TypeCtx } from "./context";
 import { mapInferredType, mapTypeNode } from "./map";
 import { namedFromSymbol } from "./named";
