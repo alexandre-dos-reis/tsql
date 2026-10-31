@@ -331,7 +331,7 @@ returns — so the SQL is pinned to the language and not to one engine. The exam
 (2, 8, 13, 16, 36) are left out, the compiler rejecting those at build time.
 
 
-`Number.parseInt` is the one member of `Number` that compiles, and it is not a cast. JavaScript reads the
+`Number.parseInt` is one of the two members of `Number` that compile (the other is `parseFloat`, below), and it is not a cast. JavaScript reads the
 longest prefix it understands and ignores whatever follows, so `parseInt('12abc')` is `12` where
 `'12abc'::integer` raises, and `parseInt('')` is `NaN` where the cast raises again. The SQL is therefore a
 parser, in the `tsql` schema: `tsql.number_parse_int`.
@@ -481,7 +481,12 @@ The loud-limits test pins this. A raise is never a wrong answer, and the parity 
 plan. The argument is read several times, so it inlines only for a cheap argument, which an ordinary expression is.
 Measured on PGlite over 200 000 rows, a few µs a call (about 5 to 9 on ordinary input; the plain cast is 0.3
 to 2, but raises on a suffix), 26 µs only for three-digit exponents, which take the clamp, and 0.9 µs for
-`NaN`. Shorter forms were tried and lost: one that needed a `LATERAL` stopped inlining.
+`NaN`. Shorter forms were tried and lost. One that needed a `LATERAL` stopped inlining. Two that inline are shorter
+because they read the literal in fewer places: 938 characters with the guard kept, 691 without it, building the
+result as text (sign, then `0`, `Infinity` or the number) and casting once. They agree with JavaScript on the
+grid, but every `substring` they add costs about 5 µs, so they run at 11.7 and 17 µs on ordinary input against
+6.4. The body is 1 178 characters because the common string must meet one pattern and one cast, and the
+pattern is written out once for it and once per read in the slow path.
 
 One thing is a test limit, not a helper one: PGlite's WebAssembly build (musl `strtod`) rounds a
 ~1000-digit string near a denormal tie differently from glibc, V8, JavaScriptCore and Python, which agree
