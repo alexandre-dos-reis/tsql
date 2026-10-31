@@ -78,9 +78,10 @@ export async function isNumberGlobal(node: Expression, s: State): Promise<boolea
  * ("Math"); the harness finds the divergence when an input reaches it.
  */
 /**
- * `Number.parseInt(s)` and `Number.parseInt(s, 10)` (`src/globals/number.ts`).
+ * `Number.parseInt(s)`, `Number.parseInt(s, 10)` and `Number.parseFloat(s)`
+ * (`src/globals/number.ts`).
  *
- * It lowers to a helper rather than a cast because it is a *parser*:
+ * They lower to a helper rather than a cast because they are *parsers*:
  * JavaScript reads the longest prefix it understands and ignores the rest, so
  * `parseInt('12abc')` is 12 where `'12abc'::integer` raises, and `parseInt('x')`
  * is `NaN` where the cast raises again. What lowering has to prove:
@@ -88,16 +89,20 @@ export async function isNumberGlobal(node: Expression, s: State): Promise<boolea
  * - **The argument is a `string` that cannot be null.** `parseInt(null)` is
  *   `NaN` in JavaScript, where every SQL function here would answer NULL — a
  *   different value, in a type (`Float`) that already has its own `NaN`. No
- *   valid case reaches this today: `parseInt` is declared to take a `string`,
- *   and the two ways past that (`text!`, `text as string`) are refused before
+ *   valid case reaches this today: both are declared to take a `string`, and
+ *   the two ways past that (`text!`, `text as string`) are refused before
  *   lowering gets here. It is kept so the rule is stated where it belongs, and
  *   holds if either is ever accepted — which is why it has no rejection case.
- * - **The result is a `Float`, never an `Integer`.** It can be `NaN`, and it
- *   can land far outside 32 bits (`parseInt('2147483648')`), so calling it an
- *   `Integer` would be a lie TypeScript also refuses.
- * - **The radix is absent or the literal `10`.** Those are the two forms that
- *   were measured. A radix that is not a literal cannot be checked at build
- *   time at all, and the compiler does not emit SQL it has not measured.
+ * - **`parseInt` is an `Integer` only inside `int(...)`.** It can be `NaN`, and
+ *   it can land far outside 32 bits (`parseInt('2147483648')`), so the helper
+ *   returns `integer` and raises on both, as `int` throws on both. Unguarded it
+ *   is refused. `parseFloat` needs none of that: its result is a `Float`, and
+ *   `NaN` and the infinities are values of one, so it is not whole and `int(...)`
+ *   around it is refused like any other `Float`.
+ * - **For `parseInt`, the radix is absent or the literal `10`.** Those are the
+ *   two forms that were measured. A radix that is not a literal cannot be
+ *   checked at build time at all, and the compiler does not emit SQL it has not
+ *   measured. `parseFloat` has no radix.
  */
 export async function lowerNumberCall(
   node: CallExpression,
@@ -118,10 +123,10 @@ export async function lowerNumberCall(
       );
     }
   }
-  if (node.arguments.length === 0 || node.arguments.length > 2) {
+  if (node.arguments.length === 0 || node.arguments.length > (entry.radix ? 2 : 1)) {
     throw CompileError.at(
       node,
-      `\`${label}\` takes the string to read, and optionally the radix \`10\`, got ${node.arguments.length} arguments.`,
+      `\`${label}\` takes the string to read${entry.radix ? ", and optionally the radix `10`" : ""}, got ${node.arguments.length} arguments.`,
     );
   }
 
@@ -159,15 +164,18 @@ export async function lowerNumberCall(
     );
   }
 
-  // The helpers return `integer`: the cast `int(...)` stands for is inside them,
-  // where it raises on exactly the values TypeScript's `int` throws on. Nothing
-  // is emitted here for the guard, which is why `lowerIntGuard` sees an
-  // `integer` and erases itself as it does around arithmetic.
+  // A whole-valued helper returns `integer`: the cast `int(...)` stands for is
+  // inside it, where it raises on exactly the values TypeScript's `int` throws
+  // on. Nothing is emitted here for the guard, which is why `lowerIntGuard` sees
+  // an `integer` and erases itself as it does around arithmetic. The others
+  // return a `double precision`, and are a `Float`.
+  const type = entry.whole ? INTEGER : DOUBLE;
+  if (!entry.radix) return helper(s, entry.helper, [text], type);
 
   // The radix goes to the helper as JavaScript spells it: 10 for base ten, 0
   // for an omitted one, which reads a leading `0x` as hexadecimal.
   const base: ExprIR = { kind: EXPR.lit, value: radix ? 10 : 0, type: INTEGER };
-  return helper(s, entry.helper, [text, base], INTEGER);
+  return helper(s, entry.helper, [text, base], type);
 }
 
 export async function lowerMathCall(

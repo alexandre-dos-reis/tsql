@@ -272,7 +272,7 @@ refuses a database holding a newer revision. **Changing a helper's body is a dec
 `src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
 
-`src/globals/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
+`src/globals/number.ts` is the same shape for `Number`, and holds `parseInt` and `parseFloat`. `parseFloat` is a `Float` parser (`whole: false`, no radix) lowering to `tsql.number_parse_float(s)`; `int(Number.parseFloat(s))` is refused, and the helper's clamp and limits are in `docs/design.md` ("`Number.parseFloat`"). `parseInt` is a *parser*, not a cast —
 JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
 so it lowers to `tsql.number_parse_int(s, radix)` — 10 for base ten, 0 for an omitted radix, which reads a leading `0x` as
 hexadecimal, as JavaScript spells it. Any other radix, or one that is not a literal, is refused: the radix decides

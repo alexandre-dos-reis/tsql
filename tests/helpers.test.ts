@@ -120,6 +120,31 @@ describe("a migration brings the helpers up to date", () => {
     expect(text).toContain("substring");
     expect(text).toContain("COALESCE");
   });
+
+  // The range handling is the part that could most easily need a FROM: a value is read to be
+  // classified and read again to be cast, and the obvious way to read it once is a subquery or a
+  // LATERAL, which would stop PostgreSQL inlining. It is a `CASE` on a clamped value instead, whose
+  // subject is evaluated once, and the common string never reaches it — a string with no `e` or
+  // `E` costs two `strpos` and one pattern. Losing that would turn a µs call into a function call.
+  test("number_parse_float stays inlinable: a subquery for the range would not", async () => {
+    const db = new PGlite();
+    await apply(db);
+    await db.exec("CREATE TEMP TABLE texts (s text)");
+    const plan = async (argument: string) => {
+      const rows = await db.query<{ "QUERY PLAN": string }>(
+        `EXPLAIN (VERBOSE, COSTS OFF) SELECT ${TSQL_SCHEMA}.number_parse_float(${argument}) FROM texts`,
+      );
+      return rows.rows.map((row) => row["QUERY PLAN"]).join("\n");
+    };
+    // A column, and a computed argument: the helper reads `s` several times, so PostgreSQL inlines it
+    // only while the argument is cheap enough to repeat, which an ordinary expression is.
+    for (const argument of ["s", "lower(s) || 'x'"]) {
+      const text = await plan(argument);
+      expect(text, argument).not.toContain(`${TSQL_SCHEMA}.number_parse_float(`);
+      expect(text, argument).toContain("substring");
+      expect(text, argument).toContain("COALESCE");
+    }
+  });
 });
 
 describe("what a build writes", () => {

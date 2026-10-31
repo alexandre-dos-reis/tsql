@@ -69,3 +69,14 @@ export function centsFromText(text: string): Integer {
 export function anyBaseFromText(text: string): Integer {
   return int(Number.parseInt(text));
 }
+
+/**
+ * `Number.parseFloat` is the same kind of parser for a `Float`, and needs no
+ * guard: `NaN` and the infinities are values of a `Float`, so nothing has to
+ * raise. `"3.14abc"` is 3.14, `"1e999"` is `Infinity` and `"abc"` is `NaN`, as
+ * in JavaScript, where PostgreSQL's own cast would raise on all three. That is
+ * `tsql.number_parse_float` in `output.sql`.
+ */
+export function readPrice(text: string): Float {
+  return Number.parseFloat(text);
+}

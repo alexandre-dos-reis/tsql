@@ -8,20 +8,19 @@
  * refuse, so anything `Number` grows later stays rejected until someone has
  * measured it.
  *
- * Today the table holds `parseInt` alone. It is not a cast: JavaScript reads a
- * prefix and ignores whatever follows, so `parseInt('12abc')` is 12 where
- * `'12abc'::integer` raises. The SQL that reproduces it lives in
- * `src/helpers.ts` (`tsql.number_parse_int`) and was measured
- * against V8 — `docs/design.md`, "Number.parseInt".
+ * Today the table holds `parseInt` and `parseFloat`. Neither is a cast:
+ * JavaScript reads a prefix and ignores whatever follows, so `parseInt('12abc')`
+ * is 12 where `'12abc'::integer` raises. The SQL that reproduces them lives in
+ * `src/helpers.ts` (`tsql.number_parse_int`, `tsql.number_parse_float`) and was
+ * measured against V8 — `docs/design.md`, "Number.parseInt" and
+ * "Number.parseFloat".
  */
 
+import { type HelperName } from "@/helpers";
+
 export interface NumberFunction {
-  /**
-   * The helper in the `tsql` schema it becomes. It takes the radix, as
-   * JavaScript does: 10 for base ten, 0 for an omitted one, which reads a
-   * leading `0x` as hexadecimal.
-   */
-  readonly helper: "number_parse_int";
+  /** The helper in the `tsql` schema it becomes. */
+  readonly helper: HelperName;
   /**
    * Whether the result is necessarily a whole number. `parseInt` reads a run of
    * digits and stops at the `.`, so it is — `"12.9"` is 12 — and the value is
@@ -29,13 +28,21 @@ export interface NumberFunction {
    * `int(...)` lower to a plain cast: PostgreSQL's `double precision::integer`
    * raises on all three of the cases `int` throws on, and rounds only on a
    * fraction, which cannot arrive here. A member whose result could be
-   * fractional would be `false`, and would stay a `Float`.
+   * fractional is `false`, and stays a `Float` — `parseFloat`, whose helper
+   * returns a `double precision` and which `int(...)` would refuse.
    */
   readonly whole: boolean;
+  /**
+   * Whether it takes a radix after the string. `parseInt` does, and the helper
+   * is handed it as JavaScript spells it: 10 for base ten, 0 for an omitted
+   * one, which reads a leading `0x` as hexadecimal. `parseFloat` has none.
+   */
+  readonly radix: boolean;
 }
 
 export const NUMBER_FUNCTIONS: Readonly<Record<string, NumberFunction>> = {
-  parseInt: { helper: "number_parse_int", whole: true },
+  parseFloat: { helper: "number_parse_float", whole: false, radix: false },
+  parseInt: { helper: "number_parse_int", whole: true, radix: true },
 };
 
 /** `Object.hasOwn`, so `Number.constructor` and `Number.toString` are not mistaken for members. */
@@ -48,8 +55,6 @@ export function numberFunction(member: string): NumberFunction | undefined {
  * like it would not be the same function, rather than merely that it is missing.
  */
 const REASONS: Readonly<Record<string, string>> = {
-  parseFloat:
-    "it reads the longest numeric prefix, including an exponent and `Infinity`, and the decimal-to-double rounding would have to match V8's bit for bit. It has not been measured; `Number.parseInt` has.",
   isNaN: "a `Float` compares to itself with `<>` — write `x <> x`, or in TypeScript `x !== x`.",
   isFinite:
     "there is no single PostgreSQL predicate for it, and the combination that looks right (`x = x AND abs(x) <> 'Infinity'`) has not been measured.",
