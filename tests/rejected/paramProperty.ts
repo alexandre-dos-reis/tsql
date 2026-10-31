@@ -1,13 +1,15 @@
 /**
- * Rejected: reading a property of a non-object value (`plan.length`).
+ * Rejected: `.length` on a string.
  *
- * `length` on a string is JavaScript semantics (UTF-16 code units); SQL's
- * `length(text)` counts characters, so emoji and other astral characters would
- * make the two disagree. Property and element access on values are outside the
- * subset.
+ * TypeScript counts UTF-16 code units; PostgreSQL's `length()` counts
+ * characters. They agree on all of the BMP and on nothing above it:
+ * `'😀'.length` is 2 where `length('😀')` is 1. The answer names the members a
+ * string does have, since the member is the mistake rather than the access.
  *
- * Expected: object and element access are not part of the compiled subset
+ * Expected: `.length` on a string is not supported
+ * Expected: UTF-16 code units
+ * Expected: Supported: .trim(), .trimEnd(), .trimStart()
  */
 export function hasText(plan: string): boolean {
-  return plan.length > 0;
+  return plan.length > 0; // ← rejected here
 }

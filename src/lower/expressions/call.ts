@@ -12,6 +12,7 @@ import {
 
 import { INT_GUARD, isIntGuard } from "@/authoring";
 import { CompileError } from "@/errors";
+import { STRING_SUBSET } from "@/globals/string";
 import { type HelperName } from "@/helpers";
 import { describe, isExactly, type ExprIR, type ScalarType, PG, INTEGER, EXPR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
@@ -21,6 +22,7 @@ import { referenceError, rootIdentifier } from "./access";
 import { arrayOperand, lowerArrayMethod } from "./array";
 import { lowerExpr } from "./expr";
 import { isMathGlobal, isNumberGlobal, lowerMathCall, lowerNumberCall } from "./globalCall";
+import { lowerStringMethod, textOperand } from "./stringMethod";
 
 export async function lowerCall(node: CallExpression, s: State, guarded = false): Promise<ExprIR> {
   if (node.expression.kind === SyntaxKind.PropertyAccessExpression) {
@@ -29,16 +31,20 @@ export async function lowerCall(node: CallExpression, s: State, guarded = false)
     if (array) return lowerArrayMethod(node, access, array, s);
     if (await isMathGlobal(access.expression, s)) return lowerMathCall(node, access, s, guarded);
     if (await isNumberGlobal(access.expression, s)) return lowerNumberCall(node, access, s, guarded);
+    // Last of the three, because `Math` and `Number` are names rather than
+    // values: neither is in scope, so neither can be a string.
+    const text = await textOperand(access.expression, s);
+    if (text) return lowerStringMethod(node, access, text);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
-    // `Math.max(a, b)`, `helpers.limit()`, `plan.toUpperCase()` — name what the
+    // `Math.max(a, b)`, `helpers.limit()`, `basket.total()` — name what the
     // callee actually is rather than reporting an unsupported call shape.
     const root = rootIdentifier(node.expression);
     if (root && !s.scope.has(root.text)) throw await referenceError(root.text, root, node.expression, s);
     if (root) {
       throw CompileError.at(
         node.expression,
-        `\`${node.expression.getText()}\` is not supported: methods on values are not part of the compiled subset.`,
+        `\`${node.expression.getText()}\` is not supported: methods on values are not part of the compiled subset. ${STRING_SUBSET}`,
       );
     }
     throw CompileError.at(node.expression, "Only direct calls to other compiled functions are supported.");

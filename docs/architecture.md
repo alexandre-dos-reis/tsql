@@ -15,6 +15,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                                        ├─ references.ts     what a name refers to (parameter, global, package…)
                                        ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
                                        ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`, `parseFloat`), and why the rest do not
+                                       ├─ globals/string.ts the closed table of `String.prototype` methods that compile (the three trims), and why the rest do not
                                        ├─ helpers.ts        the functions installed in the `tsql` schema, and the SQL section that installs them
                                        ├─ language.ts       which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
                                        └─ origin.ts         where a declaration lives (project, standard library, package)
@@ -228,6 +229,16 @@ only function declarations are called at run time; the constants evaluated at lo
   compiles. `parseFloat` takes no radix and stays a `Float`. A member marked `whole` in the table must sit directly inside `int(...)`: the helper returns
   `integer`, raising on the `NaN` and the out-of-range values `int` throws on, so nothing is emitted for
   the guard and `lowerIntGuard` erases itself as it does around arithmetic.
+
+- **String methods**: there is no global to find — `textOperand` asks whether the *operand* lowered to a
+  `text` value (a parameter, a local, a composite field, a literal, a call to a compiled function, or
+  another trim, which is what makes `s.trim().trimEnd()` a chain), and `lowerStringMethod` looks the
+  method up in [`globals/string.ts`](../src/globals/string.ts)'s closed table. One of the three trims becomes a
+  `builtin` node — `btrim`, `ltrim` or `rtrim` — whose second argument is a `unicodeLit`: the 25 code
+  points JavaScript's `trim` removes, which the emitter spells `U&'\0009\000a…'` and decides nothing
+  about. An enum operand is cast `::text` first, and the result is plain `text`. A member that is not
+  in the table is refused with the reason `globals/string.ts` keeps for it, for a property (`.length`)
+  as well as a call.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler

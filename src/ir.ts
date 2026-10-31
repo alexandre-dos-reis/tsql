@@ -43,6 +43,7 @@ export const EXPR = {
   ref: "ref",
   field: "field",
   lit: "lit",
+  unicodeLit: "unicodeLit",
   binary: "binary",
   not: "not",
   neg: "neg",
@@ -384,6 +385,14 @@ export type ExprIR =
   | { readonly kind: typeof EXPR.ref; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: typeof EXPR.field; readonly operand: ExprIR; readonly sqlName: string; readonly type: PgType }
   | { readonly kind: typeof EXPR.lit; readonly value: string | number | boolean | null; readonly type: ScalarType }
+  /**
+   * A text literal spelled in Unicode escapes — `U&'\0009\000A…'`. The code
+   * points come from lowering (the whitespace `.trim()` removes,
+   * `src/globals/string.ts`), so the emitter still decides nothing; what it adds
+   * is the spelling, which keeps the set readable in a migration where the
+   * characters themselves would be invisible.
+   */
+  | { readonly kind: typeof EXPR.unicodeLit; readonly codePoints: readonly number[]; readonly type: ScalarType }
   | {
       readonly kind: typeof EXPR.binary;
       readonly op: BinOp;
@@ -502,6 +511,7 @@ export function someExpr(expr: ExprIR, test: (expr: ExprIR) => boolean): boolean
   switch (expr.kind) {
     case EXPR.ref:
     case EXPR.lit:
+    case EXPR.unicodeLit:
       return false;
     case EXPR.field:
     case EXPR.not:

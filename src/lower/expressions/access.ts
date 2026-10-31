@@ -14,6 +14,7 @@ import {
 import { CompileError } from "@/errors";
 import { mathConstant } from "@/globals/math";
 import { unsupportedNumberMessage } from "@/globals/number";
+import { unsupportedStringMessage } from "@/globals/string";
 import { describe, isComposite, namedType, type ExprIR, INTEGER, DOUBLE, EXPR } from "@/ir";
 import { type State } from "@/lower/state";
 import { classifyReference, referenceMessage } from "@/references";
@@ -22,6 +23,7 @@ import { enumMember } from "@/typemap";
 import { ARRAY_SUBSET, arrayOperand } from "./array";
 import { lowerExpr } from "./expr";
 import { isMathGlobal, isNumberGlobal } from "./globalCall";
+import { textOperand } from "./stringMethod";
 
 /**
  * A composite-typed base expression plus the field path read from it.
@@ -114,6 +116,12 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   const resolved = await resolveAccess(node, s);
   if (resolved && isComposite(resolved.base.type) && resolved.path.length > 0) {
     return readPath(resolved.base, resolved.path, node);
+  }
+
+  // `plan.length` on a string: answer about strings rather than about objects,
+  // since the member is the mistake and not the access.
+  if (node.kind === SyntaxKind.PropertyAccessExpression && (await textOperand(operand, s))) {
+    throw CompileError.at(node, unsupportedStringMessage(nameText((node as PropertyAccessExpression).name), true));
   }
 
   const root = rootIdentifier(node);

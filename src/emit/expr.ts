@@ -4,7 +4,7 @@
 import { isInt4 } from "@/constants";
 import { TSQL_SCHEMA } from "@/helpers";
 import { type BinOp, type ExprIR, PG, NAMED, EXPR, PART, OP } from "@/ir";
-import { quoteIdentifier, quoteLiteral } from "@/names";
+import { quoteIdentifier, quoteLiteral, quoteUnicodeLiteral } from "@/names";
 
 import { arrayTypeName, type Qualifier } from "./qualify";
 
@@ -94,6 +94,9 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       return expr.type.sql === PG.double && !isInt4(expr.value)
         ? `${numberLiteral(expr.value)}::double precision`
         : numberLiteral(expr.value);
+
+    case EXPR.unicodeLit:
+      return quoteUnicodeLiteral(expr.codePoints);
 
     case EXPR.binary: {
       // Left-associative: the right operand needs one more level to keep

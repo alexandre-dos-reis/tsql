@@ -174,6 +174,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | `readonly T[]` | `t[]` |
 | `a / b` | always `double precision`, as in TypeScript |
 | `Math.abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul` and the constants (`Math.PI`…) | the same double as JavaScript, `NaN`, the infinities and `-0` included — a PostgreSQL function, or a `tsql.math_*` helper the migration installs |
+| `s.trim()`, `s.trimStart()`, `s.trimEnd()` | `btrim(s, …)`, `ltrim`, `rtrim`, handed the 25 characters JavaScript strips — the set form, so no locale or collation decides anything |
 | `` `${a}-${b}` ``, `??`, `c ? a : b` | `\|\|`, `COALESCE`, `CASE` |
 
 ## What's supported
@@ -181,7 +182,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 Exported `function` declarations and `const` arrow functions with written parameter and return types,
 calling each other; `const` and `let`; `if`, `switch` (with a `default`), `while`, `for`, `for … of`,
 `break`, `continue`; arithmetic, comparisons, boolean operators; object literals, spread and
-destructuring; `xs.length` and `xs.includes(x)`.
+destructuring; `xs.length` and `xs.includes(x)`; `s.trim()`, `s.trimStart()` and `s.trimEnd()`.
 
 An exported `interface`, `type` or `enum` is created in the migration even when no function mentions
 it, so a composite, a domain or an enum can exist for a table column you write in SQL. A type a
@@ -198,6 +199,7 @@ SQL would *quietly* give a different answer:
 - **`<` on strings** — the database orders by collation, TypeScript by UTF-16.
 - **Mutation**: of a parameter, an object field or an array — PL/pgSQL passes by value.
 - **Array methods with a callback** (`map`, `filter`, `some`…) — write the loop; `xs[i]`.
+- **String methods other than the three trims** — `toUpperCase` follows the database's locale, and `length`, `indexOf` and `slice` count UTF-16 code units where PostgreSQL counts characters.
 - **Optional parameters and `undefined`** — write `T | null`.
 - **Anonymous object types**, even nested (`customer: { tier: string }`) — give the shape a name; and a nested object that may be `null`.
 - **Generics, numeric enums, `var`, `do … while`, `for … in`.**

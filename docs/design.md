@@ -492,6 +492,52 @@ One thing is a test limit, not a helper one: PGlite's WebAssembly build (musl `s
 ~1000-digit string near a denormal tie differently from glibc, V8, JavaScriptCore and Python, which agree
 among themselves. Those strings are left out of the grid, and the helper is checked on a real PostgreSQL 18.
 
+## Strings
+
+Of `String.prototype`, three methods compile: `trim`, `trimStart` and `trimEnd`. They are a closed table in [`src/globals/string.ts`](../src/globals/string.ts), the same shape as [`Math`](#math) and `Number` and for the same reason — the default is to refuse, so what the prototype grows later stays out until someone measures it. Unlike those two there is no global to recognise by provenance: the method is called on a *value*, and what sends lowering to the table is the operand's PostgreSQL type, which it has already worked out. A method on anything else is the categorical refusal it has always been.
+
+| TypeScript | SQL |
+| --- | --- |
+| `s.trim()` | `btrim(s, U&'\0009\000a…\feff')` |
+| `s.trimStart()` | `ltrim(s, …)` |
+| `s.trimEnd()` | `rtrim(s, …)` |
+
+No helper, and nothing installed in the `tsql` schema: PostgreSQL already has these three functions, with the same definition.
+
+### Why the second argument is the whole point
+
+`btrim(s)` with one argument removes **spaces only**, so it would diverge on a tab. The set form removes exactly the characters it is handed, which buys two things:
+
+- **It is the same set JavaScript uses.** ECMAScript's `trim` removes `WhiteSpace` and `LineTerminator`: the tab, vertical tab, form feed, U+FEFF, Unicode's `Space_Separator` category, LF, CR, U+2028 and U+2029 — 25 code points, all in the BMP.
+- **No locale, no collation.** `btrim` with a character set compares code points. That is exactly what keeps `toUpperCase` out: `upper()` follows the *database's* locale and collation rules where TypeScript follows Unicode's case mapping, and neither maps `ß` to `SS` the way the other does.
+
+The 25 are a written-out table rather than something derived at run time, because deriving it means testing 65 536 code points on every compile. `tests/trimValues.test.ts` does the derivation instead and asserts the table is what the running engine strips, so a Unicode revision that moved a character into `Space_Separator` fails the suite rather than quietly emitting the wrong set.
+
+They are emitted as **Unicode escapes**, `U&'\0009\000a…'`, not as the characters themselves. Twenty-five invisible characters in a migration cannot be read or reviewed, and any editor that strips trailing whitespace on save would change what the function does. (`U&'…'` needs `standard_conforming_strings` on, the default since 9.1, and code points above U+007F need a UTF8 server encoding.) The literal repeats at every call site; that is the price of staying raw SQL with no helper.
+
+### What lowering proves
+
+- **The operand is a `string` that cannot be null.** `btrim(NULL, …)` is NULL where TypeScript raises a `TypeError` on `null.trim()` — a different *outcome*, not a different value. No valid case reaches it: TypeScript refuses `.trim()` on a `string | null` first, and `s!` and `s as string` are refused earlier still.
+- **An enum is read as its label.** TypeScript treats an enum member as a string, so it is cast `::text` (`btrim(level::text, …)`), as it is in a concatenation.
+- **The result is a plain `string`.** Trimming a union of string literals, a domain or an enum proves nothing about the result still being a member of that type, so it is `text` and not the named type.
+- **No arguments.** None of the three takes any.
+
+### Why not the others
+
+Each refusal names the divergence rather than reporting the method missing:
+
+- **`toUpperCase`, `toLowerCase`** — the locale and collation question above.
+- **`length`, `charCodeAt`, `codePointAt`, `indexOf`, `slice`, `substring`** — TypeScript counts **UTF-16 code units** and PostgreSQL counts characters, so they disagree on everything outside the BMP (`'😀'.length` is 2 where `length('😀')` is 1). `indexOf` also counts from 0 and answers -1 where `strpos` counts from 1 and answers 0.
+- **`padStart`, `padEnd`** — `lpad` and `rpad` truncate a string longer than the target width, where the JavaScript returns it unchanged.
+- **`split`** — an array of text whose length is not known at build time.
+- **`replace`** — PostgreSQL's changes every occurrence where TypeScript's changes the first, and a regular expression is not part of the subset.
+- **`normalize`** — PostgreSQL has `normalize()`, but which forms agree has not been measured.
+- **`trimLeft`, `trimRight`** — the deprecated aliases are told to write `trimStart` and `trimEnd`.
+
+### How it is checked
+
+`tests/parity/stringTrim.ts` goes through the fast-check harness like any case, which mostly proves that a string with nothing to trim comes back unchanged: the harness draws arbitrary text, which is nearly all printable ASCII. The real pinning is `tests/trimValues.test.ts` — each of the 25 code points alone, at either end, in runs, around characters that must survive, and the near-misses that must not be trimmed (U+180E, U+200B, U+2060, U+FFFE). It compares **inside PostgreSQL** (`btrim(…) IS NOT DISTINCT FROM $2`), because a driver drops a leading U+FEFF as it decodes text and comparing in JavaScript would report a divergence the server does not have.
+
 ## The `tsql` schema
 
 A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x - floor(x) >= 0.5 …`). Written out where it is used, that is a line of several hundred characters, and a heavy argument (a call to a compiled function) would either run several times or need a sub-select, which PL/pgSQL no longer evaluates as a simple expression: measured on PGlite, 200 000 calls, 20 µs against 6.6 µs for a helper function and 3.4 µs for an inlined one. So the rewrites are functions in a schema of tsql's own, `tsql`, and a compiled function calls them: `RETURN tsql.math_min(tsql.math_max(x, lo), hi);`.
@@ -995,13 +1041,13 @@ Each of these is a case in `tests/rejected/`, one file per case. Each file opens
 | `new Date().getTime()` | `` `Date` is a JavaScript runtime global … `` |
 | `Infinity`, `NaN`, `undefined`, `globalThis` | the specific alternative, e.g. `` PostgreSQL spells it `'Infinity'::double precision` `` |
 | `fc.sample(…)` from an imported package | `` `fc` comes from a package (`fast-check`), which cannot run inside PostgreSQL `` |
-| `plan.length`, `plan.toUpperCase()` | object access and methods on values are not in the subset |
+| `plan.length`, `plan.toUpperCase()`, `plan[0]` | the reason the SQL that looks right is not the same function, and the methods that do compile — `` `.length` on a string is not supported: TypeScript counts UTF-16 code units … Supported: .trim(), .trimEnd(), .trimStart() `` (see [Strings](#strings)). Methods on anything but a string, and element access, are not in the subset |
 | `async` / `await` | `` a PL/pgSQL function runs to completion with nothing to await `` |
 | calling a function that is not exported | `` `double` is not exported, so it is not compiled `` — only exported functions become functions in the schema |
 | calling a function exported from a file this build does not include | `` `double` is exported from `helpers.ts`, which this build does not include `` — a migration is written from exactly the files named, so the call would reach a function it does not create |
 | a module-level value, `const rate = 0.2` read from a function | `` `rate` is a value declared outside the function `` — inlining it would freeze a copy in the database that the TypeScript could later change, and the parity harness would keep agreeing because it imports the same module |
 
-This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. A symbol declared in the project is then split by whether it is *callable* — a non-compiled function is told to be exported, a value is told to become a parameter — asked of its type, so a `function` declaration and a `const` bound to an arrow answer alike. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`). The one exception to "no list of names" runs the other way: [the members of `Math` that do compile](#math) are a closed table, and `Math` itself is still found by provenance (`tests/rejected/mathLookalike.ts`).
+This is decided by **provenance, not by name**: `src/references.ts` resolves the symbol and asks the program whether its declaration file `isDefaultLibrary` or `isFromExternalLibrary`. A symbol declared in the project is then split by whether it is *callable* — a non-compiled function is told to be exported, a value is told to become a parameter — asked of its type, so a `function` declaration and a `const` bound to an arrow answer alike. So every standard-library global is covered without maintaining a denylist, anything the library grows is covered for free, and a parameter that happens to be *named* `Math` still compiles (`tests/parity/shadowedGlobal.ts`). The one exception to "no list of names" runs the other way: [the members of `Math` that do compile](#math) are a closed table, as are those of `Number` and [the three methods of `String.prototype`](#strings), and `Math` itself is still found by provenance (`tests/rejected/mathLookalike.ts`).
 
 Node and Bun globals (`process`, `Bun`, `require`) are blocked one layer earlier: tsql always type checks with `"types": []` and `lib: ["ESNext"]`, whatever a tsconfig says, so they are type errors before the translator runs. It imposes `strict` the same way: without `strictNullChecks`, TypeScript lets `null` into every type, and a nullable comparison would lower to `=` instead of `IS NOT DISTINCT FROM`.
 
