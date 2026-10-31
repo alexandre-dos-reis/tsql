@@ -22,6 +22,11 @@ BEGIN
     RAISE EXCEPTION 'this database holds tsql runtime revision %, newer than the revision 3 this tsql writes: update tsql before compiling again', installed;
   END IF;
   FOR helper, sql IN SELECT * FROM (VALUES
+    ('tsql.number_parse_float(text)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_float(s text)
+RETURNS double precision
+LANGUAGE sql
+IMMUTABLE PARALLEL SAFE
+AS $body$SELECT COALESCE(CASE WHEN pg_catalog.octet_length(s) < 200 AND (pg_catalog.strpos(s, 'e') + pg_catalog.strpos(s, 'E') = 0 OR s !~ '[eE][+-]?[0-9]{3}') THEN pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?(?:Infinity|(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:[eE][+-]?[0-9]+)?))')::double precision ELSE (1 - 2 * (pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?(?:Infinity|(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:[eE][+-]?[0-9]+)?))') LIKE '-%')::int) * CASE LEAST(GREATEST(pg_catalog.abs(pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?(?:Infinity|(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:[eE][+-]?[0-9]+)?))')::numeric) * 2::numeric ^ 1075, 1), 2::numeric ^ 2099 - 2::numeric ^ 2045) WHEN 1 THEN 0::double precision WHEN 2::numeric ^ 2099 - 2::numeric ^ 2045 THEN 'Infinity'::double precision ELSE pg_catalog.abs(pg_catalog.substring(s, E'^[\t-\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]*([+-]?(?:Infinity|(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:[eE][+-]?[0-9]+)?))')::double precision) END END, 'NaN'::double precision)$body$$def$),
     ('tsql.number_parse_int(text, integer)', $def$CREATE OR REPLACE FUNCTION tsql.number_parse_int(s text, radix integer)
 RETURNS integer
 LANGUAGE sql
@@ -77,6 +82,15 @@ RETURNS integer
 LANGUAGE sql
 IMMUTABLE
 RETURN setup_cents + seats * unit_cents;
+
+-- input.ts: readPrice()
+CREATE OR REPLACE FUNCTION app.read_price(
+  text text
+)
+RETURNS double precision
+LANGUAGE sql
+IMMUTABLE
+RETURN tsql.number_parse_float(text);
 
 -- input.ts: seatTotalCents()
 CREATE OR REPLACE FUNCTION app.seat_total_cents(
