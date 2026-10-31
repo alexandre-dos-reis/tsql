@@ -10,8 +10,8 @@
  * behave differently.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { helperFingerprint } from "../src/helpers.ts";
-import { HELPER_HASHES } from "../src/helpersLock.ts";
+import { helperFingerprint } from "../src/helpers";
+import { HELPER_HASHES } from "../src/helpersLock";
 
 const FILE = new URL("../src/helpersLock.ts", import.meta.url);
 const current = helperFingerprint();

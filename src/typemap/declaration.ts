@@ -7,11 +7,11 @@ import {
   type InterfaceDeclaration,
   type TypeAliasDeclaration,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { namedType, type PgType } from "@/ir.ts";
-import { type TypeCtx } from "./context.ts";
-import { mapInferredType, mapTypeNode } from "./map.ts";
-import { namedFromSymbol } from "./named.ts";
+import { CompileError } from "@/errors";
+import { namedType, type PgType } from "@/ir";
+import { type TypeCtx } from "./context";
+import { mapInferredType, mapTypeNode } from "./map";
+import { namedFromSymbol } from "./named";
 
 /** A type declaration this compiler maps: `interface`, `type` or `enum`. */
 export type TypeDeclaration = InterfaceDeclaration | TypeAliasDeclaration | EnumDeclaration;

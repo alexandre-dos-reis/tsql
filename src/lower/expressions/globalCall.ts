@@ -10,26 +10,17 @@ import {
   type NumericLiteral,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { INT4_MIN } from "@/constants.ts";
-import { CompileError } from "@/errors.ts";
-import { mathFunction, unsupportedMathMessage } from "@/globals/math.ts";
-import { numberFunction, unsupportedNumberMessage } from "@/globals/number.ts";
-import {
-  describe,
-  isExactly,
-  isNumeric,
-  isScalar,
-  scalarType,
-  type ExprIR,
-  type PgType,
-  type ScalarType,
-} from "@/ir.ts";
-import { classifyReference } from "@/references.ts";
-import { INT_GUARD } from "@/authoring.ts";
-import { coerce, unify } from "@/lower/coerce.ts";
-import { type State } from "@/lower/state.ts";
-import { DOUBLE, helper } from "./call.ts";
-import { lowerExpr } from "./expr.ts";
+import { INT4_MIN } from "@/constants";
+import { CompileError } from "@/errors";
+import { mathFunction, unsupportedMathMessage } from "@/globals/math";
+import { numberFunction, unsupportedNumberMessage } from "@/globals/number";
+import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType, type ScalarType } from "@/ir";
+import { classifyReference } from "@/references";
+import { INT_GUARD } from "@/authoring";
+import { coerce, unify } from "@/lower/coerce";
+import { type State } from "@/lower/state";
+import { DOUBLE, helper } from "./call";
+import { lowerExpr } from "./expr";
 
 /**
  * Is this the standard library's `Math`? Asked by provenance, like every other

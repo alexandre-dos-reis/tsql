@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { isFromPackage } from "../src/origin.ts";
-import { findTscPath, platformPackage } from "../src/tscPath.ts";
-import { isAuthoringModule, PACKAGE_NAME } from "../src/authoring.ts";
+import { isFromPackage } from "../src/origin";
+import { findTscPath, platformPackage } from "../src/tscPath";
+import { isAuthoringModule, PACKAGE_NAME } from "../src/authoring";
 
 /**
  * What only breaks once the package is published and installed somewhere else:

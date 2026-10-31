@@ -2,14 +2,14 @@
  * Assignments and compound assignments to locals.
  */
 import { SyntaxKind, type BinaryExpression, type Expression, type Identifier } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { assignable, describe, isExactly, isNumeric, scalarType, type ExprIR, type StmtIR } from "@/ir.ts";
-import { INT_GUARD } from "@/authoring.ts";
-import { coerce, requireAssignable } from "@/lower/coerce.ts";
-import { referenceError } from "@/lower/expressions/access.ts";
-import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "@/lower/expressions/binary.ts";
-import { lowerExpr } from "@/lower/expressions/expr.ts";
-import { type State } from "@/lower/state.ts";
+import { CompileError } from "@/errors";
+import { assignable, describe, isExactly, isNumeric, scalarType, type ExprIR, type StmtIR } from "@/ir";
+import { INT_GUARD } from "@/authoring";
+import { coerce, requireAssignable } from "@/lower/coerce";
+import { referenceError } from "@/lower/expressions/access";
+import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "@/lower/expressions/binary";
+import { lowerExpr } from "@/lower/expressions/expr";
+import { type State } from "@/lower/state";
 
 const COMPOUND: ReadonlyMap<SyntaxKind, SyntaxKind> = new Map([
   [SyntaxKind.PlusEqualsToken, SyntaxKind.PlusToken],

@@ -293,8 +293,8 @@ no DOM, so anything reachable from it that touched `process` or `node:path` woul
 every consumer's build. Keeping the root free of the compiler makes that structural.
 
 **It imports nothing, and must not.** `FORCED_OPTIONS` does not set `allowImportingTsExtensions`, so
-the `./x.ts` import style the rest of `src/` uses is a *consumer-side* error (TS5097) the moment it is
-reachable from the root. That is why `index.ts` declares the `integer` bounds and
+an import with a `.ts` extension, or through the repository's `@/` alias, is a *consumer-side* error
+(TS5097, or an unresolved module) the moment it is reachable from the root. That is why `index.ts` declares the `integer` bounds and
 [`constants.ts`](../src/constants.ts) borrows them, rather than the other way round: the dependency
 runs compiler → authoring only.
 

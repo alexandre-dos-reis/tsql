@@ -1,8 +1,8 @@
 import type { Node } from "typescript/unstable/ast";
 import { SignatureKind, SymbolFlags, type Symbol as TsSymbol } from "typescript/unstable/async";
 import { resolve } from "node:path";
-import { originOfPath, packageName } from "./origin.ts";
-import type { TypeCtx } from "./typemap/index.ts";
+import { originOfPath, packageName } from "./origin";
+import type { TypeCtx } from "./typemap";
 
 /**
  * Where a name came from.

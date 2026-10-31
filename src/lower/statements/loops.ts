@@ -11,14 +11,14 @@ import {
   type VariableDeclarationList,
   type WhileStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { describe, isArray, isExactly, scalarType, type ExprIR, type StmtIR } from "@/ir.ts";
-import { toSnakeCase } from "@/names.ts";
-import { lowerExpr } from "@/lower/expressions/expr.ts";
-import { scoped, uniqueName, within, type State } from "@/lower/state.ts";
-import { lowerAssignment } from "./assignment.ts";
-import { lowerDeclarationList } from "./declarations.ts";
-import { asStatements, lowerStatements } from "./statement.ts";
+import { CompileError } from "@/errors";
+import { describe, isArray, isExactly, scalarType, type ExprIR, type StmtIR } from "@/ir";
+import { toSnakeCase } from "@/names";
+import { lowerExpr } from "@/lower/expressions/expr";
+import { scoped, uniqueName, within, type State } from "@/lower/state";
+import { lowerAssignment } from "./assignment";
+import { lowerDeclarationList } from "./declarations";
+import { asStatements, lowerStatements } from "./statement";
 
 /** Like an `if` condition: a boolean. NULL stops a `WHILE` as `false` stops a TypeScript loop. */
 function loopCondition(expression: Expression, cond: ExprIR, what: string): ExprIR {

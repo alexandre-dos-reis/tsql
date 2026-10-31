@@ -19,11 +19,11 @@
 import { INT4_MAX, INT4_MIN } from "./constants";
 
 // Written in `constants.ts`, re-exported here because 0.3.0 published them from
-// the root. The import must stay **extensionless**: this file is still part of
-// a compiled project's program, and `FORCED_OPTIONS` does not set
-// `allowImportingTsExtensions`, so the `./x.ts` style the rest of `src/` uses
-// is TS5097 in every consumer's build. That is the whole of what the old "must
-// import nothing" rule was protecting, and it still applies to the extension.
+// the root. The import must stay **relative**: this file is still part of
+// a compiled project's program, and a consumer's build has no `@/` alias, so
+// `@/constants` would not resolve there (and `./constants.ts` is TS5097, since
+// `FORCED_OPTIONS` does not set `allowImportingTsExtensions`). That is the
+// whole of what the old "must import nothing" rule was protecting.
 export { INT4_MAX, INT4_MIN };
 
 /**

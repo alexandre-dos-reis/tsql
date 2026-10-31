@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 
 /**
@@ -113,11 +113,15 @@ export function violations(imports: Readonly<Record<string, readonly string[]>>)
   return broken;
 }
 
-/** A specifier to the file it names, relative to `src/`; `@/lower` is a folder, so it means `lower/index.ts`. */
-export function resolveSpecifier(from: string, specifier: string): string {
-  if (!specifier.startsWith("@/")) return posix.normalize(posix.join(posix.dirname(from), specifier));
-  const target = specifier.slice(2);
-  return target.endsWith(".ts") ? target : `${target}/index.ts`;
+/**
+ * A specifier to the file it names, relative to `src/`: `@/lower` is a folder, so it means `lower/index.ts`, and
+ * `./coerce` means `coerce.ts`. Imports carry no extension, so the file system says which it is.
+ */
+export function resolveSpecifier(from: string, specifier: string, root = resolve("src")): string {
+  const target = specifier.startsWith("@/")
+    ? specifier.slice(2)
+    : posix.normalize(posix.join(posix.dirname(from), specifier));
+  return existsSync(resolve(root, `${target}.ts`)) ? `${target}.ts` : `${target}/index.ts`;
 }
 
 describe("the layering of src/lower/, src/typemap/ and src/emit/", () => {
@@ -180,10 +184,10 @@ describe("the layering of src/lower/, src/typemap/ and src/emit/", () => {
   });
 
   test("resolving a specifier", () => {
-    expect(resolveSpecifier("lower/expressions/expr.ts", "../coerce.ts")).toBe("lower/coerce.ts");
-    expect(resolveSpecifier("compile.ts", "./lower/index.ts")).toBe("lower/index.ts");
+    expect(resolveSpecifier("lower/expressions/expr.ts", "../coerce")).toBe("lower/coerce.ts");
+    expect(resolveSpecifier("compile.ts", "./lower")).toBe("lower/index.ts");
     expect(resolveSpecifier("lower/expressions/expr.ts", "@/typemap")).toBe("typemap/index.ts");
-    expect(resolveSpecifier("emit/types.ts", "@/ir.ts")).toBe("ir.ts");
+    expect(resolveSpecifier("emit/types.ts", "@/ir")).toBe("ir.ts");
   });
 
   test("what is allowed is not flagged: a cycle inside a layer, and a lower layer", () => {

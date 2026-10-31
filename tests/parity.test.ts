@@ -2,9 +2,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { compileProject, formatResult, type ManifestFunction } from "../src/compile.ts";
-import { checkParity, type RowQuery } from "../src/parity.ts";
-import { openDatabase, type Database } from "../src/runParity.ts";
+import { compileProject, formatResult, type ManifestFunction } from "../src/compile";
+import { checkParity, type RowQuery } from "../src/parity";
+import { openDatabase, type Database } from "../src/runParity";
 
 /**
  * Every case in tests/parity/ is accepted by the compiler and agrees with its

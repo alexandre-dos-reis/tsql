@@ -11,12 +11,12 @@ import {
   type SpreadAssignment,
   type StringLiteral,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { describe, isComposite, type ExprIR } from "@/ir.ts";
+import { CompileError } from "@/errors";
+import { describe, isComposite, type ExprIR } from "@/ir";
 import { mapInferredType } from "@/typemap";
-import { coerce, requireAssignable } from "@/lower/coerce.ts";
-import { type State } from "@/lower/state.ts";
-import { lowerExpr } from "./expr.ts";
+import { coerce, requireAssignable } from "@/lower/coerce";
+import { type State } from "@/lower/state";
+import { lowerExpr } from "./expr";
 
 /**
  * Build a composite value from an object literal.

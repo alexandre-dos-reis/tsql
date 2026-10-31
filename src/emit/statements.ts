@@ -1,10 +1,10 @@
 /**
  * Statements: the body of a PL/pgSQL function, one line at a time.
  */
-import { type StmtIR } from "@/ir.ts";
-import { quoteIdentifier } from "@/names.ts";
-import { emitExpr } from "./expr.ts";
-import { type Qualifier } from "./qualify.ts";
+import { type StmtIR } from "@/ir";
+import { quoteIdentifier } from "@/names";
+import { emitExpr } from "./expr";
+import { type Qualifier } from "./qualify";
 
 /** A `CASE` branch with nothing to do still needs a statement: `NULL;` is PL/pgSQL's no-op. */
 function emitBranch(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {

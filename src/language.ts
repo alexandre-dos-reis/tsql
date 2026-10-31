@@ -16,7 +16,7 @@
  *   other. Recursion is left to PL/pgSQL, which looks a call up only when it runs.
  */
 
-import { someExpr, type ExprIR, type FunctionIR } from "./ir.ts";
+import { someExpr, type ExprIR, type FunctionIR } from "./ir";
 
 const isEnumLiteral = (expr: ExprIR) => expr.kind === "lit" && expr.type.named?.kind === "enum";
 

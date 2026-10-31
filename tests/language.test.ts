@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { compileProject, formatResult } from "../src/compile.ts";
-import { openDatabase, type Database } from "../src/runParity.ts";
+import { compileProject, formatResult } from "../src/compile";
+import { openDatabase, type Database } from "../src/runParity";
 
 /**
  * A function that is one `return` is emitted as `LANGUAGE sql` so that PostgreSQL inlines it

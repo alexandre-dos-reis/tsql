@@ -17,15 +17,15 @@ import {
   type VariableStatement,
   type WhileStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { type ExprIR, type StmtIR } from "@/ir.ts";
-import { coerce, requireAssignable } from "@/lower/coerce.ts";
-import { lowerExpr } from "@/lower/expressions/expr.ts";
-import { within, type State, type Target } from "@/lower/state.ts";
-import { lowerAssignment } from "./assignment.ts";
-import { lowerIf, lowerSwitch } from "./control.ts";
-import { lowerVariableStatement } from "./declarations.ts";
-import { lowerFor, lowerForOf, lowerWhile } from "./loops.ts";
+import { CompileError } from "@/errors";
+import { type ExprIR, type StmtIR } from "@/ir";
+import { coerce, requireAssignable } from "@/lower/coerce";
+import { lowerExpr } from "@/lower/expressions/expr";
+import { within, type State, type Target } from "@/lower/state";
+import { lowerAssignment } from "./assignment";
+import { lowerIf, lowerSwitch } from "./control";
+import { lowerVariableStatement } from "./declarations";
+import { lowerFor, lowerForOf, lowerWhile } from "./loops";
 
 export async function lowerReturn(expr: Expression, s: State): Promise<StmtIR> {
   const value = await lowerExpr(expr, s, s.returns);

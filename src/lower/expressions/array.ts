@@ -9,7 +9,7 @@ import {
   type Identifier,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
+import { CompileError } from "@/errors";
 import {
   arrayType,
   describe,
@@ -24,11 +24,11 @@ import {
   type ArrayType,
   type ExprIR,
   type PgType,
-} from "@/ir.ts";
-import { coerce, requireAssignable, unify } from "@/lower/coerce.ts";
-import { type State } from "@/lower/state.ts";
-import { resolveAccess, tryReadPath } from "./access.ts";
-import { isNullLiteral, lowerExpr } from "./expr.ts";
+} from "@/ir";
+import { coerce, requireAssignable, unify } from "@/lower/coerce";
+import { type State } from "@/lower/state";
+import { resolveAccess, tryReadPath } from "./access";
+import { isNullLiteral, lowerExpr } from "./expr";
 
 /**
  * `[a, b, ...xs]`, as `ARRAY[a, b]::t[] || xs`.

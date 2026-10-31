@@ -18,16 +18,16 @@ import {
   type StringLiteral,
   type TemplateExpression,
 } from "typescript/unstable/ast";
-import { INT4_MAX, INT4_MIN, isInt4 } from "@/constants.ts";
-import { CompileError } from "@/errors.ts";
-import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "@/ir.ts";
-import { coerce, textOf, unify } from "@/lower/coerce.ts";
-import { type State } from "@/lower/state.ts";
-import { lowerAccess, lowerNew, referenceError } from "./access.ts";
-import { lowerArrayLiteral } from "./array.ts";
-import { lowerBinary, unguarded } from "./binary.ts";
-import { lowerCall } from "./call.ts";
-import { lowerObjectLiteral } from "./object.ts";
+import { INT4_MAX, INT4_MIN, isInt4 } from "@/constants";
+import { CompileError } from "@/errors";
+import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "@/ir";
+import { coerce, textOf, unify } from "@/lower/coerce";
+import { type State } from "@/lower/state";
+import { lowerAccess, lowerNew, referenceError } from "./access";
+import { lowerArrayLiteral } from "./array";
+import { lowerBinary, unguarded } from "./binary";
+import { lowerCall } from "./call";
+import { lowerObjectLiteral } from "./object";
 
 /**
  * Lower an expression. `expected`, when the position has one — a return, an

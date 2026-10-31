@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { compileProject } from "../src/compile.ts";
+import { compileProject } from "../src/compile";
 
 /**
  * Every case in tests/rejected/ must be refused at build time.

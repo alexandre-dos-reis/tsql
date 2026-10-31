@@ -1,13 +1,13 @@
 /**
  * A whole migration: the helpers, then the types in dependency order, then the functions.
  */
-import { runtimeSql, type HelperName } from "@/helpers.ts";
-import { isArray, isScalar, type CompositeType, type FunctionIR, type NamedText } from "@/ir.ts";
-import { creationOrder } from "@/language.ts";
-import { quoteIdentifier } from "@/names.ts";
-import { emitFunction } from "./function.ts";
-import { DEFAULTS, type EmitOptions } from "./options.ts";
-import { emitCompositeType, emitDomain, emitEnum } from "./types.ts";
+import { runtimeSql, type HelperName } from "@/helpers";
+import { isArray, isScalar, type CompositeType, type FunctionIR, type NamedText } from "@/ir";
+import { creationOrder } from "@/language";
+import { quoteIdentifier } from "@/names";
+import { emitFunction } from "./function";
+import { DEFAULTS, type EmitOptions } from "./options";
+import { emitCompositeType, emitDomain, emitEnum } from "./types";
 
 /**
  * Composites in name order, except that a type comes after the composites its

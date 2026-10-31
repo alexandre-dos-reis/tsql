@@ -196,12 +196,12 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   `Buffer` would be a type error in every consumer's build; keeping the compiler out of the root
   makes that structural rather than a convention. Re-adding a `./compiler` subpath would be additive
   if embedding is ever wanted; there was no consumer for it.
-- **`src/index.ts` must not use a `.ts` import extension.** It is still part of a compiled project's
-  program — that is where type checking starts — and `FORCED_OPTIONS` does not set
-  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses is TS5097 in the
-  *consumer's* build. It may import extensionless (`./constants`), which is how `INT4_MIN`/`INT4_MAX`
-  live in `src/constants.ts` and are re-exported here. Getting it wrong fails every compiled case at
-  once, with an error naming `src/index.ts` that looks like the consumer's fault.
+- **`src/index.ts` imports only relatively, with no extension.** It is still part of a compiled project's
+  program — that is where type checking starts — and a consumer's build has neither the `@/` alias nor
+  `allowImportingTsExtensions` (`FORCED_OPTIONS` does not set it), so `./x.ts` is TS5097 and `@/x` is an
+  unresolved module there. `./constants` is how `INT4_MIN`/`INT4_MAX` live in `src/constants.ts` and are
+  re-exported here. Getting it wrong fails every compiled case at once, with an error naming
+  `src/index.ts` that looks like the consumer's fault.
 
 - **Everything published comes from `dist/`, code and types alike.** Node strips TypeScript types, but
   refuses to under `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every
@@ -222,9 +222,10 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the authoring module with `node`.
 - **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter
   properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources erasable by Node's type
-  stripping. Imports that leave a folder are written `@/lower`, `@/ir.ts` (the `paths` alias in
-  `tsconfig.json`, resolved by Bun and tsdown; `dist/` has none). `src/index.ts` and `src/constants.ts` stay
-  relative: they are part of every consumer's program, which has no such alias.
+  stripping. Imports that leave a folder are written `@/lower`, `@/ir` (the `paths` alias in
+  `tsconfig.json`, resolved by Bun and tsdown; `dist/` has none). Imports carry no `.ts`
+  extension. `src/index.ts` and `src/constants.ts` stay relative: they are part of every consumer's program,
+  which has no such alias.
 - **`bin/tsql.mjs` stays plain JavaScript**: npm puts it on PATH. It `import()`s `dist/cli.mjs` — no
   subprocess, no bundled runtime, whichever of Node or Bun invoked it.
 - **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global

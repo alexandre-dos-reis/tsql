@@ -3,13 +3,13 @@
  */
 import { SyntaxKind, type Node, type TypeNode } from "typescript/unstable/ast";
 import { SymbolFlags, type Symbol as TsSymbol, type Type } from "typescript/unstable/async";
-import { CompileError } from "@/errors.ts";
-import { compositeType, shapeOf, type CompositeField, type CompositeType } from "@/ir.ts";
-import { MAX_IDENTIFIER_BYTES, toSnakeCase } from "@/names.ts";
-import { originOfPath, packageName } from "@/origin.ts";
-import { relativize } from "@/program.ts";
-import { NULL_ONLY, type TypeCtx } from "./context.ts";
-import { mapTypeNode, mapTypeStructurally } from "./map.ts";
+import { CompileError } from "@/errors";
+import { compositeType, shapeOf, type CompositeField, type CompositeType } from "@/ir";
+import { MAX_IDENTIFIER_BYTES, toSnakeCase } from "@/names";
+import { originOfPath, packageName } from "@/origin";
+import { relativize } from "@/program";
+import { NULL_ONLY, type TypeCtx } from "./context";
+import { mapTypeNode, mapTypeStructurally } from "./map";
 
 /**
  * Map a named interface or type alias to a PostgreSQL composite type.

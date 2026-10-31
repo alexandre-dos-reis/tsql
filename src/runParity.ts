@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { CompileResult, ManifestFunction } from "./compile.ts";
-import { checkParity, type ParityOptions, type RowQuery } from "./parity.ts";
+import type { CompileResult, ManifestFunction } from "./compile";
+import { checkParity, type ParityOptions, type RowQuery } from "./parity";
 
 /**
  * `tsql parity`: the parity harness with nothing to wire up.

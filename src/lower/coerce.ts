@@ -2,7 +2,7 @@
  * Type rules on the IR: what may be stored where, what may be compared, and the casts that make it so.
  */
 import { type Node } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
+import { CompileError } from "@/errors";
 import {
   assignable,
   describe,
@@ -19,7 +19,7 @@ import {
   type ExprIR,
   type PgScalar,
   type PgType,
-} from "@/ir.ts";
+} from "@/ir";
 
 /** An enum value as `text`; anything else as it is (a domain is text already). */
 export function textOf(expr: ExprIR): ExprIR {

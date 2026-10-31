@@ -1,7 +1,7 @@
 import fc from "fast-check";
-import type { ManifestFunction } from "./compile.ts";
-import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
-import { quoteIdentifier } from "./names.ts";
+import type { ManifestFunction } from "./compile";
+import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir";
+import { quoteIdentifier } from "./names";
 
 /**
  * Parity checking: run identical inputs through the TypeScript function and the

@@ -9,16 +9,16 @@ import {
   type Node,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { type HelperName } from "@/helpers.ts";
-import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "@/ir.ts";
-import { INT_GUARD, isIntGuard } from "@/authoring.ts";
-import { coerce, requireAssignable } from "@/lower/coerce.ts";
-import { type State } from "@/lower/state.ts";
-import { referenceError, rootIdentifier } from "./access.ts";
-import { arrayOperand, lowerArrayMethod } from "./array.ts";
-import { lowerExpr } from "./expr.ts";
-import { isMathGlobal, isNumberGlobal, lowerMathCall, lowerNumberCall } from "./globalCall.ts";
+import { CompileError } from "@/errors";
+import { type HelperName } from "@/helpers";
+import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "@/ir";
+import { INT_GUARD, isIntGuard } from "@/authoring";
+import { coerce, requireAssignable } from "@/lower/coerce";
+import { type State } from "@/lower/state";
+import { referenceError, rootIdentifier } from "./access";
+import { arrayOperand, lowerArrayMethod } from "./array";
+import { lowerExpr } from "./expr";
+import { isMathGlobal, isNumberGlobal, lowerMathCall, lowerNumberCall } from "./globalCall";
 
 export async function lowerCall(node: CallExpression, s: State, guarded = false): Promise<ExprIR> {
   if (node.expression.kind === SyntaxKind.PropertyAccessExpression) {

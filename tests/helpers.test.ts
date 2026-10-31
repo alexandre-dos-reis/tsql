@@ -1,8 +1,8 @@
 import { PGlite } from "@electric-sql/pglite";
 import { resolve } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { compileProject } from "../src/compile.ts";
-import { HELPER_HASHES } from "../src/helpersLock.ts";
+import { compileProject } from "../src/compile";
+import { HELPER_HASHES } from "../src/helpersLock";
 import {
   HELPERS,
   HELPERS_REVISION,
@@ -10,7 +10,7 @@ import {
   runtimeSql,
   TSQL_SCHEMA,
   type HelperName,
-} from "../src/helpers.ts";
+} from "../src/helpers";
 
 /**
  * The functions tsql installs in the `tsql` schema (`src/helpers.ts`,

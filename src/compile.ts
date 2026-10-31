@@ -8,15 +8,15 @@ import {
   type VariableStatement,
 } from "typescript/unstable/ast";
 import { dirname, relative, resolve } from "node:path";
-import { CompileError } from "./errors.ts";
-import { TSQL_SCHEMA } from "./helpers.ts";
-import type { Paint } from "./style.ts";
-import { emitMigration, type EmitOptions } from "./emit/index.ts";
-import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
-import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower/index.ts";
-import { openProject, typeCheck } from "./program.ts";
-import { chooseLanguages } from "./language.ts";
-import { mapTypeDeclaration, type TypeDeclaration } from "./typemap/index.ts";
+import { CompileError } from "./errors";
+import { TSQL_SCHEMA } from "./helpers";
+import type { Paint } from "./style";
+import { emitMigration, type EmitOptions } from "./emit";
+import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir";
+import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower";
+import { openProject, typeCheck } from "./program";
+import { chooseLanguages } from "./language";
+import { mapTypeDeclaration, type TypeDeclaration } from "./typemap";
 
 export interface CompileOptions {
   /**

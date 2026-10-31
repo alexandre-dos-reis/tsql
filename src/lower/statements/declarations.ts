@@ -12,14 +12,14 @@ import {
   type VariableDeclarationList,
   type VariableStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { isArray, isComposite, type ExprIR, type PgType, type StmtIR } from "@/ir.ts";
-import { toSnakeCase } from "@/names.ts";
+import { CompileError } from "@/errors";
+import { isArray, isComposite, type ExprIR, type PgType, type StmtIR } from "@/ir";
+import { toSnakeCase } from "@/names";
 import { mapInferredType, mapTypeNode } from "@/typemap";
-import { coerce, requireAssignable } from "@/lower/coerce.ts";
-import { readPath, resolveAccess } from "@/lower/expressions/access.ts";
-import { lowerExpr } from "@/lower/expressions/expr.ts";
-import { uniqueName, type State } from "@/lower/state.ts";
+import { coerce, requireAssignable } from "@/lower/coerce";
+import { readPath, resolveAccess } from "@/lower/expressions/access";
+import { lowerExpr } from "@/lower/expressions/expr";
+import { uniqueName, type State } from "@/lower/state";
 
 export async function lowerVariableStatement(node: VariableStatement, s: State): Promise<StmtIR[]> {
   return lowerDeclarationList(node.declarationList, node, s);

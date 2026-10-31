@@ -2,8 +2,8 @@ import { API, DiagnosticCategory, type Project } from "typescript/unstable/async
 import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { ProjectNotFoundError } from "./errors.ts";
-import { describeSearch, findTscPath } from "./tscPath.ts";
+import { ProjectNotFoundError } from "./errors";
+import { describeSearch, findTscPath } from "./tscPath";
 
 /**
  * Thin wrapper over the TypeScript 7 compiler API.

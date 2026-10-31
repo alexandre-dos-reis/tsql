@@ -19,7 +19,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { HELPER_HASHES } from "./helpersLock.ts";
+import { HELPER_HASHES } from "./helpersLock";
 
 /** The schema the helpers live in. Reserved: `--schema` may not be it. */
 export const TSQL_SCHEMA = "tsql";

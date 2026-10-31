@@ -1,11 +1,11 @@
 /**
  * A function: `CREATE FUNCTION`, its parameters, its language and its body.
  */
-import { isArray, type FunctionIR } from "@/ir.ts";
-import { quoteIdentifier } from "@/names.ts";
-import { DEFAULTS, type EmitOptions } from "./options.ts";
-import { allowedNote, qualifier, typeName, unenforced } from "./qualify.ts";
-import { emitStatements } from "./statements.ts";
+import { isArray, type FunctionIR } from "@/ir";
+import { quoteIdentifier } from "@/names";
+import { DEFAULTS, type EmitOptions } from "./options";
+import { allowedNote, qualifier, typeName, unenforced } from "./qualify";
+import { emitStatements } from "./statements";
 
 export function emitFunction(fn: FunctionIR, options: EmitOptions = {}): string {
   const { schema, orReplace, comments } = { ...DEFAULTS, ...options };

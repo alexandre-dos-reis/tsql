@@ -1,7 +1,7 @@
 import { beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { compileProject, formatResult, type ManifestFunction } from "../src/compile.ts";
-import { openDatabase, type Database } from "../src/runParity.ts";
+import { compileProject, formatResult, type ManifestFunction } from "../src/compile";
+import { openDatabase, type Database } from "../src/runParity";
 
 /**
  * The `Math` functions agree with JavaScript on the values the fast-check

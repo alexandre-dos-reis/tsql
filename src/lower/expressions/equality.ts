@@ -2,9 +2,9 @@
  * Strict equality: the operator it becomes, and what `NaN` does to it.
  */
 import { type Node } from "typescript/unstable/ast";
-import { CompileError } from "@/errors.ts";
-import { isArray, isComposite, isEnum, isExactly, sameNamed, scalarType, type BinOp, type ExprIR } from "@/ir.ts";
-import { requireComparable, textOf } from "@/lower/coerce.ts";
+import { CompileError } from "@/errors";
+import { isArray, isComposite, isEnum, isExactly, sameNamed, scalarType, type BinOp, type ExprIR } from "@/ir";
+import { requireComparable, textOf } from "@/lower/coerce";
 
 /** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */
 export function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void {
