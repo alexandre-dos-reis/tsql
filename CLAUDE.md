@@ -211,7 +211,8 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   a chunk only `parity` loads, **not minified** (26 kB saved is invisible for a CLI
   loaded from disk, and `src/cli.ts` drops the stack from an unexpected error anyway). It emits the declaration in the same run, as `dist/index.d.mts` — the
   extension follows the `.mjs` entry's, which `exports` maps `types` to and `AUTHORING_FILE`
-  (`src/authoring.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
+  (`src/authoring.ts`, which names exactly that file and `src/index.ts`, tied to `exports.types` by a test)
+  must recognise, or `int` is unrecognised in every consumer build at once. **No source
   ships**: a declaration is what a consumer's editor and type checker expect, and it costs them no parse
   of our implementation. `tests/packaging.test.ts` type checks a consumer against the installed
   declaration, with a `@ts-expect-error` that fails if the module resolved as `any` — so a wrong path or

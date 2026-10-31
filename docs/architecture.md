@@ -147,8 +147,9 @@ does this declaration come from", and lowering asks it too, for the `int` guard.
 
 - `Integer` and `Float` are aliases of `number` declared in
   [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
-  are recognised by name (`authoring.ts`), but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
-  the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
+  are recognised by name (`authoring.ts`), but only when the declaration is in `src/index.ts` or in
+  the published `dist/index.d.mts` *and* `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
+  it comes from this package — never by path suffix alone, which a user's own `src/index.ts`
   would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
   [design.md, Numbers](design.md#numbers)).
 - Named object types become composites (`mapCompositeType`, `mapField`): keyed by name, nested as

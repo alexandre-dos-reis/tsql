@@ -1,5 +1,6 @@
 /**
- * tsql's own authoring vocabulary (`Integer`, `Float`, `int`), recognised by provenance: a consumer's identically named declaration is never mistaken for it.
+ * tsql's own authoring vocabulary (`Integer`, `Float`, `int`), recognised by provenance: a consumer's
+ * identically named declaration is never mistaken for it.
  */
 import { SyntaxKind, type Node, type TypeReferenceNode } from "typescript/unstable/ast";
 import { SymbolFlags } from "typescript/unstable/async";
@@ -21,15 +22,20 @@ const NUMERIC_ALIASES: Record<string, PgScalar> = {
 export const PACKAGE_NAME = "@adrdp/tsql";
 
 /**
- * The authoring module: `index.ts` here, and whatever the build emits — the
- * declaration's extension follows the entry's, so an `.mjs` entry pairs with a
- * `.d.mts`. Missing a spelling makes `int` and the aliases unrecognised in
- * every consumer build at once.
+ * The two files that declare the authoring vocabulary: `src/index.ts` in this repository, and
+ * `dist/index.d.mts`, the one declaration the package publishes (`exports.types` in package.json,
+ * `dts.entry` in tsdown.config.ts). Nothing else is the authoring module: not another `index.ts` of
+ * this package, and not a built `.js`, which declares no types. If the build ever names its
+ * declaration differently this must follow, or `int` and the aliases go unrecognised in every
+ * consumer build at once; `tests/packaging.test.ts` ties it to `exports.types`.
  */
-const AUTHORING_FILE = /(^|\/)index\.(ts|d\.m?ts|m?js)$/;
+const AUTHORING_FILE = /(^|\/)(src\/index\.ts|dist\/index\.d\.mts)$/;
 
-/** Was this declaration written in tsql's own authoring vocabulary? */
-function isAuthoringModule(path: string): boolean {
+/**
+ * Was this declaration written in tsql's own authoring vocabulary? The path must be one of the two
+ * files above *and* belong to this package: a consumer's own `src/index.ts` ends the same way.
+ */
+export function isAuthoringModule(path: string): boolean {
   return AUTHORING_FILE.test(path) && isFromPackage(path, PACKAGE_NAME);
 }
 
