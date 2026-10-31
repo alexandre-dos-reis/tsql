@@ -292,7 +292,7 @@ replaced, and `tests/helpers.test.ts` pins it. It is also one helper rather than
 is what lets the base-ten expression live in one place: a helper cannot call another, `runtimeSql` creating
 them alphabetically and a migration carrying only the ones its functions use.
 
-`src/globals/string.ts` is the third table, for `String.prototype`, and holds `trim`, `trimStart` and `trimEnd` — `btrim`, `ltrim` and
+`src/globals/string.ts` is the third table, for `String.prototype`, and holds the trims and the searches. `trim`, `trimStart` and `trimEnd` are `btrim`, `ltrim` and
 `rtrim` **handed the characters to remove** (`JS_WHITESPACE`, the 25 code points of ECMAScript's `WhiteSpace` and `LineTerminator`).
 The set form is the point: one-argument `btrim(s)` strips spaces only, and a character set compares code points, so no locale or
 collation decides anything — which is why `toUpperCase` stays refused (`upper()` follows the database's rules) and why these need
@@ -301,7 +301,16 @@ collation decides anything — which is why `toUpperCase` stays refused (`upper(
 enum operand is cast `::text` and the result is plain `text`. The set is emitted as the `EXPR.unicodeLit` node, `U&'\0009\000a…'`,
 because 25 invisible characters cannot be reviewed and an editor stripping trailing whitespace would change the function; the code
 points come from lowering, so the emitter still decides nothing. The table is written out rather than derived per compile, and
-`tests/trimValues.test.ts` derives it from the engine over the whole BMP and fails if they differ. `docs/design.md` ("Strings")
+`tests/trimValues.test.ts` derives it from the engine over the whole BMP and fails if they differ.
+
+`includes`, `startsWith` and `endsWith` are the searches, and are in for the same reason: a substring search compares code points, so
+no collation decides anything (which is why `<` on strings stays refused). `startsWith` is `starts_with(s, t)`; `includes` is
+`strpos(s, t) > 0`, because `strpos` answers 0 when absent and 1 for the empty needle `includes("")` is `true` for; `endsWith` has no
+PostgreSQL function and is `starts_with(reverse(s), reverse(t))` — chosen over the equally exact `right(s, length(t)) = t` because that
+mentions the needle **twice**, so `s.endsWith(f(x))` would call `f` twice. `s LIKE t || '%'` would be wrong: a needle holding `%` or `_`
+is an ordinary string. Their optional **second argument is refused** — a position in UTF-16 code units, which `text` has no notion of —
+and so are `indexOf`/`lastIndexOf`/`slice`, told to write `includes` or `endsWith` where that answers the question.
+`tests/stringSearchValues.test.ts` is their fixed grid. `docs/design.md` ("Strings")
 carries the measurements and every refusal's reason.
 
 ## Types and composites

@@ -8,7 +8,7 @@
  *
  * Expected: `.length` on a string is not supported
  * Expected: UTF-16 code units
- * Expected: Supported: .trim(), .trimEnd(), .trimStart()
+ * Expected: Supported: .endsWith(s), .includes(s), .startsWith(s), .trim(), .trimEnd(), .trimStart()
  */
 export function hasText(plan: string): boolean {
   return plan.length > 0; // ← rejected here

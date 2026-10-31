@@ -15,7 +15,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                                        ├─ references.ts     what a name refers to (parameter, global, package…)
                                        ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
                                        ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`, `parseFloat`), and why the rest do not
-                                       ├─ globals/string.ts the closed table of `String.prototype` methods that compile (the three trims), and why the rest do not
+                                       ├─ globals/string.ts the closed table of `String.prototype` methods that compile (the trims and the searches), and why the rest do not
                                        ├─ helpers.ts        the functions installed in the `tsql` schema, and the SQL section that installs them
                                        ├─ language.ts       which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
                                        └─ origin.ts         where a declaration lives (project, standard library, package)
@@ -236,9 +236,12 @@ only function declarations are called at run time; the constants evaluated at lo
   method up in [`globals/string.ts`](../src/globals/string.ts)'s closed table. One of the three trims becomes a
   `builtin` node — `btrim`, `ltrim` or `rtrim` — whose second argument is a `unicodeLit`: the 25 code
   points JavaScript's `trim` removes, which the emitter spells `U&'\0009\000a…'` and decides nothing
-  about. An enum operand is cast `::text` first, and the result is plain `text`. A member that is not
-  in the table is refused with the reason `globals/string.ts` keeps for it, for a property (`.length`)
-  as well as a call.
+  about. A search becomes `starts_with` (`startsWith`), the same over two `reverse` calls (`endsWith`,
+  which is why the needle is mentioned once), or a `strpos` compared `> 0` (`includes`); its argument
+  is lowered and held to a non-nullable `text` like the operand, and its optional position argument is
+  refused, counting UTF-16 code units. An enum operand or needle is cast `::text` first; a trim
+  answers plain `text` and a search a `boolean`. A member that is not in the table is refused with the
+  reason `globals/string.ts` keeps for it, for a property (`.length`) as well as a call.
 
 Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.at(node, message)`,
 which records file, line, column and the source line; `format` prints it like a compiler

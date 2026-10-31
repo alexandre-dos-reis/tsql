@@ -494,17 +494,36 @@ among themselves. Those strings are left out of the grid, and the helper is chec
 
 ## Strings
 
-Of `String.prototype`, three methods compile: `trim`, `trimStart` and `trimEnd`. They are a closed table in [`src/globals/string.ts`](../src/globals/string.ts), the same shape as [`Math`](#math) and `Number` and for the same reason — the default is to refuse, so what the prototype grows later stays out until someone measures it. Unlike those two there is no global to recognise by provenance: the method is called on a *value*, and what sends lowering to the table is the operand's PostgreSQL type, which it has already worked out. A method on anything else is the categorical refusal it has always been.
+Of `String.prototype`, six methods compile: `trim`, `trimStart`, `trimEnd`, `includes`, `startsWith` and `endsWith`. They are a closed table in [`src/globals/string.ts`](../src/globals/string.ts), the same shape as [`Math`](#math) and `Number` and for the same reason — the default is to refuse, so what the prototype grows later stays out until someone measures it. Unlike those two there is no global to recognise by provenance: the method is called on a *value*, and what sends lowering to the table is the operand's PostgreSQL type, which it has already worked out. A method on anything else is the categorical refusal it has always been.
 
 | TypeScript | SQL |
 | --- | --- |
 | `s.trim()` | `btrim(s, U&'\0009\000a…\feff')` |
 | `s.trimStart()` | `ltrim(s, …)` |
 | `s.trimEnd()` | `rtrim(s, …)` |
+| `s.startsWith(t)` | `starts_with(s, t)` |
+| `s.includes(t)` | `strpos(s, t) > 0` |
+| `s.endsWith(t)` | `starts_with(reverse(s), reverse(t))` |
 
-No helper, and nothing installed in the `tsql` schema: PostgreSQL already has these three functions, with the same definition.
+What the six have in common is that **no locale and no collation decides anything**: the trims are handed the exact set of characters to remove, and the searches compare code points. No helper, and nothing installed in the `tsql` schema: PostgreSQL already has these functions, with the same definitions.
 
-### Why the second argument is the whole point
+### The searches
+
+A substring search is not a comparison, which is what makes these three translatable where `<` on strings is [refused](#rejected-at-build-time): `strpos`, `starts_with` and `reverse` work on code points and consult no collation. Measured over 3 000 random pairs drawn from an alphabet of astral characters (`😀`, a ZWJ family), precomposed and decomposed `é`, `ß`, dotless `ı`, `İ` and whitespace — with ~40% of the needles genuinely suffixes, so the result is not vacuously `false` — all three disagree with JavaScript on **0** inputs. Lone surrogates and NUL are excluded, as `src/parity.ts` excludes them: they have no PostgreSQL `text` value at all.
+
+The edges are each what makes the written form what it is:
+
+| | JavaScript | SQL |
+| --- | --- | --- |
+| `s.includes("")` | `true` | `strpos(s,'')` is 1, hence `> 0` and not `>= 1` on an absent needle, which is 0 |
+| `s.endsWith("")` | `true` | `reverse('')` is `''`, and `starts_with(x,'')` is `true` |
+| a needle with `%` or `_` | an ordinary character | `starts_with`/`strpos` have no pattern syntax — `s LIKE t || '%'` would be wrong here, and is why `startsWith` is not written that way |
+
+**`endsWith` reads each argument once.** PostgreSQL has no `ends_with`, and the obvious `right(s, length(t)) = t` is equally exact (0 disagreements on the same corpus) but mentions the needle *twice*, so `s.endsWith(f(x))` would call the compiled `f` twice — the cost that made the `Math` rewrites into [helpers](#the-tsql-schema). A suffix test is a prefix test on both strings reversed, which mentions each once and stays raw SQL: `tests/parity/stringMethods.sql` pins that `app.trim_both(part)` appears a single time.
+
+**Their second argument is refused.** `includes(t, pos)`, `startsWith(t, pos)` and `endsWith(t, endPos)` take a position counted in **UTF-16 code units**, which is the one thing PostgreSQL's `text` does not have — it counts characters. `"😀a".includes("a", 1)` is `true` in TypeScript, where the second *character* in PostgreSQL is already the `a`. The refusal says so.
+
+### Why the trims' second argument is the whole point
 
 `btrim(s)` with one argument removes **spaces only**, so it would diverge on a tab. The set form removes exactly the characters it is handed, which buys two things:
 
@@ -526,9 +545,11 @@ They are emitted as **Unicode escapes**, `U&'\0009\000a…'`, not as the charact
 
 Each refusal names the divergence rather than reporting the method missing:
 
-- **`toUpperCase`, `toLowerCase`** — the locale and collation question above.
-- **`length`, `charCodeAt`, `codePointAt`, `indexOf`, `slice`, `substring`** — TypeScript counts **UTF-16 code units** and PostgreSQL counts characters, so they disagree on everything outside the BMP (`'😀'.length` is 2 where `length('😀')` is 1). `indexOf` also counts from 0 and answers -1 where `strpos` counts from 1 and answers 0.
-- **`padStart`, `padEnd`** — `lpad` and `rpad` truncate a string longer than the target width, where the JavaScript returns it unchanged.
+- **`toUpperCase`, `toLowerCase`** — the locale and collation question above, and measured: over 1 500 strings from the same corpus, `upper()` differs from `toUpperCase()` on 227. `'ß'.toUpperCase()` is `"SS"` where `upper('ß')` is `"ẞ"`, and dotless `ı` differs too.
+- **`length`, `charCodeAt`, `codePointAt`, `indexOf`, `lastIndexOf`, `slice`, `substring`** — TypeScript counts **UTF-16 code units** and PostgreSQL counts characters, so they disagree on everything outside the BMP (`'😀'.length` is 2 where `length('😀')` is 1). `indexOf` also counts from 0 and answers -1 where `strpos` counts from 1 and answers 0; it and `lastIndexOf` are told to write `includes` or `endsWith` when the position is not what was wanted.
+- **`padStart`, `padEnd`** — `lpad` and `rpad` truncate a string longer than the target width, where the JavaScript returns it unchanged: `lpad('abcdefghij', 3, '-')` is `"abc"`. The width is also counted in UTF-16 code units.
+- **`repeat`** — exact for a literal non-negative count, but `repeat(s, -1)` is `''` in PostgreSQL where JavaScript throws a `RangeError`, and a count that is not a literal cannot be checked at build time. It is the only refusal here that is a *missing feature* rather than a divergence.
+- **`search`, `match`, `replace`** — a regular expression, which is not part of the subset.
 - **`split`** — an array of text whose length is not known at build time.
 - **`replace`** — PostgreSQL's changes every occurrence where TypeScript's changes the first, and a regular expression is not part of the subset.
 - **`normalize`** — PostgreSQL has `normalize()`, but which forms agree has not been measured.
@@ -536,7 +557,10 @@ Each refusal names the divergence rather than reporting the method missing:
 
 ### How it is checked
 
-`tests/parity/stringTrim.ts` goes through the fast-check harness like any case, which mostly proves that a string with nothing to trim comes back unchanged: the harness draws arbitrary text, which is nearly all printable ASCII. The real pinning is `tests/trimValues.test.ts` — each of the 25 code points alone, at either end, in runs, around characters that must survive, and the near-misses that must not be trimmed (U+180E, U+200B, U+2060, U+FFFE). It compares **inside PostgreSQL** (`btrim(…) IS NOT DISTINCT FROM $2`), because a driver drops a leading U+FEFF as it decodes text and comparing in JavaScript would report a divergence the server does not have.
+`tests/parity/stringMethods.ts` goes through the fast-check harness like any case, which mostly proves the shapes: the harness draws arbitrary text, nearly all printable ASCII, and draws each parameter independently — so a string rarely has whitespace to trim, and two of them are almost never one inside the other. The pinning is two fixed grids, both comparing **inside PostgreSQL** with the expected value sent as a parameter, because a driver drops a leading U+FEFF as it decodes text and comparing in JavaScript would report a divergence the server does not have:
+
+- `tests/trimValues.test.ts` — each of the 25 code points alone, at either end, in runs, around characters that must survive, and the near-misses that must not be trimmed (U+180E, U+200B, U+2060, U+FFFE). Plus the set itself, derived from the running engine over the whole BMP and asserted equal to the table.
+- `tests/stringSearchValues.test.ts` — the empty needle, a needle equal to the subject and one longer than it, overlapping and repeated matches, a match at the wrong end only, astral characters, combining marks, and needles made of `%`, `_` and `\`. It also asserts the grid holds both answers for each of the three, so an implementation that always said `false` could not pass.
 
 ## The `tsql` schema
 

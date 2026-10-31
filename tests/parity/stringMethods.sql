@@ -7,6 +7,60 @@
 -- written in Unicode escapes so the migration says which they are: 25 invisible
 -- characters would be unreadable, and an editor trimming the file would change
 -- what the function does.
+--
+-- `endsWith` is `starts_with` on both strings reversed, which reads each argument
+-- once — note `app.trim_both(part)` appearing a single time in `ends_with_trimmed`.
+
+CREATE OR REPLACE FUNCTION app.ends_with_part(
+  s text,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN starts_with(reverse(s), reverse(part));
+
+CREATE OR REPLACE FUNCTION app.trim_both(
+  s text
+)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+RETURN btrim(s, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff');
+
+CREATE OR REPLACE FUNCTION app.ends_with_trimmed(
+  s text,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN starts_with(reverse(s), reverse(app.trim_both(part)));
+
+CREATE OR REPLACE FUNCTION app.has_at(
+  email text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN strpos(email, '@') > 0;
+
+CREATE OR REPLACE FUNCTION app.has_empty(
+  s text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN strpos(s, '') > 0;
+
+CREATE OR REPLACE FUNCTION app.has_part(
+  s text,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN strpos(s, part) > 0;
 
 CREATE OR REPLACE FUNCTION app.is_blank(
   s text
@@ -16,13 +70,49 @@ LANGUAGE sql
 IMMUTABLE
 RETURN btrim(s, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff') = '';
 
-CREATE OR REPLACE FUNCTION app.trim_both(
+CREATE OR REPLACE FUNCTION app.kind_of(
   s text
 )
-RETURNS text
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+BEGIN
+  IF starts_with(s, 'a') THEN
+    RETURN 1;
+  END IF;
+  IF starts_with(reverse(s), reverse('z')) THEN
+    RETURN 2;
+  END IF;
+  RETURN CASE WHEN strpos(s, '-') > 0 THEN 3 ELSE 0 END;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION app.label_has_locale(
+  entry app.entry
+)
+RETURNS boolean
 LANGUAGE sql
 IMMUTABLE
-RETURN btrim(s, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff');
+RETURN strpos((entry).label, (entry).locale) > 0;
+
+CREATE OR REPLACE FUNCTION app.severity_starts_with(
+  level app.severity,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN starts_with(level::text, part);
+
+CREATE OR REPLACE FUNCTION app.starts_with_part(
+  s text,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN starts_with(s, part);
 
 CREATE OR REPLACE FUNCTION app.trim_call_result(
   s text
@@ -107,6 +197,15 @@ RETURNS text
 LANGUAGE sql
 IMMUTABLE
 RETURN rtrim(a, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff') || '-' || ltrim(b, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff');
+
+CREATE OR REPLACE FUNCTION app.trimmed_ends_with(
+  s text,
+  part text
+)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+RETURN starts_with(reverse(btrim(s, U&'\0009\000a\000b\000c\000d\0020\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000\feff')), reverse(part));
 
 CREATE OR REPLACE FUNCTION app.trimmed_length(
   s text

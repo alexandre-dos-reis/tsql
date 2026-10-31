@@ -16,7 +16,7 @@ import {
 
 import { CompileError } from "@/errors";
 import { JS_WHITESPACE, stringMethod, unsupportedStringMessage } from "@/globals/string";
-import { describe, isExactly, type ExprIR, type PgType, PG, TEXT, EXPR } from "@/ir";
+import { describe, isExactly, type ExprIR, type PgType, PG, TEXT, BOOLEAN, INTEGER, EXPR, OP } from "@/ir";
 import { textOf } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 
@@ -71,43 +71,62 @@ const OPERAND_KINDS = new Set<SyntaxKind>([
 ]);
 
 /**
- * `s.trim()`, `s.trimStart()`, `s.trimEnd()` as `btrim`, `ltrim` and `rtrim`
- * over the characters JavaScript strips.
+ * The methods of `String.prototype` the table holds: the three trims, and the
+ * three searches.
  *
- * The *set* form is what makes these the same function: `btrim(s, chars)`
+ * **The trims** are `btrim`, `ltrim` and `rtrim` over the characters JavaScript
+ * strips. The *set* form is what makes them the same function: `btrim(s, chars)`
  * removes any of the characters it is given, so it depends on neither the
  * database's locale nor its collation, and the characters are JavaScript's own
  * `WhiteSpace` and `LineTerminator` (`JS_WHITESPACE`, measured against the
  * engine by `tests/trimValues.test.ts`). The one-argument `btrim(s)` would not
  * do: it strips spaces only.
  *
- * What lowering has to prove is therefore only the operand:
+ * **The searches** are substring tests, which compare code points and so are
+ * free of locale and collation too. `startsWith` is `starts_with`; `includes` is
+ * `strpos(…) > 0`, because `strpos` answers a position — 0 when absent, and 1
+ * for the empty needle that `includes("")` is `true` for; `endsWith` has no
+ * PostgreSQL function of its own and becomes a prefix test on both strings
+ * reversed, which reads each argument once (`src/globals/string.ts`).
+ *
+ * What lowering has to prove is the operand, and the argument when there is one:
  *
  * - **It is a `string` that cannot be null.** `btrim(NULL, …)` is NULL, where
  *   TypeScript raises a `TypeError` on `null.trim()` — a different outcome, not
- *   a different value. No valid case reaches it: TypeScript refuses `.trim()` on
- *   a `string | null` before lowering runs, and the two ways past that (`s!`,
- *   `s as string`) are refused earlier still. It is stated here so the rule
- *   lives where it belongs.
+ *   a different value. No valid case reaches it for the operand: TypeScript
+ *   refuses `.trim()` on a `string | null` before lowering runs, and the two
+ *   ways past that (`s!`, `s as string`) are refused earlier still. An
+ *   *argument* can be nullable in TypeScript, so that one is a real refusal:
+ *   `s.includes(t)` with `t: string | null` is a type error, but a `text`
+ *   expression that lowered nullable another way would make `strpos` answer
+ *   NULL where TypeScript compared against the string `"null"`.
  * - **An enum is read as its label.** TypeScript treats an enum member as a
- *   string, so `textOf` casts it `::text` — `btrim` has no overload for a named
- *   type's own type, and the result is a `string` in TypeScript too.
- * - **No arguments.** None of the three takes any, so an argument means the
- *   call is not the one this translates.
+ *   string, so `textOf` casts it `::text` — the PostgreSQL functions have no
+ *   overload for a named type's own type, and the result is a `string` in
+ *   TypeScript too.
+ * - **The arity is exact.** The trims take nothing. The searches take the string
+ *   to look for and refuse their optional second argument, which is a position
+ *   counted in UTF-16 code units — the one thing PostgreSQL's `text` does not
+ *   have.
  */
 export async function lowerStringMethod(
   node: CallExpression,
   access: PropertyAccessExpression,
   operand: ExprIR,
+  s: State,
 ): Promise<ExprIR> {
   const method = nameText(access.name);
   const entry = stringMethod(method);
   if (!entry) throw CompileError.at(access, unsupportedStringMessage(method));
 
-  if (node.arguments.length > 0) {
+  if (node.arguments.length !== entry.arity) {
     throw CompileError.at(
       node,
-      `\`.${method}()\` takes no arguments, got ${node.arguments.length}: it removes the whitespace TypeScript removes, which is not something to pass.`,
+      entry.arity === 0
+        ? `\`.${method}()\` takes no arguments, got ${node.arguments.length}: it removes the whitespace TypeScript removes, which is not something to pass.`
+        : node.arguments.length < 1
+          ? `\`.${method}()\` takes the string to look for, got none.`
+          : `\`.${method}()\` takes one argument here, got ${node.arguments.length}. Its second is a position counted in UTF-16 code units, which PostgreSQL's \`text\` has no notion of — it counts characters, so the two would disagree on every character outside the BMP.`,
     );
   }
   if (operand.type.nullable) {
@@ -118,8 +137,40 @@ export async function lowerStringMethod(
     );
   }
 
-  // The result is a plain `string`: trimming a union of string literals, a
-  // domain or an enum proves nothing about its membership of that type.
-  const whitespace: ExprIR = { kind: EXPR.unicodeLit, codePoints: JS_WHITESPACE, type: TEXT };
-  return { kind: EXPR.builtin, sql: entry.sql, args: [textOf(operand), whitespace], type: TEXT };
+  const subject = textOf(operand);
+  if (entry.arity === 0) {
+    // The result is a plain `string`: trimming a union of string literals, a
+    // domain or an enum proves nothing about its membership of that type.
+    const whitespace: ExprIR = { kind: EXPR.unicodeLit, codePoints: JS_WHITESPACE, type: TEXT };
+    return { kind: EXPR.builtin, sql: entry.sql, args: [subject, whitespace], type: TEXT };
+  }
+
+  const argument = node.arguments[0] as Expression;
+  const lowered = await lowerExpr(argument, s, TEXT);
+  if (!isText(lowered.type) || lowered.type.nullable) {
+    throw CompileError.at(
+      argument,
+      `\`.${method}()\` looks for a \`string\` that cannot be null, not \`${describe(lowered.type)}${lowered.type.nullable ? " | null" : ""}\`. ` +
+        `A null would make the SQL answer NULL where TypeScript compared against a string.`,
+    );
+  }
+  const needle = textOf(lowered);
+
+  switch (entry.rule) {
+    case "includes": {
+      // `strpos` is 0 when absent and 1 for an empty needle, which
+      // `includes("")` is `true` for, so the comparison is `> 0`.
+      const position: ExprIR = { kind: EXPR.builtin, sql: entry.sql, args: [subject, needle], type: INTEGER };
+      const zero: ExprIR = { kind: EXPR.lit, value: 0, type: INTEGER };
+      return { kind: EXPR.binary, op: OP.gt, left: position, right: zero, type: BOOLEAN };
+    }
+    case "endsWith": {
+      // `s` ends with `t` exactly when the two reversed start alike. Each
+      // argument is read once, where `right(s, length(t)) = t` reads `t` twice.
+      const reverse = (value: ExprIR): ExprIR => ({ kind: EXPR.builtin, sql: "reverse", args: [value], type: TEXT });
+      return { kind: EXPR.builtin, sql: entry.sql, args: [reverse(subject), reverse(needle)], type: BOOLEAN };
+    }
+    default:
+      return { kind: EXPR.builtin, sql: entry.sql, args: [subject, needle], type: BOOLEAN };
+  }
 }
