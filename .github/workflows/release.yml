@@ -20,9 +20,19 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # CRITICAL: Ensure we only proceed if CI actually succeeded,
-    # and ignore if CI was cancelled or failed.
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Proceed when CI succeeded, or when it was skipped *on purpose*: ci.yml skips
+    # the commit that merges the "Version Packages" PR (nothing in it can change
+    # what the compiler emits), and that is exactly the commit that has to
+    # publish. Requiring `success` alone made the two skips cancel out, so a
+    # version bump was merged and never released. A failed or cancelled CI, or a
+    # skipped one on any other commit, still stops here. The message is checked
+    # two ways for the reason ci.yml gives: a squash takes the PR title, a merge
+    # commit names the branch.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' ||
+      (github.event.workflow_run.conclusion == 'skipped' &&
+      (startsWith(github.event.workflow_run.head_commit.message, 'chore: version packages') ||
+      contains(github.event.workflow_run.head_commit.message, 'changeset-release/')))
 
     steps:
       - uses: actions/checkout@v5
