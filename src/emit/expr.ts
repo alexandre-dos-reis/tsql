@@ -1,10 +1,10 @@
 /**
  * Expressions, with the minimum of parentheses: PostgreSQL's operator precedence is the one thing the emitter works out for itself.
  */
-import { isInt4 } from "../constants.ts";
-import { TSQL_SCHEMA } from "../helpers.ts";
-import { type BinOp, type ExprIR } from "../ir.ts";
-import { quoteIdentifier, quoteLiteral } from "../names.ts";
+import { isInt4 } from "@/constants.ts";
+import { TSQL_SCHEMA } from "@/helpers.ts";
+import { type BinOp, type ExprIR } from "@/ir.ts";
+import { quoteIdentifier, quoteLiteral } from "@/names.ts";
 import { arrayTypeName, type Qualifier } from "./qualify.ts";
 
 /**

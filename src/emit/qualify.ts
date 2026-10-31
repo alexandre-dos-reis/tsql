@@ -1,8 +1,8 @@
 /**
  * How a name and a type are written in SQL: schema-qualified when a schema is in use, and the note kept for a string union that nothing enforces.
  */
-import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "../ir.ts";
-import { quoteIdentifier, quoteLiteral } from "../names.ts";
+import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "@/ir.ts";
+import { quoteIdentifier, quoteLiteral } from "@/names.ts";
 
 /**
  * Renders SQL names, schema-qualified when a schema is in use: `q(name)` for a

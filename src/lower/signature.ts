@@ -9,10 +9,10 @@ import {
   type Node,
   type ParameterDeclaration,
 } from "typescript/unstable/ast";
-import { CompileError } from "../errors.ts";
-import { type ParamIR, type SignatureIR } from "../ir.ts";
-import { toSnakeCase } from "../names.ts";
-import { mapTypeNode, type TypeCtx } from "../typemap/index.ts";
+import { CompileError } from "@/errors.ts";
+import { type ParamIR, type SignatureIR } from "@/ir.ts";
+import { toSnakeCase } from "@/names.ts";
+import { mapTypeNode, type TypeCtx } from "@/typemap";
 
 /**
  * A function the compiler translates: an exported `function` declaration, or an

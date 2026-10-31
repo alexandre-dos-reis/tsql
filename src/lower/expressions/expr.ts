@@ -18,11 +18,11 @@ import {
   type StringLiteral,
   type TemplateExpression,
 } from "typescript/unstable/ast";
-import { INT4_MAX, INT4_MIN, isInt4 } from "../../constants.ts";
-import { CompileError } from "../../errors.ts";
-import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "../../ir.ts";
-import { coerce, textOf, unify } from "../coerce.ts";
-import { type State } from "../state.ts";
+import { INT4_MAX, INT4_MIN, isInt4 } from "@/constants.ts";
+import { CompileError } from "@/errors.ts";
+import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "@/ir.ts";
+import { coerce, textOf, unify } from "@/lower/coerce.ts";
+import { type State } from "@/lower/state.ts";
 import { lowerAccess, lowerNew, referenceError } from "./access.ts";
 import { lowerArrayLiteral } from "./array.ts";
 import { lowerBinary, unguarded } from "./binary.ts";

@@ -9,7 +9,7 @@ import {
   type Identifier,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
+import { CompileError } from "@/errors.ts";
 import {
   arrayType,
   describe,
@@ -24,9 +24,9 @@ import {
   type ArrayType,
   type ExprIR,
   type PgType,
-} from "../../ir.ts";
-import { coerce, requireAssignable, unify } from "../coerce.ts";
-import { type State } from "../state.ts";
+} from "@/ir.ts";
+import { coerce, requireAssignable, unify } from "@/lower/coerce.ts";
+import { type State } from "@/lower/state.ts";
 import { resolveAccess, tryReadPath } from "./access.ts";
 import { isNullLiteral, lowerExpr } from "./expr.ts";
 

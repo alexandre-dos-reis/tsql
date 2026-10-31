@@ -9,21 +9,12 @@ import {
   type Statement,
   type SwitchStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
-import {
-  describe,
-  isArray,
-  isComposite,
-  isExactly,
-  sameNamed,
-  scalarType,
-  type ExprIR,
-  type StmtIR,
-} from "../../ir.ts";
-import { textOf } from "../coerce.ts";
-import { checkStrictEquality, strictEquality } from "../expressions/equality.ts";
-import { isNullLiteral, lowerExpr } from "../expressions/expr.ts";
-import { uniqueName, type State } from "../state.ts";
+import { CompileError } from "@/errors.ts";
+import { describe, isArray, isComposite, isExactly, sameNamed, scalarType, type ExprIR, type StmtIR } from "@/ir.ts";
+import { textOf } from "@/lower/coerce.ts";
+import { checkStrictEquality, strictEquality } from "@/lower/expressions/equality.ts";
+import { isNullLiteral, lowerExpr } from "@/lower/expressions/expr.ts";
+import { uniqueName, type State } from "@/lower/state.ts";
 import { asStatements, lowerClauseBody, lowerStatements, returnedValue } from "./statement.ts";
 
 export async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {

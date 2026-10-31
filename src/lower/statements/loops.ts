@@ -11,11 +11,11 @@ import {
   type VariableDeclarationList,
   type WhileStatement,
 } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
-import { describe, isArray, isExactly, scalarType, type ExprIR, type StmtIR } from "../../ir.ts";
-import { toSnakeCase } from "../../names.ts";
-import { lowerExpr } from "../expressions/expr.ts";
-import { scoped, uniqueName, within, type State } from "../state.ts";
+import { CompileError } from "@/errors.ts";
+import { describe, isArray, isExactly, scalarType, type ExprIR, type StmtIR } from "@/ir.ts";
+import { toSnakeCase } from "@/names.ts";
+import { lowerExpr } from "@/lower/expressions/expr.ts";
+import { scoped, uniqueName, within, type State } from "@/lower/state.ts";
 import { lowerAssignment } from "./assignment.ts";
 import { lowerDeclarationList } from "./declarations.ts";
 import { asStatements, lowerStatements } from "./statement.ts";

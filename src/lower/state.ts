@@ -1,9 +1,9 @@
 /**
  * Per-function lowering state: the scope, the locals, and the helpers and calls seen so far.
  */
-import { type HelperName } from "../helpers.ts";
-import { type LocalIR, type PgType, type SignatureIR, type StmtIR } from "../ir.ts";
-import { type TypeCtx } from "../typemap/index.ts";
+import { type HelperName } from "@/helpers.ts";
+import { type LocalIR, type PgType, type SignatureIR, type StmtIR } from "@/ir.ts";
+import { type TypeCtx } from "@/typemap";
 
 interface Binding {
   readonly sqlName: string;

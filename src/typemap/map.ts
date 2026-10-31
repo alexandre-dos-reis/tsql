@@ -16,8 +16,8 @@ import {
   type UnionTypeNode,
 } from "typescript/unstable/ast";
 import { SymbolFlags, TypeFlags, type Checker, type Type, type UnionType } from "typescript/unstable/async";
-import { resolveNumericAlias } from "../authoring.ts";
-import { CompileError } from "../errors.ts";
+import { resolveNumericAlias } from "@/authoring.ts";
+import { CompileError } from "@/errors.ts";
 import {
   arrayType,
   describe,
@@ -28,8 +28,8 @@ import {
   widenNumeric,
   type PgScalar,
   type PgType,
-} from "../ir.ts";
-import { originOfPath } from "../origin.ts";
+} from "@/ir.ts";
+import { originOfPath } from "@/origin.ts";
 import { mapCompositeType } from "./composite.ts";
 import { NULL_ONLY, unparenthesized, type Mapped, type TypeCtx } from "./context.ts";
 import { namedFromSymbol, referencedSymbol } from "./named.ts";

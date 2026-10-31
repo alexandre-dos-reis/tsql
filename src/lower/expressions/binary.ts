@@ -2,7 +2,7 @@
  * Binary operators: arithmetic, comparison and the `int(...)` overflow guard.
  */
 import { formatSyntaxKind, SyntaxKind, type BinaryExpression, type Node } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
+import { CompileError } from "@/errors.ts";
 import {
   describe,
   isExactly,
@@ -14,10 +14,10 @@ import {
   type BinOp,
   type ExprIR,
   type ScalarType,
-} from "../../ir.ts";
-import { INT_GUARD } from "../../authoring.ts";
-import { coerce, textOf, unify } from "../coerce.ts";
-import { type State } from "../state.ts";
+} from "@/ir.ts";
+import { INT_GUARD } from "@/authoring.ts";
+import { coerce, textOf, unify } from "@/lower/coerce.ts";
+import { type State } from "@/lower/state.ts";
 import { rootIdentifier } from "./access.ts";
 import { canBeNaN, NAN, strictEquality } from "./equality.ts";
 import { isNullLiteral, lowerExpr } from "./expr.ts";

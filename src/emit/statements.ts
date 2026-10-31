@@ -1,8 +1,8 @@
 /**
  * Statements: the body of a PL/pgSQL function, one line at a time.
  */
-import { type StmtIR } from "../ir.ts";
-import { quoteIdentifier } from "../names.ts";
+import { type StmtIR } from "@/ir.ts";
+import { quoteIdentifier } from "@/names.ts";
 import { emitExpr } from "./expr.ts";
 import { type Qualifier } from "./qualify.ts";
 

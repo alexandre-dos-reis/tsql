@@ -221,8 +221,11 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   A test from the repository cannot see the `node_modules` problem — the path has none — which is why
   `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the authoring module with `node`.
 - **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter
-  properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources runnable as they are in the
-  repository, under Node as well as Bun.
+  properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources erasable by Node's type
+  stripping. They are run as they are only under Bun, though: imports that leave a folder are written
+  `@/lower`, `@/ir.ts` (the `paths` alias in `tsconfig.json`, which Bun and tsdown resolve and Node does not).
+  The built `dist/` has none, and the CLI test runs it under Node. `src/index.ts` and `src/constants.ts` stay
+  relative: they are part of every consumer's program, which has no such alias.
 - **`bin/tsql.mjs` stays plain JavaScript**: npm puts it on PATH. It `import()`s `dist/cli.mjs` — no
   subprocess, no bundled runtime, whichever of Node or Bun invoked it.
 - **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global

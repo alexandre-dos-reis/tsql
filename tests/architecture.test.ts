@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
 import { readFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { posix, resolve } from "node:path";
 
 /**
  * The layering `docs/architecture.md` describes for `src/lower/`, `src/typemap/` and `src/emit/`, held as a test.
@@ -67,10 +67,10 @@ function layerOf(path: string): number | undefined {
   )?.[1];
 }
 
-/** The relative modules a source file imports or re-exports from, as written. */
+/** The modules under `src/` a source file imports or re-exports from, as written: relative, or through `@/`. */
 export function relativeSpecifiers(source: string): string[] {
-  const found = [...source.matchAll(/^(?:import|export)\b[^;]*?\bfrom\s+"(\.[^"]+)"/gms)];
-  const bare = [...source.matchAll(/^import\s+"(\.[^"]+)"/gm)];
+  const found = [...source.matchAll(/^(?:import|export)\b[^;]*?\bfrom\s+"(\.[^"]+|@\/[^"]+)"/gms)];
+  const bare = [...source.matchAll(/^import\s+"(\.[^"]+|@\/[^"]+)"/gm)];
   return [...found, ...bare].map((match) => match[1]!);
 }
 
@@ -113,13 +113,20 @@ export function violations(imports: Readonly<Record<string, readonly string[]>>)
   return broken;
 }
 
+/** A specifier to the file it names, relative to `src/`; `@/lower` is a folder, so it means `lower/index.ts`. */
+export function resolveSpecifier(from: string, specifier: string): string {
+  if (!specifier.startsWith("@/")) return posix.normalize(posix.join(posix.dirname(from), specifier));
+  const target = specifier.slice(2);
+  return target.endsWith(".ts") ? target : `${target}/index.ts`;
+}
+
 describe("the layering of src/lower/, src/typemap/ and src/emit/", () => {
   const root = resolve("src");
   const imports: Record<string, string[]> = {};
   for (const file of new Glob("**/*.ts").scanSync({ cwd: root })) {
     const path = file.replaceAll("\\", "/");
     imports[path] = relativeSpecifiers(readFileSync(resolve(root, path), "utf8")).map((specifier) =>
-      relative(root, resolve(dirname(resolve(root, path)), specifier)).replaceAll("\\", "/"),
+      resolveSpecifier(path, specifier),
     );
   }
 
@@ -170,6 +177,13 @@ describe("the layering of src/lower/, src/typemap/ and src/emit/", () => {
     test("a module no layer knows", () => {
       expect(violations({ "lower/newModule.ts": [] })).toHaveLength(1);
     });
+  });
+
+  test("resolving a specifier", () => {
+    expect(resolveSpecifier("lower/expressions/expr.ts", "../coerce.ts")).toBe("lower/coerce.ts");
+    expect(resolveSpecifier("compile.ts", "./lower/index.ts")).toBe("lower/index.ts");
+    expect(resolveSpecifier("lower/expressions/expr.ts", "@/typemap")).toBe("typemap/index.ts");
+    expect(resolveSpecifier("emit/types.ts", "@/ir.ts")).toBe("ir.ts");
   });
 
   test("what is allowed is not flagged: a cycle inside a layer, and a lower layer", () => {

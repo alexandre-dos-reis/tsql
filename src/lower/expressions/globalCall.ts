@@ -10,10 +10,10 @@ import {
   type NumericLiteral,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { INT4_MIN } from "../../constants.ts";
-import { CompileError } from "../../errors.ts";
-import { mathFunction, unsupportedMathMessage } from "../../globals/math.ts";
-import { numberFunction, unsupportedNumberMessage } from "../../globals/number.ts";
+import { INT4_MIN } from "@/constants.ts";
+import { CompileError } from "@/errors.ts";
+import { mathFunction, unsupportedMathMessage } from "@/globals/math.ts";
+import { numberFunction, unsupportedNumberMessage } from "@/globals/number.ts";
 import {
   describe,
   isExactly,
@@ -23,11 +23,11 @@ import {
   type ExprIR,
   type PgType,
   type ScalarType,
-} from "../../ir.ts";
-import { classifyReference } from "../../references.ts";
-import { INT_GUARD } from "../../authoring.ts";
-import { coerce, unify } from "../coerce.ts";
-import { type State } from "../state.ts";
+} from "@/ir.ts";
+import { classifyReference } from "@/references.ts";
+import { INT_GUARD } from "@/authoring.ts";
+import { coerce, unify } from "@/lower/coerce.ts";
+import { type State } from "@/lower/state.ts";
 import { DOUBLE, helper } from "./call.ts";
 import { lowerExpr } from "./expr.ts";
 

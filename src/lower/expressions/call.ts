@@ -9,12 +9,12 @@ import {
   type Node,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
-import { type HelperName } from "../../helpers.ts";
-import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "../../ir.ts";
-import { INT_GUARD, isIntGuard } from "../../authoring.ts";
-import { coerce, requireAssignable } from "../coerce.ts";
-import { type State } from "../state.ts";
+import { CompileError } from "@/errors.ts";
+import { type HelperName } from "@/helpers.ts";
+import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "@/ir.ts";
+import { INT_GUARD, isIntGuard } from "@/authoring.ts";
+import { coerce, requireAssignable } from "@/lower/coerce.ts";
+import { type State } from "@/lower/state.ts";
 import { referenceError, rootIdentifier } from "./access.ts";
 import { arrayOperand, lowerArrayMethod } from "./array.ts";
 import { lowerExpr } from "./expr.ts";

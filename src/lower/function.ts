@@ -2,9 +2,9 @@
  * Pass 2: a function's body, lowered against the signatures of Pass 1.
  */
 import { SyntaxKind, type Block, type Expression } from "typescript/unstable/ast";
-import { CompileError } from "../errors.ts";
-import { type FunctionIR, type SignatureIR } from "../ir.ts";
-import { type TypeCtx } from "../typemap/index.ts";
+import { CompileError } from "@/errors.ts";
+import { type FunctionIR, type SignatureIR } from "@/ir.ts";
+import { type TypeCtx } from "@/typemap";
 import { type ExportedFunction } from "./signature.ts";
 import { type State } from "./state.ts";
 import { alwaysReturns, lowerReturn, lowerStatements } from "./statements/statement.ts";

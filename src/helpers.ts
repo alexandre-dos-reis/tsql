@@ -194,7 +194,6 @@ export const HELPERS = {
       `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
       `ELSE COALESCE((${HEX_SIGN}) * (${HEX_VALUE}), 'NaN'::${D}) END)::integer`,
   },
-
 } as const satisfies Record<string, Helper>;
 
 export type HelperName = keyof typeof HELPERS;

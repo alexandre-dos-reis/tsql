@@ -10,13 +10,13 @@ import {
   type ParenthesizedExpression,
   type PropertyAccessExpression,
 } from "typescript/unstable/ast";
-import { CompileError } from "../../errors.ts";
-import { mathConstant } from "../../globals/math.ts";
-import { unsupportedNumberMessage } from "../../globals/number.ts";
-import { describe, isComposite, namedType, scalarType, type ExprIR } from "../../ir.ts";
-import { classifyReference, referenceMessage } from "../../references.ts";
-import { enumMember } from "../../typemap/index.ts";
-import { type State } from "../state.ts";
+import { CompileError } from "@/errors.ts";
+import { mathConstant } from "@/globals/math.ts";
+import { unsupportedNumberMessage } from "@/globals/number.ts";
+import { describe, isComposite, namedType, scalarType, type ExprIR } from "@/ir.ts";
+import { classifyReference, referenceMessage } from "@/references.ts";
+import { enumMember } from "@/typemap";
+import { type State } from "@/lower/state.ts";
 import { ARRAY_SUBSET, arrayOperand } from "./array.ts";
 import { DOUBLE } from "./call.ts";
 import { lowerExpr } from "./expr.ts";

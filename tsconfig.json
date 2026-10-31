@@ -15,7 +15,8 @@
     "noImplicitOverride": true,
     "skipLibCheck": true,
     "types": ["bun"],
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "tests", "scripts"],
   // tests/parity and tests/rejected are projects of functions to compile, with their own tsconfig, type checked by the
