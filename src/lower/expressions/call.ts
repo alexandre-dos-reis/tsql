@@ -34,7 +34,7 @@ export async function lowerCall(node: CallExpression, s: State, guarded = false)
     // Last of the three, because `Math` and `Number` are names rather than
     // values: neither is in scope, so neither can be a string.
     const text = await textOperand(access.expression, s);
-    if (text) return lowerStringMethod(node, access, text);
+    if (text) return lowerStringMethod(node, access, text, s);
   }
   if (node.expression.kind !== SyntaxKind.Identifier) {
     // `Math.max(a, b)`, `helpers.limit()`, `basket.total()` — name what the

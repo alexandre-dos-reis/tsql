@@ -8,27 +8,51 @@
  * while these are called on a *value* whose PostgreSQL type lowering already
  * knows is `text`, so there is no global to recognise.
  *
- * Today the table holds the three trims, which are the ones PostgreSQL has
- * under another name and with the *same* definition. `btrim`, `ltrim` and
- * `rtrim` take the set of characters to remove, so they depend on neither the
- * database's locale nor its collation — which is exactly what keeps
- * `toUpperCase` out (`upper()` follows the database's rules, not JavaScript's
- * Unicode case mapping). `docs/design.md`, "Strings", has the measurements.
+ * What every member here has in common is that it is **free of locale and
+ * collation**: the three trims are handed the exact set of characters to
+ * remove, and the three searches compare code points. That is the property that
+ * keeps `toUpperCase` out — `upper()` follows the database's rules, not
+ * JavaScript's Unicode case mapping — and it is why none of these needs a
+ * helper in the `tsql` schema: PostgreSQL already has the same functions.
+ * `docs/design.md`, "Strings", has the measurements.
  */
 
+/**
+ * The members whose SQL is not a plain call to `sql`, each measured in that
+ * written-out form (`docs/design.md`, "Strings"):
+ *
+ * - `includes`: `strpos` answers a position, so the call is compared — `> 0`,
+ *   since `strpos` is 0 when absent and 1 for an empty needle, which
+ *   `includes("")` is `true` for.
+ * - `endsWith`: PostgreSQL has no `ends_with`. A suffix test is a prefix test
+ *   on both strings reversed, which reads each argument **once** —
+ *   `right(s, length(t)) = t` is equally exact but reads the argument twice, so
+ *   `s.endsWith(f(x))` would call `f` twice.
+ */
+export type StringRule = "includes" | "endsWith";
+
 export interface StringMethod {
-  /**
-   * The PostgreSQL function it becomes, called with the characters to remove as
-   * its second argument. Not a helper in the `tsql` schema: the set form of
-   * these three is the same function, so there is nothing to write.
-   */
+  /** The PostgreSQL function it becomes. */
   readonly sql: string;
+  /**
+   * Arguments after the operand. The trims take none; the searches take the
+   * string to look for. The optional second argument of all three searches is a
+   * position counted in UTF-16 code units, so it is refused rather than counted.
+   */
+  readonly arity: 0 | 1;
+  /** `text` for the trims, `boolean` for the searches. */
+  readonly returns: "text" | "boolean";
+  /** How the call is written, when it is not `sql(operand, …)`. */
+  readonly rule?: StringRule;
 }
 
 export const STRING_METHODS: Readonly<Record<string, StringMethod>> = {
-  trim: { sql: "btrim" },
-  trimEnd: { sql: "rtrim" },
-  trimStart: { sql: "ltrim" },
+  endsWith: { sql: "starts_with", arity: 1, returns: "boolean", rule: "endsWith" },
+  includes: { sql: "strpos", arity: 1, returns: "boolean", rule: "includes" },
+  startsWith: { sql: "starts_with", arity: 1, returns: "boolean" },
+  trim: { sql: "btrim", arity: 0, returns: "text" },
+  trimEnd: { sql: "rtrim", arity: 0, returns: "text" },
+  trimStart: { sql: "ltrim", arity: 0, returns: "text" },
 };
 
 /**
@@ -61,7 +85,8 @@ export function stringMethod(member: string): StringMethod | undefined {
 }
 
 /** Named like `ARRAY_SUBSET`, and used in the same two places: the member that is not in the table, and the operand that is not a string. */
-export const STRING_SUBSET = "On a string, the compiled subset is `.trim()`, `.trimStart()` and `.trimEnd()`.";
+export const STRING_SUBSET =
+  "On a string, the compiled subset is `.trim()`, `.trimStart()`, `.trimEnd()`, `.includes(s)`, `.startsWith(s)` and `.endsWith(s)`.";
 
 /**
  * Specific reasons, for the members worth one. Each says why the SQL that looks
@@ -76,7 +101,11 @@ const REASONS: Readonly<Record<string, string>> = {
   charCodeAt: "it reads one UTF-16 code unit, which PostgreSQL's `text` is not made of.",
   codePointAt: "`ascii()` reads the first character only, and TypeScript's index counts UTF-16 code units.",
   indexOf:
-    "`strpos()` counts characters from 1 and answers 0 when absent, where `indexOf` counts UTF-16 code units from 0 and answers -1.",
+    "`strpos()` counts characters from 1 and answers 0 when absent, where `indexOf` counts UTF-16 code units from 0 and answers -1. Write `.includes()`, which compiles, when the position is not what you need.",
+  lastIndexOf:
+    "it answers a position counted in UTF-16 code units. Write `.endsWith()`, which compiles, when that is the question.",
+  search: "it takes a regular expression, which is not part of the subset.",
+  match: "it takes a regular expression and answers an array, neither of which is part of the subset.",
   slice: "its indices count UTF-16 code units, and it accepts negative ones, where `substring()` does neither.",
   substring: "its indices count UTF-16 code units, where `substring()` counts characters.",
   split: "it returns an array of text whose length is not known at build time.",
@@ -89,9 +118,9 @@ const REASONS: Readonly<Record<string, string>> = {
   trimRight: "write `trimEnd`, which compiles — `trimRight` is its deprecated alias.",
 };
 
-const SUPPORTED = Object.keys(STRING_METHODS)
-  .sort()
-  .map((name) => `.${name}()`)
+const SUPPORTED = Object.entries(STRING_METHODS)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([name, method]) => `.${name}(${method.arity === 0 ? "" : "s"})`)
   .join(", ");
 
 /**

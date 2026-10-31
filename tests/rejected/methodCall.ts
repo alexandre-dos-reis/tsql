@@ -9,7 +9,7 @@
  *
  * Expected: `.toUpperCase()` on a string is not supported
  * Expected: locale and collation
- * Expected: Supported: .trim(), .trimEnd(), .trimStart()
+ * Expected: Supported: .endsWith(s), .includes(s), .startsWith(s), .trim(), .trimEnd(), .trimStart()
  */
 export function isFreePlan(plan: string): boolean {
   return plan.toUpperCase() === "FREE"; // ← rejected here

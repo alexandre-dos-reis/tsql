@@ -30,10 +30,10 @@ import { openDatabase, type Database } from "../src/runParity";
  * JavaScript reports a divergence where the server holds the right value.
  *
  * Like the rest of the suite it holds no cases of its own: it runs
- * `stringTrim.ts` of `tests/parity/`, through the functions that file exports.
+ * `stringMethods.ts` of `tests/parity/`, through the functions that file exports.
  */
 
-const FILE = resolve("tests/parity/stringTrim.ts");
+const FILE = resolve("tests/parity/stringMethods.ts");
 
 const WHITESPACE = JS_WHITESPACE.map((point) => String.fromCodePoint(point));
 
