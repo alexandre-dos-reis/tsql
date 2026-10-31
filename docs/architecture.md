@@ -14,7 +14,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                                        ├─ authoring.ts      `Integer`, `Float` and `int`, recognised by provenance
                                        ├─ references.ts     what a name refers to (parameter, global, package…)
                                        ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
-                                       ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`), and why the rest do not
+                                       ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`, `parseFloat`), and why the rest do not
                                        ├─ helpers.ts        the functions installed in the `tsql` schema, and the SQL section that installs them
                                        ├─ language.ts       which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
                                        └─ origin.ts         where a declaration lives (project, standard library, package)
@@ -221,11 +221,11 @@ only function declarations are called at run time; the constants evaluated at lo
   table is refused with the reason `globals/math.ts` keeps for it. `abs` of an `integer` is the only one that
   asks for the `int(...)` guard.
 - **`Number` calls**: `isNumberGlobal` finds `Number` the same way, and `lowerNumberCall` looks the
-  member up in [`globals/number.ts`](../src/globals/number.ts)'s closed table — `parseInt` alone today. It becomes a
-  `helper` node for `tsql.number_parse_int`, taking the radix as JavaScript does: the literal `10`, or 0
+  member up in [`globals/number.ts`](../src/globals/number.ts)'s closed table — `parseInt` and `parseFloat`. Each becomes a
+  `helper` node (`tsql.number_parse_int`, `tsql.number_parse_float`); `parseInt` takes the radix as JavaScript does: the literal `10`, or 0
   for an omitted one, which reads a leading `0x` as hexadecimal. Any other radix, or one that is not a
   literal, is refused, and that is checked *before* the guard below so the advice names a rewrite that
-  compiles. A member marked `whole` in the table must sit directly inside `int(...)`: the helper returns
+  compiles. `parseFloat` takes no radix and stays a `Float`. A member marked `whole` in the table must sit directly inside `int(...)`: the helper returns
   `integer`, raising on the `NaN` and the out-of-range values `int` throws on, so nothing is emitted for
   the guard and `lowerIntGuard` erases itself as it does around arithmetic.
 

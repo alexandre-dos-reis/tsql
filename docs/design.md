@@ -437,11 +437,61 @@ a `LATERAL`, and that is exactly what stops PostgreSQL inlining. Two things are 
 other, and the faster one won. With the radix a constant the planner folds the base-choosing branch away entirely, so
 `number_parse_int(s, 10)` pays nothing for the hexadecimal side it cannot reach.
 
+## `Number.parseFloat`
+
+The behaviour reproduced is the one written down at
+[MDN's `parseFloat`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseFloat),
+and every example on that page is a test (`tests/parseFloatValues.test.ts`), checked against the documented
+answer. Beside them is a fixed grid of about 900 strings — shapes, whitespace and look-alikes of whitespace,
+the `Infinity` spellings, signed zeros, rounding, and the exact edges of the double range computed with
+`BigInt` — because the parity harness draws arbitrary text, which almost never parses.
+
+Like `parseInt` it is a *parser*, not a cast: JavaScript reads the longest prefix that is a decimal literal
+(`"3.14abc"` is `3.14`, `".5"`, `"5."`, `"1e3"` and `"-Infinity"` are all numbers; hexadecimal, `_` separators
+and `"1e"` stop the read), and anything unreadable is `NaN`. It lowers to `tsql.number_parse_float(s)`,
+`text → double precision`, and **it is a `Float`**: a fraction, `NaN` and the infinities are all among its
+answers, so it is `whole: false` in `src/globals/number.ts` and `int(Number.parseFloat(s))` is refused
+(`tests/rejected/parseFloatInt.ts`) for the reason `int` is refused around any `Float`. It takes no radix.
+Bare `parseFloat(s)` is not supported, as bare `parseInt`: only the `Number` member.
+
+### What PostgreSQL does differently
+
+| | JavaScript | `float8` input | What the helper does |
+| --- | --- | --- | --- |
+| text after the number | ignored | raises | a pattern reads the literal, the rest is dropped |
+| `''`, `'abc'` | `NaN` | raises | `COALESCE(…, 'NaN')` |
+| `'1e999'` | `Infinity` | **raises** (overflow) | clamped |
+| `'1e-999'` | `0` | **raises** (underflow) | clamped |
+| `'-1e-999'` | `-0` | raises | `-0` |
+| `'Infinity'`, `'-Infinity'` | ±`Infinity` | accepted | accepted |
+
+The common string never meets the clamp. A guard — fewer than 200 bytes and no exponent of three digits or more
+— proves that the cast cannot overflow or underflow, and then the body is one pattern and one cast. Ordered so
+a string with no `e` or `E` is settled by two `strpos` and the regular expression is not run. Otherwise the
+value is clamped in `numeric`, in units of 2^-1075 (the midpoint under the smallest denormal), because
+`2::numeric ^ -1075` is inexact and an integer multiple is not: at most 2^-1075 is `0`, at least
+`2^1024 - 2^970` is `Infinity`, the exact rounding boundaries, and everything between goes through the cast. The
+sign is read from the matched text, so `-0` and `-Infinity` survive. A simple `CASE` evaluates its subject once.
+
+**Limits, and they are loud.** `numeric` holds 10^-16383 to about 10^130749 once scaled, so a literal beyond
+that raises instead of answering `Infinity` or `0` (`1e130749`, `1e-16384`, a hundred-thousand-digit mantissa).
+The loud-limits test pins this. A raise is never a wrong answer, and the parity harness counts it as such.
+
+**Inlining.** One `SELECT`, no `FROM`, no `SET`: PostgreSQL inlines it, and `tests/helpers.test.ts` checks the
+plan. The argument is read several times, so it inlines only for a cheap argument, which an ordinary expression is.
+Measured on PGlite over 200 000 rows, a few µs a call (about 5 to 9 on ordinary input; the plain cast is 0.3
+to 2, but raises on a suffix), 26 µs only for three-digit exponents, which take the clamp, and 0.9 µs for
+`NaN`. Shorter forms were tried and lost: one that needed a `LATERAL` stopped inlining.
+
+One thing is a test limit, not a helper one: PGlite's WebAssembly build (musl `strtod`) rounds a
+~1000-digit string near a denormal tie differently from glibc, V8, JavaScriptCore and Python, which agree
+among themselves. Those strings are left out of the grid, and the helper is checked on a real PostgreSQL 18.
+
 ## The `tsql` schema
 
 A `Math` rewrite has to read its argument several times (`Math.round(x)` is `x - floor(x) >= 0.5 …`). Written out where it is used, that is a line of several hundred characters, and a heavy argument (a call to a compiled function) would either run several times or need a sub-select, which PL/pgSQL no longer evaluates as a simple expression: measured on PGlite, 200 000 calls, 20 µs against 6.6 µs for a helper function and 3.4 µs for an inlined one. So the rewrites are functions in a schema of tsql's own, `tsql`, and a compiled function calls them: `RETURN tsql.math_min(tsql.math_max(x, lo), hi);`.
 
-- **The set is closed** — [`src/helpers.ts`](../src/helpers.ts) — and small: `math_round`, `math_fround`, `math_sign`, `math_sqrt`, `math_min`, `math_max`, `math_clz32`, `math_imul`. They are `LANGUAGE sql`, `IMMUTABLE`, `PARALLEL SAFE`, with no `SET` clause (which would stop PostgreSQL inlining them: a test looks at the plan), and every function they call is written `pg_catalog.…`, so the search path cannot change what they mean.
+- **The set is closed** — [`src/helpers.ts`](../src/helpers.ts) — and small: `math_round`, `math_fround`, `math_sign`, `math_sqrt`, `math_min`, `math_max`, `math_clz32`, `math_imul`, `number_parse_int`, `number_parse_float`. They are `LANGUAGE sql`, `IMMUTABLE`, `PARALLEL SAFE`, with no `SET` clause (which would stop PostgreSQL inlining them: a test looks at the plan), and every function they call is written `pg_catalog.…`, so the search path cannot change what they mean.
 - **The schema is fixed.** It is not an option and the TypeScript cannot name it; `--schema tsql` is refused. The user's own functions keep `--schema`, which is a deployment decision (PostgREST exposes `public` by default, PostGraphile the schemas it is given), not something tsql should take away.
 - **A migration carries the helpers its functions use, not all of them**, before those functions, and none (no schema, no table) when no function calls one. It is the same file on every `compile`: it changes in a diff only when a helper does.
 - **The migration brings them up to date itself.** There is no command to run. Its runtime section creates the schema and a one-row table `tsql.runtime(revision)`, then a `DO` block:

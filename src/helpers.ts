@@ -104,6 +104,66 @@ const HEX_VALUE = `('x' || pg_catalog.lpad(pg_catalog.left(pg_catalog.ltrim(${HE
 const HEX_SIGN = `CASE WHEN pg_catalog.left(${HEX_PREFIX}, 1) = '-' THEN -1 ELSE 1 END`;
 
 /**
+ * The longest prefix `parseFloat` reads: a sign, then `Infinity` or a decimal
+ * literal — digits with an optional point, or a point and digits — and an
+ * optional exponent, which is read only when it has digits (`'1e'` is 1). NULL
+ * when there is none, and the point is a bracket expression rather than `\.`, so
+ * nothing in the pattern needs escaping inside the `E'…'` literal.
+ *
+ * It is the whole of what has to be read: PostgreSQL's own `float8` input then
+ * returns the same double JavaScript does for it — the same correctly rounded
+ * result, `-0` included — so the helper never parses a digit itself.
+ */
+const LITERAL = after("([+-]?(?:Infinity|(?:[0-9]+[.]?[0-9]*|[.][0-9]+)(?:[eE][+-]?[0-9]+)?))");
+
+/**
+ * Can the `float8` input raise on this string? It raises where JavaScript gives
+ * `±Infinity` or `±0`: a literal whose value is past the double range, or so
+ * close to zero it rounds to nothing. Both need either many digits or a large
+ * exponent, so this is true — the cast cannot raise — when the string is under
+ * 200 bytes, which bounds the digits, and has no exponent of three digits or
+ * more anywhere: the value is then below 10^299 and, unless it is zero, above
+ * 10^-299, and the range is 10^±308 (10^-324 at the small end).
+ *
+ * Ordered so the common string pays for almost nothing: a string with no `e` or
+ * `E` — most of them — is settled by two `strpos`, and the regular expression
+ * runs only when there is one. The two `strpos` are cheaper than the pattern
+ * alone, which is why they come first; the difference is a fraction of a µs a
+ * call on PGlite, below what repeated runs agree on.
+ */
+const IN_RANGE =
+  "pg_catalog.octet_length(s) < 200 AND (pg_catalog.strpos(s, 'e') + pg_catalog.strpos(s, 'E') = 0 " +
+  "OR s !~ '[eE][+-]?[0-9]{3}')";
+
+/**
+ * `2^1024 - 2^970`, where a double rounds to infinity: the midpoint between the
+ * largest double and `2^1024`, itself included — the tie goes to the even
+ * neighbour, which is `2^1024`. In units of `2^-1075`, half the smallest double,
+ * because that is what a `numeric` can say exactly: `2^-1075` itself comes out of
+ * `numeric` division rounded, and a multiplication does not. A value is rounded
+ * to zero when it is at most one such unit, the tie going to zero.
+ */
+const OVERFLOW = "2::numeric ^ 2099 - 2::numeric ^ 2045";
+
+/** The literal's sign, NULL with the literal. Read from the text, because `numeric` has no `-0`. */
+const LITERAL_SIGN = `(1 - 2 * (${LITERAL} LIKE '-%')::int)`;
+
+/**
+ * The magnitude of a literal that may be out of range, by what it is clamped to:
+ * at most one unit is `0`, at least `OVERFLOW` is `Infinity`, and anything
+ * between is in range, where the cast cannot raise and is exact.
+ *
+ * One `CASE` on a clamped value, rather than a comparison for each end, so the
+ * literal is read once to decide — a `CASE` with a subject evaluates it once,
+ * where two `WHEN` conditions would read the string twice. `GREATEST` and `LEAST`
+ * skip a NULL, so no literal at all clamps to the lower end: its sign is NULL
+ * too, and so is the product, which the `COALESCE` turns into `NaN`.
+ */
+const CLAMPED =
+  `CASE LEAST(GREATEST(pg_catalog.abs(${LITERAL}::numeric) * 2::numeric ^ 1075, 1), ${OVERFLOW}) ` +
+  `WHEN 1 THEN 0::${D} WHEN ${OVERFLOW} THEN 'Infinity'::${D} ELSE pg_catalog.abs(${LITERAL}::${D}) END`;
+
+/**
  * Written so that each returns the same double as the JavaScript function, for
  * every input including `NaN`, the infinities and `-0`; `docs/design.md` ("Math")
  * says what each one is for, and `tests/specialValues.test.ts` checks them.
@@ -194,6 +254,24 @@ export const HELPERS = {
     body:
       `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
       `ELSE COALESCE((${HEX_SIGN}) * (${HEX_VALUE}), 'NaN'::${D}) END)::integer`,
+  },
+  // `Number.parseFloat`: the prefix `LITERAL` reads, as the `float8` input
+  // reads it. A string that cannot take the input to its limits is cast as it
+  // is; one that can is clamped first (`CLAMPED`), because the input raises
+  // past the double range where JavaScript answers `±Infinity`, and under the
+  // smallest double where it answers `±0`. `NaN` for no literal at all.
+  //
+  // Unlike `number_parse_int` the answer is a `double precision`, so nothing
+  // has to say what becomes of `NaN` or an infinity: they are values, as they
+  // are in JavaScript, and no `int(...)` is involved.
+  //
+  // One `SELECT` with no `FROM`, so PostgreSQL inlines it. The common string
+  // reads `s` through one pattern and one cast.
+  number_parse_float: {
+    params: "s text",
+    signature: "text",
+    returns: D,
+    body: `SELECT COALESCE(CASE WHEN ${IN_RANGE} THEN ${LITERAL}::${D} ELSE ${LITERAL_SIGN} * ${CLAMPED} END, 'NaN'::${D})`,
   },
 } as const satisfies Record<string, Helper>;
 

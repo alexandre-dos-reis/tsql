@@ -166,6 +166,7 @@ rolled back. Use a test database: the run briefly locks functions with the same 
 | `Integer`, `Float` (from `@adrdp/tsql`) | `integer`, `double precision` — there is deliberately no `numeric` |
 | `int(a + b)` (from `@adrdp/tsql`) | `a + b` — the guard raises in TypeScript where PostgreSQL already raises past 32 bits |
 | `int(Number.parseInt(s, 10))` | `tsql.number_parse_int(s, 10)` — a parser, not a cast: `"12abc"` is 12. Omit the radix to read a leading `0x`, as TypeScript does |
+| `Number.parseFloat(s)` | `tsql.number_parse_float(s)` — a `Float`: `"3.14abc"` is 3.14, unreadable text is `NaN`, out-of-range is `±Infinity`/`0` as in JavaScript |
 | `T \| null` | a nullable value, compared with `IS [NOT] DISTINCT FROM` |
 | `type Plan = "free" \| "pro"` | a domain: `text` with a `CHECK` on its values |
 | a string `enum`, or an `as const` object of strings | an enum, in the order written |
