@@ -5,7 +5,19 @@ import { SyntaxKind, type BinaryExpression, type Expression, type Identifier } f
 
 import { INT_GUARD } from "@/authoring";
 import { CompileError } from "@/errors";
-import { assignable, describe, isExactly, isNumeric, type ExprIR, type StmtIR, PG, INTEGER } from "@/ir";
+import {
+  assignable,
+  describe,
+  isExactly,
+  isNumeric,
+  type ExprIR,
+  type StmtIR,
+  PG,
+  INTEGER,
+  STMT,
+  EXPR,
+  OP,
+} from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { referenceError } from "@/lower/expressions/access";
 import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "@/lower/expressions/binary";
@@ -77,9 +89,9 @@ export async function lowerAssignment(expression: Expression, s: State): Promise
         throw CompileError.at(expression, `\`${expression.getText()}\` needs a number.`);
       }
       const step = arithmetic(
-        op === SyntaxKind.PlusToken ? "+" : "-",
+        op === SyntaxKind.PlusToken ? OP.add : OP.sub,
         current,
-        { kind: "lit", value: 1, type: INTEGER },
+        { kind: EXPR.lit, value: 1, type: INTEGER },
         expression,
         true,
       );
@@ -110,7 +122,7 @@ export async function lowerAssignment(expression: Expression, s: State): Promise
     throw CompileError.at(target, `\`${name}\` is a \`const\`; declare it with \`let\` to reassign it.`);
   }
 
-  const current: ExprIR = { kind: "ref", sqlName: binding.sqlName, type: binding.type };
+  const current: ExprIR = { kind: EXPR.ref, sqlName: binding.sqlName, type: binding.type };
   const next = await value(current);
   if (isNumeric(next.type) && isNumeric(binding.type) && !assignable(next.type, binding.type)) {
     throw CompileError.at(
@@ -119,7 +131,7 @@ export async function lowerAssignment(expression: Expression, s: State): Promise
     );
   }
   requireAssignable(next.type, binding.type, expression, `value assigned to \`${name}\``);
-  return { kind: "assign", sqlName: binding.sqlName, expr: coerce(next, binding.type) };
+  return { kind: STMT.assign, sqlName: binding.sqlName, expr: coerce(next, binding.type) };
 }
 
 /** `+=`, `-=`, `*=` lower to the operators that can overflow; `/=` and `%=` cannot. */

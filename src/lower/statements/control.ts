@@ -11,7 +11,20 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { describe, isArray, isComposite, isExactly, sameNamed, type ExprIR, type StmtIR, PG, BOOLEAN } from "@/ir";
+import {
+  describe,
+  isArray,
+  isComposite,
+  isExactly,
+  sameNamed,
+  type ExprIR,
+  type StmtIR,
+  PG,
+  BOOLEAN,
+  STMT,
+  EXPR,
+  OP,
+} from "@/ir";
 import { textOf } from "@/lower/coerce";
 import { checkStrictEquality, strictEquality } from "@/lower/expressions/equality";
 import { isNullLiteral, lowerExpr } from "@/lower/expressions/expr";
@@ -43,7 +56,7 @@ export async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
     current = undefined;
   }
 
-  return orElse ? { kind: "if", branches, orElse } : { kind: "if", branches };
+  return orElse ? { kind: STMT.if, branches, orElse } : { kind: STMT.if, branches };
 }
 
 /**
@@ -132,7 +145,7 @@ export async function lowerSwitch(node: SwitchStatement, s: State): Promise<Stmt
   let subjectExpr = subject;
   if (
     simple &&
-    groups.some((g) => g.labels.some((l) => l.value!.kind !== "lit" && !sameNamed(subject.type, l.value!.type)))
+    groups.some((g) => g.labels.some((l) => l.value!.kind !== EXPR.lit && !sameNamed(subject.type, l.value!.type)))
   ) {
     subjectExpr = textOf(subject);
     for (const g of groups) for (const l of g.labels) l.value = textOf(l.value!);
@@ -142,15 +155,15 @@ export async function lowerSwitch(node: SwitchStatement, s: State): Promise<Stmt
     const whens = groups.flatMap((g) => g.labels.map((l) => ({ value: l.value!, result: returnedValue(g.body)! })));
     return [
       {
-        kind: "return",
-        expr: { kind: "simpleCaseExpr", subject: subjectExpr, whens, orElse: elseValue, type: s.returns },
+        kind: STMT.return,
+        expr: { kind: EXPR.simpleCaseExpr, subject: subjectExpr, whens, orElse: elseValue, type: s.returns },
       },
     ];
   }
   if (simple) {
     return [
       {
-        kind: "simpleCase",
+        kind: STMT.simpleCase,
         subject: subjectExpr,
         whens: groups.map((g) => ({ values: g.labels.map((l) => l.value!), body: g.body })),
         orElse,
@@ -160,30 +173,30 @@ export async function lowerSwitch(node: SwitchStatement, s: State): Promise<Stmt
 
   const out: StmtIR[] = [];
   let ref = subject;
-  if (subject.kind !== "ref" && subject.kind !== "lit") {
+  if (subject.kind !== EXPR.ref && subject.kind !== EXPR.lit) {
     const sqlName = uniqueName("switch_value", s.used);
     s.locals.push({ tsName: sqlName, sqlName, type: subject.type });
-    out.push({ kind: "assign", sqlName, expr: subject });
-    ref = { kind: "ref", sqlName, type: subject.type };
+    out.push({ kind: STMT.assign, sqlName, expr: subject });
+    ref = { kind: EXPR.ref, sqlName, type: subject.type };
   }
   const whens = groups.map((g) => ({
     cond: g.labels
       .map((l): ExprIR =>
         l.value === null
-          ? { kind: "nullTest", operand: ref, negated: false, type: BOOLEAN }
+          ? { kind: EXPR.nullTest, operand: ref, negated: false, type: BOOLEAN }
           : strictEquality(ref, l.value, false, l.node),
       )
-      .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: BOOLEAN })),
+      .reduce((left, right): ExprIR => ({ kind: EXPR.binary, op: OP.or, left, right, type: BOOLEAN })),
     body: g.body,
   }));
   if (allReturn) {
     const exprWhens = whens.map((w) => ({ cond: w.cond, result: returnedValue(w.body)! }));
     out.push({
-      kind: "return",
-      expr: { kind: "searchedCaseExpr", whens: exprWhens, orElse: elseValue, type: s.returns },
+      kind: STMT.return,
+      expr: { kind: EXPR.searchedCaseExpr, whens: exprWhens, orElse: elseValue, type: s.returns },
     });
     return out;
   }
-  out.push({ kind: "searchedCase", whens, orElse });
+  out.push({ kind: STMT.searchedCase, whens, orElse });
   return out;
 }

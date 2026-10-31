@@ -4,7 +4,20 @@
 import { type Node } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { isArray, isComposite, isEnum, isExactly, sameNamed, type BinOp, type ExprIR, PG, DOUBLE, BOOLEAN } from "@/ir";
+import {
+  isArray,
+  isComposite,
+  isEnum,
+  isExactly,
+  sameNamed,
+  type BinOp,
+  type ExprIR,
+  PG,
+  DOUBLE,
+  BOOLEAN,
+  EXPR,
+  OP,
+} from "@/ir";
 import { requireComparable, textOf } from "@/lower/coerce";
 
 /** The checks `===` / `!==` make on its operands; a `switch` label makes the same ones. */
@@ -32,7 +45,7 @@ export function checkStrictEquality(left: ExprIR, right: ExprIR, at: Node): void
  */
 function comparable(left: ExprIR, right: ExprIR): [ExprIR, ExprIR] {
   // A plain string literal is untyped in SQL, so it takes the other side's type.
-  const untyped = (e: ExprIR) => e.kind === "lit" && !isEnum(e.type);
+  const untyped = (e: ExprIR) => e.kind === EXPR.lit && !isEnum(e.type);
   if (sameNamed(left.type, right.type) || untyped(left) || untyped(right)) return [left, right];
   return [textOf(left), textOf(right)];
 }
@@ -44,24 +57,24 @@ export function strictEquality(leftOperand: ExprIR, rightOperand: ExprIR, negate
   // TypeScript's equality is total; SQL's `=` is three-valued. When either
   // side can be null, `IS [NOT] DISTINCT FROM` is the faithful translation.
   const nullable = left.type.nullable || right.type.nullable;
-  const binOp: BinOp = nullable ? (negated ? "is distinct from" : "is not distinct from") : negated ? "<>" : "=";
-  const core: ExprIR = { kind: "binary", op: binOp, left, right, type: BOOLEAN };
+  const binOp: BinOp = nullable ? (negated ? OP.isDistinct : OP.isNotDistinct) : negated ? OP.ne : OP.eq;
+  const core: ExprIR = { kind: EXPR.binary, op: binOp, left, right, type: BOOLEAN };
   // PostgreSQL's `NaN` equals itself; JavaScript's never equals anything. When the left side is equal to
   // the right and is not `NaN`, the right is not either, so one side decides.
   if (!canBeNaN(left)) return core;
   const isNaN: ExprIR = {
-    kind: "binary",
-    op: nullable ? "is not distinct from" : "=",
+    kind: EXPR.binary,
+    op: nullable ? OP.isNotDistinct : OP.eq,
     left,
     right: NAN,
     type: BOOLEAN,
   };
-  if (negated) return { kind: "binary", op: "or", left: core, right: isNaN, type: BOOLEAN };
-  const notNaN: ExprIR = { ...isNaN, op: nullable ? "is distinct from" : "<>" };
-  return { kind: "binary", op: "and", left: core, right: notNaN, type: BOOLEAN };
+  if (negated) return { kind: EXPR.binary, op: OP.or, left: core, right: isNaN, type: BOOLEAN };
+  const notNaN: ExprIR = { ...isNaN, op: nullable ? OP.isDistinct : OP.ne };
+  return { kind: EXPR.binary, op: OP.and, left: core, right: notNaN, type: BOOLEAN };
 }
 
-export const NAN: ExprIR = { kind: "lit", value: Number.NaN, type: DOUBLE };
+export const NAN: ExprIR = { kind: EXPR.lit, value: Number.NaN, type: DOUBLE };
 
 /**
  * Whether an operand can hold `NaN`: a `Float` that is not a literal (a literal is never `NaN`: `NaN` is
@@ -69,6 +82,6 @@ export const NAN: ExprIR = { kind: "lit", value: Number.NaN, type: DOUBLE };
  */
 export function canBeNaN(expr: ExprIR): boolean {
   if (!isExactly(expr.type, PG.double)) return false;
-  if (expr.kind === "lit") return false;
-  return !(expr.kind === "cast" && !isExactly(expr.operand.type, PG.double));
+  if (expr.kind === EXPR.lit) return false;
+  return !(expr.kind === EXPR.cast && !isExactly(expr.operand.type, PG.double));
 }

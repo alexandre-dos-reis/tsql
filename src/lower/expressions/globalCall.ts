@@ -28,6 +28,7 @@ import {
   PG,
   INTEGER,
   DOUBLE,
+  EXPR,
 } from "@/ir";
 import { coerce, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
@@ -165,7 +166,7 @@ export async function lowerNumberCall(
 
   // The radix goes to the helper as JavaScript spells it: 10 for base ten, 0
   // for an omitted one, which reads a leading `0x` as hexadecimal.
-  const base: ExprIR = { kind: "lit", value: radix ? 10 : 0, type: INTEGER };
+  const base: ExprIR = { kind: EXPR.lit, value: radix ? 10 : 0, type: INTEGER };
   return helper(s, entry.helper, [text, base], INTEGER);
 }
 
@@ -226,7 +227,12 @@ export async function lowerMathCall(
             `Wrap it in \`${INT_GUARD}(...)\` (\`import { ${INT_GUARD} } from "@adrdp/tsql"\`) so both sides raise, or pass a \`Float\`.`,
         );
       }
-      return { kind: "builtin", sql: entry.sql!, args: [operand], type: scalarType((operand.type as ScalarType).sql) };
+      return {
+        kind: EXPR.builtin,
+        sql: entry.sql!,
+        args: [operand],
+        type: scalarType((operand.type as ScalarType).sql),
+      };
     }
     case "float": {
       const operand = args[0]!;
@@ -240,10 +246,10 @@ export async function lowerMathCall(
         case "sign":
           // An `Integer` has no `NaN` and no negative zero: `sign` is exact on it.
           return isExactly(operand.type, PG.integer)
-            ? { kind: "builtin", sql: "sign", args: [x], type: DOUBLE }
+            ? { kind: EXPR.builtin, sql: "sign", args: [x], type: DOUBLE }
             : helper(s, "math_sign", [x], DOUBLE);
         default:
-          return { kind: "builtin", sql: entry.sql!, args: [x], type: DOUBLE };
+          return { kind: EXPR.builtin, sql: entry.sql!, args: [x], type: DOUBLE };
       }
     }
     case "widest": {
@@ -255,7 +261,7 @@ export async function lowerMathCall(
       const widened = args.map((a) => coerce(a, widest));
       // Integers have neither a NaN nor a negative zero: the PostgreSQL function is exact.
       if (!isExactly(widest, PG.double)) {
-        return { kind: "builtin", sql: entry.sql!, args: widened, type: widest };
+        return { kind: EXPR.builtin, sql: entry.sql!, args: widened, type: widest };
       }
       // Pairwise, left to right, as `Math.max(a, b, c)` is `max(max(a, b), c)`.
       const rule = entry.rule as "min" | "max";

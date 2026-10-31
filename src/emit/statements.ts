@@ -1,7 +1,7 @@
 /**
  * Statements: the body of a PL/pgSQL function, one line at a time.
  */
-import { type StmtIR } from "@/ir";
+import { type StmtIR, STMT, EXPR } from "@/ir";
 import { quoteIdentifier } from "@/names";
 
 import { emitExpr } from "./expr";
@@ -32,12 +32,12 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
   const lines: string[] = [];
   for (const statement of body) {
     switch (statement.kind) {
-      case "return": {
+      case STMT.return: {
         // A returned CASE expression is laid out one WHEN per line: on a single
         // line it is short but hard to read. Nested ones stay inline.
         const expr = statement.expr;
-        if (expr.kind === "simpleCaseExpr" || expr.kind === "searchedCaseExpr") {
-          lines.push(`${indent}RETURN CASE${expr.kind === "simpleCaseExpr" ? ` ${emitExpr(expr.subject, q)}` : ""}`);
+        if (expr.kind === EXPR.simpleCaseExpr || expr.kind === EXPR.searchedCaseExpr) {
+          lines.push(`${indent}RETURN CASE${expr.kind === EXPR.simpleCaseExpr ? ` ${emitExpr(expr.subject, q)}` : ""}`);
           for (const when of expr.whens) {
             const test = "value" in when ? when.value : when.cond;
             lines.push(`${indent}  WHEN ${emitExpr(test, q)} THEN ${emitExpr(when.result, q)}`);
@@ -49,11 +49,11 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
         break;
       }
 
-      case "assign":
+      case STMT.assign:
         lines.push(`${indent}${quoteIdentifier(statement.sqlName)} := ${emitExpr(statement.expr, q)};`);
         break;
 
-      case "if": {
+      case STMT.if: {
         statement.branches.forEach((branch, i) => {
           lines.push(`${indent}${i === 0 ? "IF" : "ELSIF"} ${emitExpr(branch.cond, q)} THEN`);
           lines.push(...emitStatements(branch.body, q, `${indent}  `));
@@ -66,7 +66,7 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
         break;
       }
 
-      case "simpleCase":
+      case STMT.simpleCase:
         lines.push(
           ...emitCase(
             `CASE ${emitExpr(statement.subject, q)}`,
@@ -81,7 +81,7 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
         );
         break;
 
-      case "searchedCase":
+      case STMT.searchedCase:
         lines.push(
           ...emitCase(
             "CASE",
@@ -93,13 +93,13 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
         );
         break;
 
-      case "while":
+      case STMT.while:
         lines.push(`${indent}WHILE ${emitExpr(statement.cond, q)} LOOP`);
         lines.push(...emitBranch(statement.body, q, `${indent}  `));
         lines.push(`${indent}END LOOP;`);
         break;
 
-      case "foreach":
+      case STMT.foreach:
         lines.push(
           `${indent}FOREACH ${quoteIdentifier(statement.variable)} IN ARRAY ${emitExpr(statement.array, q)} LOOP`,
         );
@@ -107,11 +107,11 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
         lines.push(`${indent}END LOOP;`);
         break;
 
-      case "exit":
+      case STMT.exit:
         lines.push(`${indent}EXIT;`);
         break;
 
-      case "continue":
+      case STMT.continue:
         lines.push(`${indent}CONTINUE;`);
         break;
     }

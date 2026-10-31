@@ -19,6 +19,8 @@ import {
   PG,
   TEXT,
   BOOLEAN,
+  EXPR,
+  OP,
 } from "@/ir";
 import { coerce, textOf, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
@@ -68,10 +70,10 @@ export async function lowerBinary(node: BinaryExpression, s: State, guarded = fa
   if (op === SyntaxKind.EqualsEqualsEqualsToken || op === SyntaxKind.ExclamationEqualsEqualsToken) {
     const negated = op === SyntaxKind.ExclamationEqualsEqualsToken;
     if (isNullLiteral(node.right)) {
-      return { kind: "nullTest", operand: await lowerExpr(node.left, s), negated, type: BOOLEAN };
+      return { kind: EXPR.nullTest, operand: await lowerExpr(node.left, s), negated, type: BOOLEAN };
     }
     if (isNullLiteral(node.left)) {
-      return { kind: "nullTest", operand: await lowerExpr(node.right, s), negated, type: BOOLEAN };
+      return { kind: EXPR.nullTest, operand: await lowerExpr(node.right, s), negated, type: BOOLEAN };
     }
   }
 
@@ -105,14 +107,14 @@ export function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: Binar
       }
       const binOp: BinOp =
         op === SyntaxKind.LessThanToken
-          ? "<"
+          ? OP.lt
           : op === SyntaxKind.LessThanEqualsToken
-            ? "<="
+            ? OP.le
             : op === SyntaxKind.GreaterThanToken
-              ? ">"
-              : ">=";
+              ? OP.gt
+              : OP.ge;
       const comparison: ExprIR = {
-        kind: "binary",
+        kind: EXPR.binary,
         op: binOp,
         left,
         right,
@@ -121,13 +123,13 @@ export function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: Binar
       // PostgreSQL sorts `NaN` above every number, so `NaN > 1` and `1 < NaN` are true there; in
       // JavaScript every ordering with a `NaN` is false. The side that PostgreSQL makes wrongly true
       // is the one that is `NaN`: the left of `>` and `>=`, the right of `<` and `<=`.
-      const checked = binOp === ">" || binOp === ">=" ? left : right;
+      const checked = binOp === OP.gt || binOp === OP.ge ? left : right;
       if (!canBeNaN(checked)) return comparison;
       return {
-        kind: "binary",
-        op: "and",
+        kind: EXPR.binary,
+        op: OP.and,
         left: comparison,
-        right: { kind: "binary", op: "<>", left: checked, right: NAN, type: BOOLEAN },
+        right: { kind: EXPR.binary, op: OP.ne, left: checked, right: NAN, type: BOOLEAN },
         type: comparison.type,
       };
     }
@@ -140,41 +142,41 @@ export function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: Binar
             'Concatenating a nullable text value would yield NULL in SQL but "null" in TypeScript; narrow the operands first.',
           );
         }
-        return { kind: "binary", op: "||", left: textOf(left), right: textOf(right), type: TEXT };
+        return { kind: EXPR.binary, op: OP.concat, left: textOf(left), right: textOf(right), type: TEXT };
       }
-      return arithmetic("+", left, right, node, guarded);
+      return arithmetic(OP.add, left, right, node, guarded);
     }
 
     case SyntaxKind.MinusToken:
-      return arithmetic("-", left, right, node, guarded);
+      return arithmetic(OP.sub, left, right, node, guarded);
     case SyntaxKind.AsteriskToken:
-      return arithmetic("*", left, right, node, guarded);
+      return arithmetic(OP.mul, left, right, node, guarded);
 
     case SyntaxKind.SlashToken: {
-      numericOperands(left, right, node, "/");
+      numericOperands(left, right, node, OP.div);
       // Integer division truncates in PostgreSQL but not in TypeScript.
       const nullable = left.type.nullable || right.type.nullable;
       const result = scalarType(PG.double, nullable);
       const dividend: ExprIR = isExactly(left.type, PG.double)
         ? left
         : {
-            kind: "cast",
+            kind: EXPR.cast,
             operand: left,
             to: PG.double,
             type: scalarType(PG.double, left.type.nullable),
           };
-      return { kind: "binary", op: "/", left: dividend, right, type: result };
+      return { kind: EXPR.binary, op: OP.div, left: dividend, right, type: result };
     }
 
     case SyntaxKind.PercentToken: {
-      numericOperands(left, right, node, "%");
+      numericOperands(left, right, node, OP.mod);
       if (isExactly(left.type, PG.double) || isExactly(right.type, PG.double)) {
         throw CompileError.at(
           node,
           "`%` is not defined for `double precision` in PostgreSQL. Annotate the operands as `Integer`.",
         );
       }
-      return arithmetic("%", left, right, node, true);
+      return arithmetic(OP.mod, left, right, node, true);
     }
 
     case SyntaxKind.AmpersandAmpersandToken:
@@ -186,8 +188,8 @@ export function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: Binar
         );
       }
       return {
-        kind: "binary",
-        op: op === SyntaxKind.BarBarToken ? "or" : "and",
+        kind: EXPR.binary,
+        op: op === SyntaxKind.BarBarToken ? OP.or : OP.and,
         left,
         right,
         type: scalarType(PG.boolean, left.type.nullable || right.type.nullable),
@@ -197,7 +199,7 @@ export function combine(op: SyntaxKind, left: ExprIR, right: ExprIR, node: Binar
     case SyntaxKind.QuestionQuestionToken: {
       const type = unify(withNullable(left.type, false), right.type, node, "operands of `??`");
       return {
-        kind: "coalesce",
+        kind: EXPR.coalesce,
         left: coerce(left, withNullable(type, left.type.nullable)),
         right: coerce(right, type),
         type: withNullable(type, right.type.nullable),
@@ -213,14 +215,14 @@ export function arithmetic(op: BinOp, left: ExprIR, right: ExprIR, node: Node, g
   const [a, b] = numericOperands(left, right, node, op);
   const sql = widenNumeric(a.sql, b.sql);
   if (sql === PG.integer && OVERFLOWS.has(op) && !guarded) throw unguarded(op, "This", node);
-  return { kind: "binary", op, left, right, type: scalarType(sql, a.nullable || b.nullable) };
+  return { kind: EXPR.binary, op, left, right, type: scalarType(sql, a.nullable || b.nullable) };
 }
 
 /**
  * The operators whose `integer` result can leave 32 bits. `%` cannot — its
  * result is smaller than its divisor — and `/` yields `double precision`.
  */
-const OVERFLOWS = new Set<BinOp>(["+", "-", "*"]);
+const OVERFLOWS = new Set<BinOp>([OP.add, OP.sub, OP.mul]);
 
 /**
  * Unguarded `integer` arithmetic.

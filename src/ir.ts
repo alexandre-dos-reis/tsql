@@ -15,8 +15,60 @@ export const PG = {
   boolean: "boolean",
 } as const satisfies Record<string, PgScalar>;
 
+/** The `kind` of every IR node, written here and read as `EXPR.binary`, `STMT.return`… everywhere else. */
+export const TYPE = {
+  scalar: "scalar",
+  composite: "composite",
+  array: "array",
+} as const;
+
+export const NAMED = {
+  domain: "domain",
+  enum: "enum",
+} as const;
+
+export const STMT = {
+  return: "return",
+  assign: "assign",
+  if: "if",
+  simpleCase: "simpleCase",
+  searchedCase: "searchedCase",
+  while: "while",
+  foreach: "foreach",
+  exit: "exit",
+  continue: "continue",
+} as const;
+
+export const EXPR = {
+  ref: "ref",
+  field: "field",
+  lit: "lit",
+  binary: "binary",
+  not: "not",
+  neg: "neg",
+  nullTest: "nullTest",
+  coalesce: "coalesce",
+  case: "case",
+  simpleCaseExpr: "simpleCaseExpr",
+  searchedCaseExpr: "searchedCaseExpr",
+  call: "call",
+  builtin: "builtin",
+  cast: "cast",
+  helper: "helper",
+  arrayLength: "arrayLength",
+  arrayIncludes: "arrayIncludes",
+  arrayLiteral: "arrayLiteral",
+  arrayCast: "arrayCast",
+  row: "row",
+} as const;
+
+export const PART = {
+  items: "items",
+  spread: "spread",
+} as const;
+
 export interface ScalarType {
-  readonly kind: "scalar";
+  readonly kind: typeof TYPE.scalar;
   readonly sql: PgScalar;
   readonly nullable: boolean;
   /** Allowed values, when the TypeScript side was a union of string literals. */
@@ -41,7 +93,7 @@ export interface ScalarType {
  *   orders by declaration.
  */
 export interface NamedText {
-  readonly kind: "domain" | "enum";
+  readonly kind: typeof NAMED.domain | "enum";
   readonly tsName: string;
   readonly sqlName: string;
   /** In declaration order for an enum (its order is part of the type); sorted for a domain. */
@@ -59,7 +111,7 @@ export interface NamedText {
  * would be no name to generate.
  */
 export interface CompositeType {
-  readonly kind: "composite";
+  readonly kind: typeof TYPE.composite;
   readonly tsName: string;
   readonly sqlName: string;
   readonly fields: readonly CompositeField[];
@@ -94,7 +146,7 @@ export interface CompositeField {
  * non-nullable composite.
  */
 export interface ArrayType {
-  readonly kind: "array";
+  readonly kind: typeof TYPE.array;
   readonly element: ScalarType | CompositeType;
   readonly nullable: false;
 }
@@ -108,7 +160,7 @@ export function scalarType(
   named?: NamedText,
 ): ScalarType {
   return {
-    kind: "scalar",
+    kind: TYPE.scalar,
     sql,
     nullable,
     ...(allowed ? { allowed } : {}),
@@ -129,7 +181,7 @@ export function namedType(named: NamedText, nullable = false): ScalarType {
 
 /** An enum value needs `::text` wherever text is expected; a domain is text already. */
 export function isEnum(type: PgType): boolean {
-  return isScalar(type) && type.named?.kind === "enum";
+  return isScalar(type) && type.named?.kind === NAMED.enum;
 }
 
 /** Do two types name the same domain or enum (or are both plain)? */
@@ -146,23 +198,23 @@ export function compositeType(
   nullable = false,
   module?: string,
 ): CompositeType {
-  return { kind: "composite", tsName, sqlName, fields, nullable, ...(module === undefined ? {} : { module }) };
+  return { kind: TYPE.composite, tsName, sqlName, fields, nullable, ...(module === undefined ? {} : { module }) };
 }
 
 export function isScalar(type: PgType): type is ScalarType {
-  return type.kind === "scalar";
+  return type.kind === TYPE.scalar;
 }
 
 export function isComposite(type: PgType): type is CompositeType {
-  return type.kind === "composite";
+  return type.kind === TYPE.composite;
 }
 
 export function isArray(type: PgType): type is ArrayType {
-  return type.kind === "array";
+  return type.kind === TYPE.array;
 }
 
 export function arrayType(element: ScalarType | CompositeType): ArrayType {
-  return { kind: "array", element, nullable: false };
+  return { kind: TYPE.array, element, nullable: false };
 }
 
 /** Is this exactly the given scalar type? Never true for a composite. */
@@ -269,73 +321,87 @@ export interface FunctionIR {
 }
 
 export type StmtIR =
-  | { readonly kind: "return"; readonly expr: ExprIR }
-  | { readonly kind: "assign"; readonly sqlName: string; readonly expr: ExprIR }
+  | { readonly kind: typeof STMT.return; readonly expr: ExprIR }
+  | { readonly kind: typeof STMT.assign; readonly sqlName: string; readonly expr: ExprIR }
   | {
-      readonly kind: "if";
+      readonly kind: typeof STMT.if;
       readonly branches: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
       readonly orElse?: readonly StmtIR[];
     }
   /** `CASE subject WHEN v1, v2 THEN … ELSE … END CASE`: matches with `=`. */
   | {
-      readonly kind: "simpleCase";
+      readonly kind: typeof STMT.simpleCase;
       readonly subject: ExprIR;
       readonly whens: readonly { readonly values: readonly ExprIR[]; readonly body: readonly StmtIR[] }[];
       readonly orElse: readonly StmtIR[];
     }
   /** `CASE WHEN cond THEN … ELSE … END CASE`. */
   | {
-      readonly kind: "searchedCase";
+      readonly kind: typeof STMT.searchedCase;
       readonly whens: readonly { readonly cond: ExprIR; readonly body: readonly StmtIR[] }[];
       readonly orElse: readonly StmtIR[];
     }
   /** `WHILE cond LOOP … END LOOP;` — every TypeScript loop lowers to this. */
-  | { readonly kind: "while"; readonly cond: ExprIR; readonly body: readonly StmtIR[] }
+  | { readonly kind: typeof STMT.while; readonly cond: ExprIR; readonly body: readonly StmtIR[] }
   /**
    * `FOREACH variable IN ARRAY array LOOP … END LOOP;` — a `for (const x of xs)`.
    * The variable is a local of the element type.
    */
-  | { readonly kind: "foreach"; readonly variable: string; readonly array: ExprIR; readonly body: readonly StmtIR[] }
+  | {
+      readonly kind: typeof STMT.foreach;
+      readonly variable: string;
+      readonly array: ExprIR;
+      readonly body: readonly StmtIR[];
+    }
   /** `EXIT;` — an unlabelled `break` out of the innermost loop. */
-  | { readonly kind: "exit" }
+  | { readonly kind: typeof STMT.exit }
   /** `CONTINUE;` — the next turn of the innermost loop. */
-  | { readonly kind: "continue" };
+  | { readonly kind: typeof STMT.continue };
 
-export type BinOp =
-  | "="
-  | "<>"
-  | "is not distinct from"
-  | "is distinct from"
-  | "<"
-  | "<="
-  | ">"
-  | ">="
-  | "+"
-  | "-"
-  | "*"
-  | "/"
-  | "%"
-  | "and"
-  | "or"
-  | "||";
+/** The binary operators of the IR, as the SQL that spells them. */
+export const OP = {
+  eq: "=",
+  ne: "<>",
+  isNotDistinct: "is not distinct from",
+  isDistinct: "is distinct from",
+  lt: "<",
+  le: "<=",
+  gt: ">",
+  ge: ">=",
+  add: "+",
+  sub: "-",
+  mul: "*",
+  div: "/",
+  mod: "%",
+  and: "and",
+  or: "or",
+  concat: "||",
+} as const;
+
+export type BinOp = (typeof OP)[keyof typeof OP];
 
 export type ExprIR =
-  | { readonly kind: "ref"; readonly sqlName: string; readonly type: PgType }
-  | { readonly kind: "field"; readonly operand: ExprIR; readonly sqlName: string; readonly type: PgType }
-  | { readonly kind: "lit"; readonly value: string | number | boolean | null; readonly type: ScalarType }
+  | { readonly kind: typeof EXPR.ref; readonly sqlName: string; readonly type: PgType }
+  | { readonly kind: typeof EXPR.field; readonly operand: ExprIR; readonly sqlName: string; readonly type: PgType }
+  | { readonly kind: typeof EXPR.lit; readonly value: string | number | boolean | null; readonly type: ScalarType }
   | {
-      readonly kind: "binary";
+      readonly kind: typeof EXPR.binary;
       readonly op: BinOp;
       readonly left: ExprIR;
       readonly right: ExprIR;
       readonly type: ScalarType;
     }
-  | { readonly kind: "not"; readonly operand: ExprIR; readonly type: ScalarType }
-  | { readonly kind: "neg"; readonly operand: ExprIR; readonly type: ScalarType }
-  | { readonly kind: "nullTest"; readonly operand: ExprIR; readonly negated: boolean; readonly type: ScalarType }
-  | { readonly kind: "coalesce"; readonly left: ExprIR; readonly right: ExprIR; readonly type: PgType }
+  | { readonly kind: typeof EXPR.not; readonly operand: ExprIR; readonly type: ScalarType }
+  | { readonly kind: typeof EXPR.neg; readonly operand: ExprIR; readonly type: ScalarType }
   | {
-      readonly kind: "case";
+      readonly kind: typeof EXPR.nullTest;
+      readonly operand: ExprIR;
+      readonly negated: boolean;
+      readonly type: ScalarType;
+    }
+  | { readonly kind: typeof EXPR.coalesce; readonly left: ExprIR; readonly right: ExprIR; readonly type: PgType }
+  | {
+      readonly kind: typeof EXPR.case;
       readonly cond: ExprIR;
       readonly whenTrue: ExprIR;
       readonly whenFalse: ExprIR;
@@ -346,7 +412,7 @@ export type ExprIR =
    * PL/pgSQL statement, SQL's expression takes one value per `WHEN`.
    */
   | {
-      readonly kind: "simpleCaseExpr";
+      readonly kind: typeof EXPR.simpleCaseExpr;
       readonly subject: ExprIR;
       readonly whens: readonly { readonly value: ExprIR; readonly result: ExprIR }[];
       readonly orElse: ExprIR;
@@ -354,49 +420,69 @@ export type ExprIR =
     }
   /** `CASE WHEN cond THEN r … ELSE e END`. */
   | {
-      readonly kind: "searchedCaseExpr";
+      readonly kind: typeof EXPR.searchedCaseExpr;
       readonly whens: readonly { readonly cond: ExprIR; readonly result: ExprIR }[];
       readonly orElse: ExprIR;
       readonly type: PgType;
     }
-  | { readonly kind: "call"; readonly sqlName: string; readonly args: readonly ExprIR[]; readonly type: PgType }
+  | {
+      readonly kind: typeof EXPR.call;
+      readonly sqlName: string;
+      readonly args: readonly ExprIR[];
+      readonly type: PgType;
+    }
   /**
    * A PostgreSQL built-in, called by its bare name — `Math.floor(x)` is
    * `floor(x)`. Unlike `call` it is not one of the compiled functions, so it is
    * never schema-qualified. Lowering has already widened every argument, so the
    * emitter prints it as written.
    */
-  | { readonly kind: "builtin"; readonly sql: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
-  | { readonly kind: "cast"; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
+  | {
+      readonly kind: typeof EXPR.builtin;
+      readonly sql: string;
+      readonly args: readonly ExprIR[];
+      readonly type: ScalarType;
+    }
+  | { readonly kind: typeof EXPR.cast; readonly operand: ExprIR; readonly to: PgScalar; readonly type: ScalarType }
   /**
    * A call to one of the functions tsql installs in its own schema
    * (`tsql.math_round(x)`, `src/helpers.ts`). Like `builtin` it is not one of the
    * compiled functions, but the migration has to install it, so lowering records
    * the names it used in `FunctionIR.helpers`.
    */
-  | { readonly kind: "helper"; readonly name: string; readonly args: readonly ExprIR[]; readonly type: ScalarType }
+  | {
+      readonly kind: typeof EXPR.helper;
+      readonly name: string;
+      readonly args: readonly ExprIR[];
+      readonly type: ScalarType;
+    }
   /** `cardinality(array)` — `xs.length`. Not `array_length`, which is NULL for an empty array. */
-  | { readonly kind: "arrayLength"; readonly operand: ExprIR; readonly type: ScalarType }
+  | { readonly kind: typeof EXPR.arrayLength; readonly operand: ExprIR; readonly type: ScalarType }
   /**
    * `array_position(array, value) IS NOT NULL` — `xs.includes(value)` on scalar
    * elements. `array_position` compares with `IS NOT DISTINCT FROM`, so a NULL
    * is found like any other value, as `includes` finds `null`.
    */
-  | { readonly kind: "arrayIncludes"; readonly array: ExprIR; readonly value: ExprIR; readonly type: ScalarType }
+  | {
+      readonly kind: typeof EXPR.arrayIncludes;
+      readonly array: ExprIR;
+      readonly value: ExprIR;
+      readonly type: ScalarType;
+    }
   /**
    * `[a, b, ...xs, c]`: runs of elements become `ARRAY[a, b]::t[]`, spreads stay
    * arrays, and the parts are concatenated with `||`. No parts is `ARRAY[]::t[]`.
    */
-  | { readonly kind: "arrayLiteral"; readonly parts: readonly ArrayPart[]; readonly type: ArrayType }
+  | { readonly kind: typeof EXPR.arrayLiteral; readonly parts: readonly ArrayPart[]; readonly type: ArrayType }
   /** `xs::double precision[]` — an array whose numeric elements widen, element by element. */
-  | { readonly kind: "arrayCast"; readonly operand: ExprIR; readonly type: ArrayType }
+  | { readonly kind: typeof EXPR.arrayCast; readonly operand: ExprIR; readonly type: ArrayType }
   // `ROW(a, b)::app.thing` — one argument per field, in field order; a field of an object type is a `ROW` too.
-  | { readonly kind: "row"; readonly args: readonly ExprIR[]; readonly type: CompositeType };
+  | { readonly kind: typeof EXPR.row; readonly args: readonly ExprIR[]; readonly type: CompositeType };
 
 /** One run of an array literal: elements written out, or an array spread into it. */
 export type ArrayPart =
-  | { readonly kind: "items"; readonly items: readonly ExprIR[] }
-  | { readonly kind: "spread"; readonly array: ExprIR };
+  | { readonly kind: typeof PART.items; readonly items: readonly ExprIR[] }
+  | { readonly kind: typeof PART.spread; readonly array: ExprIR };
 
 /** Signature-only view of a function, used to check calls before bodies are lowered. */
 export interface SignatureIR {
@@ -414,35 +500,35 @@ export function someExpr(expr: ExprIR, test: (expr: ExprIR) => boolean): boolean
   if (test(expr)) return true;
   const any = (children: readonly ExprIR[]) => children.some((child) => someExpr(child, test));
   switch (expr.kind) {
-    case "ref":
-    case "lit":
+    case EXPR.ref:
+    case EXPR.lit:
       return false;
-    case "field":
-    case "not":
-    case "neg":
-    case "nullTest":
-    case "cast":
-    case "arrayLength":
-    case "arrayCast":
+    case EXPR.field:
+    case EXPR.not:
+    case EXPR.neg:
+    case EXPR.nullTest:
+    case EXPR.cast:
+    case EXPR.arrayLength:
+    case EXPR.arrayCast:
       return any([expr.operand]);
-    case "binary":
-    case "coalesce":
+    case EXPR.binary:
+    case EXPR.coalesce:
       return any([expr.left, expr.right]);
-    case "case":
+    case EXPR.case:
       return any([expr.cond, expr.whenTrue, expr.whenFalse]);
-    case "simpleCaseExpr":
+    case EXPR.simpleCaseExpr:
       return any([expr.subject, ...expr.whens.flatMap((w) => [w.value, w.result]), expr.orElse]);
-    case "searchedCaseExpr":
+    case EXPR.searchedCaseExpr:
       return any([...expr.whens.flatMap((w) => [w.cond, w.result]), expr.orElse]);
-    case "call":
-    case "builtin":
-    case "helper":
-    case "row":
+    case EXPR.call:
+    case EXPR.builtin:
+    case EXPR.helper:
+    case EXPR.row:
       return any(expr.args);
-    case "arrayIncludes":
+    case EXPR.arrayIncludes:
       return any([expr.array, expr.value]);
-    case "arrayLiteral":
-      return any(expr.parts.flatMap((part) => (part.kind === "items" ? part.items : [part.array])));
+    case EXPR.arrayLiteral:
+      return any(expr.parts.flatMap((part) => (part.kind === PART.items ? part.items : [part.array])));
   }
 }
 

@@ -13,7 +13,7 @@ import {
 import { emitMigration, type EmitOptions } from "./emit";
 import { CompileError } from "./errors";
 import { TSQL_SCHEMA } from "./helpers";
-import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir";
+import { TYPE, type CompositeType, type FunctionIR, type NamedText, type PgType, type SignatureIR } from "./ir";
 import { chooseLanguages } from "./language";
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower";
 import { openProject, typeCheck } from "./program";
@@ -227,8 +227,8 @@ function usedTypes(
   // A composite's fields bring their own types with them: the elements of an
   // array field, a field that is a domain or an enum.
   const collect = (type: PgType): void => {
-    if (type.kind === "array") return collect(type.element);
-    if (type.kind === "scalar") {
+    if (type.kind === TYPE.array) return collect(type.element);
+    if (type.kind === TYPE.scalar) {
       if (type.named) named.set(type.named.sqlName, type.named);
       return;
     }

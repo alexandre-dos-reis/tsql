@@ -26,6 +26,8 @@ import {
   type ExprIR,
   type PgType,
   BOOLEAN,
+  EXPR,
+  PART,
 } from "@/ir";
 import { coerce, requireAssignable, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
@@ -87,16 +89,16 @@ export async function lowerArrayLiteral(node: ArrayLiteralExpression, s: State, 
   for (const item of lowered) {
     if (item.spread) {
       requireAssignable(item.expr.type, type, item.node, "spread array");
-      parts.push({ kind: "spread", array: coerce(item.expr, type) });
+      parts.push({ kind: PART.spread, array: coerce(item.expr, type) });
       continue;
     }
     requireAssignable(item.expr.type, element, item.node, "array element");
     const value = coerce(item.expr, element);
     const last = parts.at(-1);
-    if (last?.kind === "items") parts[parts.length - 1] = { kind: "items", items: [...last.items, value] };
-    else parts.push({ kind: "items", items: [value] });
+    if (last?.kind === PART.items) parts[parts.length - 1] = { kind: PART.items, items: [...last.items, value] };
+    else parts.push({ kind: PART.items, items: [value] });
   }
-  return { kind: "arrayLiteral", parts, type };
+  return { kind: EXPR.arrayLiteral, parts, type };
 }
 
 /**
@@ -168,8 +170,8 @@ export async function lowerArrayMethod(
 
   const argument = node.arguments[0] as Expression;
   if (isNullLiteral(argument)) {
-    const value: ExprIR = { kind: "lit", value: null, type: scalarType(element.sql, true) };
-    return { kind: "arrayIncludes", array, value, type: BOOLEAN };
+    const value: ExprIR = { kind: EXPR.lit, value: null, type: scalarType(element.sql, true) };
+    return { kind: EXPR.arrayIncludes, array, value, type: BOOLEAN };
   }
   const value = await lowerExpr(argument, s);
   if (!isScalar(value.type) || !sameFamily(value.type, element)) {
@@ -181,5 +183,5 @@ export async function lowerArrayMethod(
       `Looking for a \`${value.type.sql}\` in \`${describe(array.type)}\` would need a cast that rounds it. Declare the array's elements as wide as the value.`,
     );
   }
-  return { kind: "arrayIncludes", array, value: coerce(value, element), type: BOOLEAN };
+  return { kind: EXPR.arrayIncludes, array, value: coerce(value, element), type: BOOLEAN };
 }

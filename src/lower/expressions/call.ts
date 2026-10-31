@@ -13,7 +13,7 @@ import {
 import { INT_GUARD, isIntGuard } from "@/authoring";
 import { CompileError } from "@/errors";
 import { type HelperName } from "@/helpers";
-import { describe, isExactly, type ExprIR, type ScalarType, PG, INTEGER } from "@/ir";
+import { describe, isExactly, type ExprIR, type ScalarType, PG, INTEGER, EXPR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 
@@ -62,7 +62,7 @@ export async function lowerCall(node: CallExpression, s: State, guarded = false)
     args.push(coerce(lowered, param.type));
   }
   s.calls.add(target.sqlName);
-  return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
+  return { kind: EXPR.call, sqlName: target.sqlName, args, type: target.returns };
 }
 
 /**
@@ -94,5 +94,5 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
 /** A call to a helper tsql installs (`src/helpers.ts`), recorded so the migration installs it. */
 export function helper(s: State, name: HelperName, args: ExprIR[], type: ScalarType): ExprIR {
   s.helpers.add(name);
-  return { kind: "helper", name, args, type };
+  return { kind: EXPR.helper, name, args, type };
 }
