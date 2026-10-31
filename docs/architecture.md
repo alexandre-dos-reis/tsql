@@ -5,17 +5,19 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 [`design.md`](design.md) is the *why* of each semantic choice; this document is the *where*.
 
 ```
- functions/*.ts ──► program.ts ──► compile.ts ──► lower.ts ──► IR (ir.ts) ──► emit.ts ──► migration.sql
+ functions/*.ts ──► program.ts ──► compile.ts ──► lower/   ──► IR (ir.ts) ──► emit/ ──► migration.sql
  (+ tsconfig)       open project   orchestrate    AST → IR     types,          IR → SQL
                     type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
                                        │
-                                       ├─ typemap.ts    TypeScript types → PgType (composites, domains, enums, arrays)
-                                       ├─ references.ts what a name refers to (parameter, global, package…)
-                                       ├─ math.ts       the closed table of `Math` members that compile, and why the rest do not
-                                       ├─ helpers.ts    the functions installed in the `tsql` schema, and the SQL section that installs them
-                                       ├─ language.ts   which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
-                                       └─ origin.ts     where a declaration lives (project, standard library, package)
+                                       ├─ typemap/          TypeScript types → PgType (composites, domains, enums, arrays)
+                                       ├─ authoring.ts      `Integer`, `Float` and `int`, recognised by provenance
+                                       ├─ references.ts     what a name refers to (parameter, global, package…)
+                                       ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
+                                       ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`), and why the rest do not
+                                       ├─ helpers.ts        the functions installed in the `tsql` schema, and the SQL section that installs them
+                                       ├─ language.ts       which functions are emitted as `LANGUAGE sql` (inlined), and the order they are created in
+                                       └─ origin.ts         where a declaration lives (project, standard library, package)
 
  migration + manifest ──► runParity.ts ──► parity.ts ──► the same inputs through the TypeScript and through PostgreSQL
                           PGlite or        fast-check
@@ -25,9 +27,9 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 ## The one rule
 
 **Lowering enforces every restriction; the emitter is a total function.** Anything that could be
-translated wrongly is refused while building the IR, in [`lower.ts`](../src/lower.ts) and
-[`typemap.ts`](../src/typemap.ts). Any IR that exists can be emitted, so
-[`emit.ts`](../src/emit.ts) never validates and never decides semantics: casts, operator choices
+translated wrongly is refused while building the IR, in [`lower/`](../src/lower) and
+[`typemap/`](../src/typemap). Any IR that exists can be emitted, so
+[`emit/`](../src/emit) never validates and never decides semantics: casts, operator choices
 (`=` or `IS NOT DISTINCT FROM`) and NULL handling are already explicit nodes in the IR. When adding
 a feature, the question is always *what must lowering prove so the emitter can stay dumb?*
 
@@ -65,34 +67,34 @@ compiler: `"types": []` makes `process`, `Bun` and `require` type errors at no c
 `selected` narrows them to the files named on the command line — a name the project does not hold
 is an error, never an empty build. `exportedFunctions` finds what to compile in each file: exported
 `function` declarations and exported `const`s bound to an arrow function (an
-[`ExportedFunction`](../src/lower.ts)); other exported functions (`let`, `function` expressions)
+[`ExportedFunction`](../src/lower/signature.ts)); other exported functions (`let`, `function` expressions)
 are refused rather than skipped.
 
-### 4. Pass 1, signatures: `lower.ts` + `typemap.ts`
+### 4. Pass 1, signatures: `lower/signature.ts` + `typemap/`
 
-[`lowerSignature`](../src/lower.ts) maps every parameter and the return type, which must be
+[`lowerSignature`](../src/lower/signature.ts) maps every parameter and the return type, which must be
 written, to `PgType`s. All signatures are collected into a map first, so a call between compiled
 functions type-checks whatever the declaration order. SQL-name collisions (`fooBar` and `foo_bar`)
 are caught here.
 
-### 5. Pass 2, bodies: `lower.ts`
+### 5. Pass 2, bodies: `lower/function.ts`
 
-[`lowerFunction`](../src/lower.ts) walks each body against those signatures and builds a
+[`lowerFunction`](../src/lower/function.ts) walks each body against those signatures and builds a
 [`FunctionIR`](../src/ir.ts). Errors are collected per function, so one bad function does not hide
 the others.
 
-### 6. Pass 3, exported types: `compile.ts` + `typemap.ts`
+### 6. Pass 3, exported types: `compile.ts` + `typemap/declaration.ts`
 
 `exportedTypes` finds the `interface`, `type` and `enum` declarations each file exports, and
-[`mapTypeDeclaration`](../src/typemap.ts) maps each one by the same rules as a type reached from a
+[`mapTypeDeclaration`](../src/typemap/declaration.ts) maps each one by the same rules as a type reached from a
 parameter — so an exported type is created whether or not a function mentions it. It runs last, so a
 type a function uses is still reported at that use. A generic declaration is refused: a PostgreSQL
 type is one fixed shape.
 
-### 7. Emit: `emit.ts`
+### 7. Emit: `emit/`
 
 `usedTypes` (in `compile.ts`) keeps the composites, domains and enums a successfully lowered
-function mentions, plus those an exported declaration maps to. [`emitMigration`](../src/emit.ts) then writes, in a deterministic order: the
+function mentions, plus those an exported declaration maps to. [`emitMigration`](../src/emit/migration.ts) then writes, in a deterministic order: the
 schema, domains and enums (`emitDomain`, `emitEnum`), composites in dependency order
 (`emitCompositeType`, `dependencyOrder`), then functions (`emitFunction`). The same sources always
 give a byte-identical file.
@@ -119,16 +121,35 @@ function's SQL name, module, parameters and return types, which the parity harne
 
 Every expression carries its type, so lowering can decide casts and operators locally.
 
-## Types: `typemap.ts`, `origin.ts`, `index.ts`
+## Types: `typemap/`, `authoring.ts`, `origin.ts`, `index.ts`
 
-[`typemap.ts`](../src/typemap.ts) maps TypeScript types to `PgType`, **from the type the author
+[`typemap/`](../src/typemap) maps TypeScript types to `PgType`, **from the type the author
 wrote** (`mapTypeNode`) when there is one, so `count: Integer` stays `integer` instead of becoming
 the `number` it resolves to; `mapInferredType` asks the checker when there is no annotation.
 
+```
+src/typemap/
+  index.ts        the entry points: mapTypeNode, mapInferredType, mapTypeDeclaration, enumMember, TypeCtx
+  context.ts      TypeCtx, and the small results every mapper passes along
+  named.ts        domains and enums
+  composite.ts    interfaces and type aliases as composites
+  map.ts          the recursive core: annotations, the checker's types, arrays, unions, inference
+  declaration.ts  Pass 3: an exported declaration mapped for its own sake
+src/authoring.ts  Integer, Float and int, recognised by provenance (asked by typemap/ and lower/)
+```
+
+Dependencies run one way: `context.ts` at the bottom, then `named.ts`, then `map.ts` and
+`composite.ts`, then `declaration.ts`. The two middle modules import each other, because that is
+the recursion itself: an object type's fields are mapped by the same rules as anywhere, so
+`composite.ts` reaches back into `map.ts`. Only function declarations are called at run time, so
+the cycle is safe. `authoring.ts` sits beside [`origin.ts`](../src/origin.ts): both answer "where
+does this declaration come from", and lowering asks it too, for the `int` guard. `tests/architecture.test.ts` holds the direction here as well.
+
 - `Integer` and `Float` are aliases of `number` declared in
   [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
-  are recognised by name, but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
-  the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
+  are recognised by name (`authoring.ts`), but only when the declaration is in `src/index.ts` or in
+  the published `dist/index.d.mts` *and* `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
+  it comes from this package — never by path suffix alone, which a user's own `src/index.ts`
   would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
   [design.md, Numbers](design.md#numbers)).
 - Named object types become composites (`mapCompositeType`, `mapField`): keyed by name, nested as
@@ -142,12 +163,34 @@ the `number` it resolves to; `mapInferredType` asks the checker when there is no
 The `TypeCtx` carries the checker and the composites and named types discovered so far, shared
 across the whole build so each becomes one `CREATE TYPE`.
 
-## Lowering: `lower.ts`, `references.ts`
+## Lowering: `lower/`, `references.ts`
 
-[`lower.ts`](../src/lower.ts) is the largest file, because it is where every rule lives. A
-function body is lowered against a `State`, which extends `TypeCtx` with the signatures, the
-`scope` of bindings (parameters, `const`, `let`), the locals to declare, the SQL names in use, the
-return type, and the enclosing `switch`/loop targets for `break` and `continue`.
+[`lower/`](../src/lower) is where every rule lives, split by what is lowered. A
+function body is lowered against a `State` ([`state.ts`](../src/lower/state.ts)), which extends
+`TypeCtx` with the signatures, the `scope` of bindings (parameters, `const`, `let`), the locals to
+declare, the SQL names in use, the return type, and the enclosing `switch`/loop targets for `break`
+and `continue`.
+
+```
+src/lower/
+  index.ts          the entry points compile.ts sees: lowerSignature, lowerFunction, isExported
+  signature.ts      Pass 1: lowerSignature, ExportedFunction
+  function.ts       Pass 2: lowerFunction
+  state.ts          State, bindings, break/continue targets
+  coerce.ts         type rules on the IR: coerce, requireAssignable, unify, textOf
+  statements/       statement.ts (dispatcher, return), control.ts (if, switch), loops.ts,
+                    declarations.ts, assignment.ts
+  expressions/      expr.ts (dispatcher), call.ts, globalCall.ts (Math, Number), array.ts,
+                    access.ts, object.ts, equality.ts, binary.ts
+```
+
+Dependencies run one way: `coerce.ts` and `state.ts` at the bottom, then `expressions/`, then
+`statements/`, then `function.ts` and `signature.ts`. Nothing in `expressions/` imports
+`statements/`. Inside each folder the modules call each other — every form recurses through
+`lowerExpr` or `lowerStatements` — so those two folders hold import cycles. They are safe because
+only function declarations are called at run time; the constants evaluated at load depend on
+`ir.ts` alone. `tests/architecture.test.ts` holds the direction. `assignable`, the predicate behind
+`requireAssignable`, lives in `ir.ts` with the other type predicates.
 
 - **Statements**: `lowerStatement` dispatches to `lowerIf`, `lowerSwitch` (a `CASE`, expression
   form when every branch only returns), `lowerWhile`, `lowerFor`, `lowerForOf` (`FOREACH`),
@@ -170,15 +213,15 @@ return type, and the enclosing `switch`/loop targets for `break` and `continue`.
   whether its type is callable, so a non-compiled function and a module-level value get different
   advice. `referenceMessage` words the refusal.
 - **`Math` calls**: `isMathGlobal` finds `Math` by the same provenance, and `lowerMathCall` looks the
-  member up in [`math.ts`](../src/math.ts)'s closed table. A member that is there becomes a `builtin`
+  member up in [`globals/math.ts`](../src/globals/math.ts)'s closed table. A member that is there becomes a `builtin`
   IR node — a PostgreSQL function called by its bare name, its arguments already widened — or, for the
   members with a `rule` in the table, a `helper` node: a call to `tsql.math_round` and its kin
   ([`helpers.ts`](../src/helpers.ts)), recorded in `FunctionIR.helpers` so `emitMigration` installs the
   ones the functions use. `Math.PI` and the other constants become a `lit`. A member that is not in the
-  table is refused with the reason `math.ts` keeps for it. `abs` of an `integer` is the only one that
+  table is refused with the reason `globals/math.ts` keeps for it. `abs` of an `integer` is the only one that
   asks for the `int(...)` guard.
 - **`Number` calls**: `isNumberGlobal` finds `Number` the same way, and `lowerNumberCall` looks the
-  member up in [`number.ts`](../src/number.ts)'s closed table — `parseInt` alone today. It becomes a
+  member up in [`globals/number.ts`](../src/globals/number.ts)'s closed table — `parseInt` alone today. It becomes a
   `helper` node for `tsql.number_parse_int`, taking the radix as JavaScript does: the literal `10`, or 0
   for an omitted one, which reads a leading `0x` as hexadecimal. Any other radix, or one that is not a
   literal, is refused, and that is checked *before* the guard below so the advice names a rewrite that
@@ -190,9 +233,22 @@ Every refusal is a [`CompileError`](../src/errors.ts) built with `CompileError.a
 which records file, line, column and the source line; `format` prints it like a compiler
 diagnostic, with the construct underlined.
 
-## Emission: `emit.ts`, `names.ts`
+## Emission: `emit/`, `names.ts`
 
-[`emit.ts`](../src/emit.ts) is string building. Its one real job is parenthesising by precedence
+[`emit/`](../src/emit) is string building, one module per concern, each importing its own layer or a lower one
+(`tests/architecture.test.ts`), entered through `emit/index.ts`:
+
+| Module | Holds |
+| --- | --- |
+| `options.ts` | `EmitOptions` and its defaults |
+| `qualify.ts` | schema-qualified names and types, the note for an unenforced union |
+| `expr.ts` | expressions |
+| `statements.ts` | statements of a PL/pgSQL body |
+| `function.ts` | `emitFunction` |
+| `types.ts` | `emitCompositeType`, `emitDomain`, `emitEnum` |
+| `migration.ts` | `dependencyOrder`, `emitMigration` |
+
+Its one real job is parenthesising by precedence in `expr.ts`
 (`PREC`, `BINARY_PRECEDENCE`, `precedenceOf`). It also writes the guards around types:
 `CREATE TYPE` and `CREATE DOMAIN` have no `IF NOT EXISTS`, so each is wrapped in a `DO` block that
 creates the type if missing, compares an existing one with what is expected, and raises on drift —
@@ -237,8 +293,8 @@ no DOM, so anything reachable from it that touched `process` or `node:path` woul
 every consumer's build. Keeping the root free of the compiler makes that structural.
 
 **It imports nothing, and must not.** `FORCED_OPTIONS` does not set `allowImportingTsExtensions`, so
-the `./x.ts` import style the rest of `src/` uses is a *consumer-side* error (TS5097) the moment it is
-reachable from the root. That is why `index.ts` declares the `integer` bounds and
+an import with a `.ts` extension, or through the repository's `@/` alias, is a *consumer-side* error
+(TS5097, or an unresolved module) the moment it is reachable from the root. That is why `index.ts` declares the `integer` bounds and
 [`constants.ts`](../src/constants.ts) borrows them, rather than the other way round: the dependency
 runs compiler → authoring only.
 
@@ -270,8 +326,8 @@ editing a test file: the test files run whatever the folders contain.
 1. Read its section in [`design.md`](design.md): it may already be a deliberate refusal.
 2. Decide what lowering must prove for the SQL to agree with the TypeScript in every case,
    including NULL, overflow and collation.
-3. Add an IR node in `ir.ts` only if no existing one expresses it; make `emit.ts` print it.
-4. Lower it in `lower.ts`, refusing every case you cannot prove, with a message that says what to
+3. Add an IR node in `ir.ts` only if no existing one expresses it; make `emit/` print it.
+4. Lower it in `lower/`, refusing every case you cannot prove, with a message that says what to
    write instead.
 5. Add an accepted case in `tests/parity/` and a rejected case per refusal in `tests/rejected/`;
    record the reasoning in `design.md`.

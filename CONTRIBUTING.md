@@ -14,7 +14,7 @@ the compiler is put together, file by file; [`docs/design.md`](docs/design.md) e
 | fast-check | 4.10.2 | input generation for parity tests |
 | oxfmt | 0.74.0 | formatter (`bun run format`) |
 
-`devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
+`devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one this project uses; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
 
 Three things worth knowing about TypeScript 7:
 
@@ -22,7 +22,7 @@ Three things worth knowing about TypeScript 7:
 - **It is `unstable/` on purpose.** The peer range is `~7.0.2` — patches only, because these subpaths may move between 7.x minors.
 - **The checker is a separate 23 MB native executable**, which arrives with the consumer's own `typescript` install. `src/tscPath.ts` locates it and passes it as `tsserverPath`, and insists its `lib.*.d.ts` files sit beside it — handed an executable without them, the native compiler *hangs* rather than erroring.
 
-`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is why `typecheck` passes `--no-script`.
+Type checking is oxlint's: `typeCheck` in `.oxlintrc.json` reports TypeScript's own diagnostics (through `oxlint-tsgolint`, the typescript-go port) with the lint rules, so `bun run lint` is the whole static check. It only *reports* — no AST, no symbol resolution, no file provenance — so it does not replace the compiler API the translator depends on.
 
 ## Commands
 
@@ -31,11 +31,11 @@ bun test                 # parity, SQL-shape and rejection tests on tests/, and 
                          # tsql scripts — PGlite, then PostgreSQL too when TSQL_TEST_DB_URL is set
 bun scripts/examples.ts link   # point the examples at this checkout before `bun install` in one
 bun scripts/examples.ts sync   # and back to the published versions before committing
-bun run typecheck        # bun check over the compiler and its tests
+bun run lint             # oxlint: type-aware rules and the type check, configured in .oxlintrc.json
 bun run format           # oxfmt, pinned as a dev dependency
 ```
 
-`.oxfmtrc.json` sets `printWidth` to 120 and excludes `**/*.md`: oxfmt reflows prose and flattens tables.
+`.oxfmtrc.json` sets `printWidth` to 120, sorts imports (`sortImports`: `node:*` and packages, then `@/`, then relative ones, a blank line between groups) and excludes `**/*.md`: oxfmt reflows prose and flattens tables.
 
 oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/names.ts` as a wrapped block instead of 77 one-word lines.
 
@@ -44,7 +44,7 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 `.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`). The `test` job:
 
 1. `bun install --frozen-lockfile`
-2. `bun run typecheck`
+2. `bun run lint` — rules and type check
 3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
 
 `examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
@@ -64,7 +64,7 @@ becomes a `{` line and a comment line, silently detaching the marker from the li
 point at — the case still "passes" while checking nothing about position. Write a case the way it
 should read, by hand.
 
-**A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
+**A commit is refused while the linter (which also type checks) or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run lint` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 **A push is refused when `src/` or `bin/` changed and no changeset describes it.** `pre-push` judges the branch as a whole against what the remote already has, so commit as you like and add the changeset any time before pushing. Only those two directories are checked, because they are what `files` ships: tests, docs, examples, workflows and the hooks reach nobody who installs the package, and demanding a changeset for them teaches writing empty ones to get past the hook. When there genuinely is nothing to announce, say so deliberately with `bun run changeset -- --empty` — that counts. `git push --no-verify` skips it.
 
@@ -87,12 +87,14 @@ tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the har
 tests/README.md         what each kind of case and each test file is for
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives
-src/typemap.ts          TypeScript types -> PostgreSQL types
+src/typemap/            TypeScript types -> PostgreSQL types (map in docs/architecture.md)
+src/authoring.ts        tsql's own `Integer`, `Float` and `int`, recognised by provenance
 src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
-src/lower.ts            AST -> IR; every restriction is enforced here
+src/lower/              AST -> IR; every restriction is enforced here (map in docs/architecture.md)
 src/language.ts         which functions are `LANGUAGE sql` (inlined), and the order they are created in
-src/emit.ts             IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
+src/emit/               IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
+                        (map in docs/architecture.md)
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison
 src/runParity.ts        tsql parity: opens PGlite or --db-url, runs the harness on every function
 src/index.ts            the only public export: the authoring vocabulary (Integer, Float, int,
@@ -109,7 +111,7 @@ No example needs a tsconfig for tsql: it imposes `strict`, `types: []` and `lib:
 
 ## Publishing
 
-The package ships `bin/tsql.mjs` and the build in `dist/` — the JavaScript, and `index.d.ts` for the types — with no source and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets).
+The package ships `bin/tsql.mjs` and the build in `dist/` — the JavaScript, and `index.d.mts` for the types — with no source and no embedded runtime. Versions and changelogs go through [changesets](https://github.com/changesets/changesets).
 
 **Releasing is merging a pull request, not running a command.** The only step on your machine is describing the change:
 

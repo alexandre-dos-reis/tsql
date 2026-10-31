@@ -1,0 +1,62 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "unicorn", "import"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true, "typeCheck": true },
+  "ignorePatterns": ["dist/**", "examples/**", "tests/parity/**", "tests/rejected/**", "tests/divergent/**"],
+  "rules": {
+    // The checker is a separate process: every query is awaited (CLAUDE.md, "TypeScript 7 compiler API").
+    "typescript/no-floating-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-misused-promises": "error",
+
+    // `verbatimModuleSyntax`: a type import is spelled `type`, so it is erased and a value import is not.
+    "typescript/consistent-type-imports": ["error", { "fixStyle": "inline-type-imports" }],
+
+    // `strict` in the tsconfig, and the same spirit for what the type checker cannot see.
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "no-var": "error",
+    "eqeqeq": "error",
+
+    // `erasableSyntaxOnly` (checked by tsc) also refuses enums; these two it states less directly.
+    "typescript/no-namespace": "error",
+    "typescript/parameter-properties": "error",
+
+    // Neither the sync API (it reads `stdout._handle.fd`, which Bun does not expose) nor a default `ts`.
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "typescript",
+            "message": "TypeScript 7 has no default export: use typescript/unstable/ast or /async."
+          }
+        ],
+        "patterns": [
+          {
+            "group": ["typescript/unstable/sync"],
+            "message": "The sync API throws under Bun: use typescript/unstable/async."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      // bun:test types `expect(...).rejects.toThrow()` as returning void, but it must be awaited.
+      "files": ["tests/**"],
+      "rules": { "typescript/await-thenable": "off" }
+    },
+    {
+      // `src/` ships to Node: no Bun globals, whatever the tsconfig's `types` lets through.
+      "files": ["src/**"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          { "name": "Bun", "message": "src/ also runs under Node (dist/): use node:* APIs." }
+        ]
+      }
+    }
+  ]
+}

@@ -19,7 +19,8 @@
  */
 
 import { createHash } from "node:crypto";
-import { HELPER_HASHES } from "./helpersLock.ts";
+
+import { HELPER_HASHES } from "./helpersLock";
 
 /** The schema the helpers live in. Reserved: `--schema` may not be it. */
 export const TSQL_SCHEMA = "tsql";
@@ -194,7 +195,6 @@ export const HELPERS = {
       `SELECT (CASE WHEN radix = 10 OR ${HEX_PREFIX} IS NULL THEN ${DECIMAL} ` +
       `ELSE COALESCE((${HEX_SIGN}) * (${HEX_VALUE}), 'NaN'::${D}) END)::integer`,
   },
-
 } as const satisfies Record<string, Helper>;
 
 export type HelperName = keyof typeof HELPERS;

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { PUBLISHED } from "../scripts/examples.ts";
+
+import { PUBLISHED } from "../scripts/examples";
 
 /**
  * Every folder in `examples/` is a project a user copies, and is tested the way it is used: through

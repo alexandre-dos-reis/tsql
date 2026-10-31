@@ -1,5 +1,6 @@
 import { StrictMode, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+
 // The same functions tsql compiled into the database, run here in the browser.
 import { canAddTodo, todoLimit, type Plan } from "../functions/todos";
 
@@ -61,8 +62,7 @@ function App() {
       <form onSubmit={add}>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="A new todo" required />
         {/* Greyed out before anyone clicks; the database refuses it anyway if the page is bypassed. */}
-        <button disabled={!canAddTodo(user.plan, todos.length)}>Add</button> {todos.length} of{" "}
-        {todoLimit(user.plan)}
+        <button disabled={!canAddTodo(user.plan, todos.length)}>Add</button> {todos.length} of {todoLimit(user.plan)}
       </form>
       <p>{error}</p>
     </>

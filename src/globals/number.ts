@@ -4,7 +4,7 @@
  * `Number` itself is recognised by provenance (`src/references.ts`: a
  * declaration in the default library), so a parameter called `Number` is not
  * mistaken for it. What is a closed table here is which *members* map — the
- * same shape as `src/math.ts`, and for the same reason: the default is to
+ * same shape as `src/globals/math.ts`, and for the same reason: the default is to
  * refuse, so anything `Number` grows later stays rejected until someone has
  * measured it.
  *

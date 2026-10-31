@@ -1,10 +1,12 @@
-import { Command } from "commander";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { compileProject, formatResult, type CompileResult } from "./compile.ts";
-import { ProjectNotFoundError } from "./errors.ts";
-import { err, out, painter } from "./style.ts";
+
+import { Command } from "commander";
+
+import { compileProject, formatResult, type CompileResult } from "./compile";
+import { ProjectNotFoundError } from "./errors";
+import { err, out, painter } from "./style";
 
 /**
  * Help is styled unconditionally: commander strips the colour itself when the
@@ -168,7 +170,7 @@ projectCommand("parity", "prove the SQL agrees with the TypeScript, writing noth
 
     // Loaded only here: PGlite brings a PostgreSQL in WebAssembly, which
     // `check` and `compile` have no use for.
-    const { redact, runParity } = await import("./runParity.ts");
+    const { redact, runParity } = await import("./runParity");
     const schema = result.manifest.schema;
     if (dbUrl) say(out("dim", `Testing against ${redact(dbUrl)}, in a transaction that is rolled back.\n`));
     const outcomes = await runParity(result, {

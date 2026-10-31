@@ -1,7 +1,8 @@
 import fc from "fast-check";
-import type { ManifestFunction } from "./compile.ts";
-import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir.ts";
-import { quoteIdentifier } from "./names.ts";
+
+import type { ManifestFunction } from "./compile";
+import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir";
+import { quoteIdentifier } from "./names";
 
 /**
  * Parity checking: run identical inputs through the TypeScript function and the
@@ -54,6 +55,7 @@ const finiteDouble = fc
 const SPECIAL_DOUBLES: readonly number[] = [Number.NaN, Infinity, -Infinity, -0];
 
 /** NUL and lone surrogates are not representable in a PostgreSQL text value. */
+// oxlint-disable-next-line no-control-regex -- NUL is exactly what this must match
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
 /**

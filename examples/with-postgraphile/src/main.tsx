@@ -1,5 +1,6 @@
 import { StrictMode, useEffect, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+
 // The same functions tsql compiled into the database, run here in the browser.
 import { canAddTodo, todoLimit, type Plan } from "../functions/todos";
 
@@ -8,7 +9,10 @@ import { canAddTodo, todoLimit, type Plan } from "../functions/todos";
 type User = { id: number; name: string; plan: Plan };
 type Todo = { id: number; title: string };
 
-async function graphql<T>(query: string, variables: object = {}): Promise<{ data?: T; errors?: { message: string }[] }> {
+async function graphql<T>(
+  query: string,
+  variables: object = {},
+): Promise<{ data?: T; errors?: { message: string }[] }> {
   const response = await fetch("/graphql", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -25,7 +29,9 @@ function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    graphql<{ allUsers: { nodes: User[] } }>("{ allUsers(orderBy: ROW_ID_ASC) { nodes { id: rowId name plan } } }").then(({ data }) => {
+    graphql<{ allUsers: { nodes: User[] } }>(
+      "{ allUsers(orderBy: ROW_ID_ASC) { nodes { id: rowId name plan } } }",
+    ).then(({ data }) => {
       setUsers(data?.allUsers.nodes ?? []);
       setUserId(data?.allUsers.nodes[0]?.id);
     });
@@ -71,8 +77,7 @@ function App() {
       <form onSubmit={add}>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="A new todo" required />
         {/* Greyed out before anyone clicks; the database refuses it anyway if the page is bypassed. */}
-        <button disabled={!canAddTodo(user.plan, todos.length)}>Add</button> {todos.length} of{" "}
-        {todoLimit(user.plan)}
+        <button disabled={!canAddTodo(user.plan, todos.length)}>Add</button> {todos.length} of {todoLimit(user.plan)}
       </form>
       <p>{error}</p>
     </>

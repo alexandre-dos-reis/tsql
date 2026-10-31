@@ -13,8 +13,8 @@ in `docs/design.md`.
 
 ## Environment
 
-Bun is pinned to 1.4.4 by `devenv.nix`, because nixpkgs tracks 1.3.13 and `bun check` arrived in
-1.4.3. Run commands inside the environment — `direnv allow` once, or prefix with `devenv shell --`.
+Bun is pinned to 1.4.4 by `devenv.nix`, because nixpkgs tracks 1.3.13 (the pin was introduced for
+`bun check`, since replaced by oxlint's type check, and is kept so everyone runs one Bun). Run commands inside the environment — `direnv allow` once, or prefix with `devenv shell --`.
 A bare `bun` on PATH may be the older system one.
 
 The pin overrides only `version` and the release tarballs on nixpkgs' own derivation, so the platform
@@ -28,7 +28,8 @@ bun test                        # unit + rejection + packaging + parity tests (P
                                 #   when TSQL_TEST_DB_URL=postgres://… is set)
 bun test tests/parity.test.ts   # one file
 bun test -t "nested object"     # one test or describe block by name
-bun run typecheck               # bun check over src, tests and scripts
+bun run lint                    # oxlint: type-aware rules and TypeScript's own diagnostics over src, tests
+                                #   and scripts (`typeCheck`); .oxlintrc.json holds the rules this file states
 bun run format                  # oxfmt (dev dependency; not checked in CI; skips tests/rejected)
 ```
 
@@ -71,9 +72,9 @@ paths and settings), or lists the files named when there is none, and sets `FORC
 tsconfigs; `tests/cli.test.ts` checks a file with none, and that a tsconfig cannot turn `strict` off or
 bring in the DOM.
 
-`bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
-`typecheck` script, never the compiler API the translator depends on. A script named `check` would
-shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
+`bun run lint` is also the type check (`typeCheck` in `.oxlintrc.json`, through `oxlint-tsgolint`): it only
+reports diagnostics — no AST, no symbol resolution, no file provenance — so it never replaces the compiler API
+the translator depends on.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adrdp/tsql` at
 `^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
@@ -133,7 +134,7 @@ properties of that resolver are load-bearing:
 5. **Pass 3**: `mapTypeDeclaration` for every *exported* `interface`, `type` and `enum`
    (`exportedTypes`), so a type is created even when no function mentions it. Last, so a type reached
    from a parameter is still reported at that parameter.
-6. `emitMigration` (`src/emit.ts`) emits used domains and enums first, then composite types, then
+6. `emitMigration` (`src/emit/migration.ts`) emits used domains and enums first, then composite types, then
    functions.
 
 Errors are `CompileError` (`src/errors.ts`), thrown with `CompileError.at(node, message)` and collected
@@ -143,9 +144,9 @@ source line.
 ## The central invariant
 
 **Lowering enforces every restriction; the emitter is a total function.** Any IR that exists is
-emittable, so `src/emit.ts` never validates and never decides semantics. Concretely:
+emittable, so `src/emit/` never validates and never decides semantics. Concretely:
 
-- Widening casts are materialised as explicit `cast` IR nodes by `coerce` in `src/lower.ts` — the
+- Widening casts are materialised as explicit `cast` IR nodes by `coerce` in `src/lower/coerce.ts` — the
   emitter does not infer them.
 - Nullability drives operator choice during lowering (`=` vs `IS NOT DISTINCT FROM`), not at emit time.
 - The emitter's only real job beyond string building is precedence-aware parenthesising (`PREC` /
@@ -157,7 +158,7 @@ dumb?"
 ## Publishing
 
 The package ships `bin/tsql.mjs`, the built JavaScript in `dist/` (`bun run build`, run by
-`prepublishOnly`, not committed), whose `index.d.ts` is the types. Releases go through changesets, and
+`prepublishOnly`, not committed), whose `index.d.mts` is the types. Releases go through changesets, and
 are **triggered by merging a PR, not by running a command** (`.github/workflows/release.yml`,
 `CONTRIBUTING.md` "Publishing"): a push to `main` with unreleased changesets opens a "Version
 Packages" PR carrying `bun run version`'s output, and merging it makes `changesets/action` publish to
@@ -196,12 +197,12 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   `Buffer` would be a type error in every consumer's build; keeping the compiler out of the root
   makes that structural rather than a convention. Re-adding a `./compiler` subpath would be additive
   if embedding is ever wanted; there was no consumer for it.
-- **`src/index.ts` must not use a `.ts` import extension.** It is still part of a compiled project's
-  program — that is where type checking starts — and `FORCED_OPTIONS` does not set
-  `allowImportingTsExtensions`, so the `./x.ts` style every other file in `src/` uses is TS5097 in the
-  *consumer's* build. It may import extensionless (`./constants`), which is how `INT4_MIN`/`INT4_MAX`
-  live in `src/constants.ts` and are re-exported here. Getting it wrong fails every compiled case at
-  once, with an error naming `src/index.ts` that looks like the consumer's fault.
+- **`src/index.ts` imports only relatively, with no extension.** It is still part of a compiled project's
+  program — that is where type checking starts — and a consumer's build has neither the `@/` alias nor
+  `allowImportingTsExtensions` (`FORCED_OPTIONS` does not set it), so `./x.ts` is TS5097 and `@/x` is an
+  unresolved module there. `./constants` is how `INT4_MIN`/`INT4_MAX` live in `src/constants.ts` and are
+  re-exported here. Getting it wrong fails every compiled case at once, with an error naming
+  `src/index.ts` that looks like the consumer's fault.
 
 - **Everything published comes from `dist/`, code and types alike.** Node strips TypeScript types, but
   refuses to under `node_modules` (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), which is where every
@@ -211,7 +212,8 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   a chunk only `parity` loads, **not minified** (26 kB saved is invisible for a CLI
   loaded from disk, and `src/cli.ts` drops the stack from an unexpected error anyway). It emits the declaration in the same run, as `dist/index.d.mts` — the
   extension follows the `.mjs` entry's, which `exports` maps `types` to and `AUTHORING_FILE`
-  (`src/typemap.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
+  (`src/authoring.ts`, which names exactly that file and `src/index.ts`, tied to `exports.types` by a test)
+  must recognise, or `int` is unrecognised in every consumer build at once. **No source
   ships**: a declaration is what a consumer's editor and type checker expect, and it costs them no parse
   of our implementation. `tests/packaging.test.ts` type checks a consumer against the installed
   declaration, with a `@ts-expect-error` that fails if the module resolved as `any` — so a wrong path or
@@ -220,8 +222,11 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   A test from the repository cannot see the `node_modules` problem — the path has none — which is why
   `tests/packaging.test.ts` builds, installs a copy under one, and runs the CLI and the authoring module with `node`.
 - **Every file in `src/` must still be erasable**: no enums, no namespaces, no constructor parameter
-  properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources runnable as they are in the
-  repository, under Node as well as Bun.
+  properties. `erasableSyntaxOnly` in `tsconfig.json` keeps the sources erasable by Node's type
+  stripping. Imports that leave a folder are written `@/lower`, `@/ir` (the `paths` alias in
+  `tsconfig.json`, resolved by Bun and tsdown; `dist/` has none). Imports carry no `.ts`
+  extension. `src/index.ts` and `src/constants.ts` stay relative: they are part of every consumer's program,
+  which has no such alias.
 - **`bin/tsql.mjs` stays plain JavaScript**: npm puts it on PATH. It `import()`s `dist/cli.mjs` — no
   subprocess, no bundled runtime, whichever of Node or Bun invoked it.
 - **`erasableSyntaxOnly` is not the whole guard.** It constrains syntax, not APIs: a `Bun.*` global
@@ -241,7 +246,7 @@ global (`Math`, `JSON`, `Date`, anything the lib grows) is covered with no denyl
 named `Math` still compiles. Function and value are told apart by asking whether the symbol's type is
 callable (`isCallable`), not by the syntax of its declaration, so `function f() {}` and `const f = () =>
 {}` answer alike; a module-level value is refused because inlining it would freeze a copy in the
-database while the TypeScript stayed free to change, and the parity harness would keep agreeing. `src/typemap.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
+database while the TypeScript stayed free to change, and the parity harness would keep agreeing. `src/typemap/composite.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
 than turned into composite types.
 
 The numeric aliases are a second, related question: `Integer` is resolved **by name**, so the compiler
@@ -255,7 +260,7 @@ alone, a consumer's own `int` would be *erased* from the emitted SQL.
 Do not add name-based lists. If a new rejection is needed, express it as a question about provenance or
 about the IR.
 
-The tables of names run the other way, and are closed. `src/math.ts` lists the members of `Math` that
+The tables of names run the other way, and are closed. `src/globals/math.ts` lists the members of `Math` that
 *compile* (`abs`, `ceil`, `floor`, `trunc`, `round`, `sign`, `sqrt`, `fround`, `min`, `max`, `clz32`, `imul`, plus the
 constants) — a PostgreSQL function under its own name, or SQL written to return the same double (`rule`) —
 measured to match, including on NaN, the infinities and ±0 (`tests/specialValues.test.ts`, strict `Object.is`). `Math` itself is still found by provenance,
@@ -267,7 +272,7 @@ refuses a database holding a newer revision. **Changing a helper's body is a dec
 `src/helpersLock.ts`, whose length is the revision; the tests fail until you do) and say in the changeset which functions behave differently.
 A helper has no `SET` clause (it would stop inlining) and calls only `pg_catalog.…`. `--schema tsql` is refused.
 
-`src/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
+`src/globals/number.ts` is the same shape for `Number`, and holds `parseInt` alone. It is a *parser*, not a cast —
 JavaScript reads a prefix and ignores the rest, so `parseInt("12abc")` is 12 where `'12abc'::integer` raises —
 so it lowers to `tsql.number_parse_int(s, radix)` — 10 for base ten, 0 for an omitted radix, which reads a leading `0x` as
 hexadecimal, as JavaScript spells it. Any other radix, or one that is not a literal, is refused: the radix decides
@@ -277,7 +282,7 @@ it throws on both in TypeScript, and the cast it stands for lives **inside the h
 `integer` outright and raises on both in PostgreSQL. Nothing is emitted for the guard at the call site, so
 `int()` erases itself here as it does around arithmetic. The cast suffices because it matches `int` on every
 value `parseInt` can produce — they differ only on a fraction, which `parseInt` cannot return. That is the
-rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/number.ts`), so
+rule: a member folds the cast in when its value is *necessarily whole* (`whole` in `src/globals/number.ts`), so
 `int()` around `Float` arithmetic stays refused. `docs/design.md` ("`Number.parseInt`") carries the measurements, including the three places a
 naive translation diverges — overflow *raises* in PostgreSQL where JavaScript gives `Infinity`, `numeric` has
 no `-0`, and an `0x` prefix with no digits after it is `NaN` rather than 0. It **inlines**: reading hexadecimal needs no
@@ -290,7 +295,7 @@ them alphabetically and a migration carrying only the ones its functions use.
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).
-`src/typemap.ts` maps TypeScript types to `PgType`, **syntactically where possible** (`mapTypeNode`), so
+`src/typemap/` maps TypeScript types to `PgType`, **syntactically where possible** (`mapTypeNode`, in `map.ts`), so
 the alias the author wrote (`Integer`) survives instead of the `number` it resolves to;
 `mapInferredType` is the checker-driven fallback.
 
@@ -317,7 +322,7 @@ Composites are the subtle part, and the "Object types" section of `docs/design.m
 Arrays (`ArrayType`, `docs/design.md` "Arrays") are `readonly T[]` parameters, locals or composite fields (one
 column of array type) and return values, never nullable, elements a scalar or a
 non-nullable composite. Literals lower to `ARRAY[…]::t[]` runs joined by `||` (`arrayLiteral`); `[]`
-and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit.ts`, for nested and array fields alike),
+and `null` take their type from the position, which `lowerExpr` receives as `expected`. Composites are emitted in dependency order (`dependencyOrder` in `emit/migration.ts`, for nested and array fields alike),
 and a shape recursive through an array is refused (`TypeCtx.mapping`). `readonly` is required because arrays are passed by value — the
 same reason as field mutation — and requiring it lets `tsc` refuse the mutation. Reads are `FOREACH`,
 `cardinality` (never `array_length`, NULL when empty) and `array_position(…) IS NOT NULL` (never
@@ -328,7 +333,7 @@ Named closed sets of strings (`NamedText` on a `ScalarType`, `docs/design.md` "N
 so every text rule still applies: a union alias is a **domain** (structural, like the union), an
 `as const` object with its `(typeof X)[keyof typeof X]` alias or a string `enum` is a PostgreSQL
 **enum** (a named vocabulary, which PostGraphile/PostgREST expose). Recognised by provenance and by
-that exact syntactic form (`namedFromSymbol` in `typemap.ts`). Lowering casts an enum `::text` where
+that exact syntactic form (`namedFromSymbol` in `typemap/named.ts`). Lowering casts an enum `::text` where
 TypeScript uses it as a string (`textOf`, `comparable`, `coerce`) and casts *to* a named type only
 where TypeScript has proven membership; enum literals are emitted typed. The domain guard owns a
 `<name>_values` constraint and re-adds it when the union changes (re-validating columns); the enum
@@ -365,7 +370,7 @@ raises on drift. The compiler creates types; it never rewrites them.
 
 **Examples are read only through their scripts.** `tests/examples.test.ts` runs every folder in
 `examples/` through its `tsql:*` scripts with this checkout's CLI and **nothing installed**:
-`@adrdp/tsql/pgtypes` resolves through a self-link, `node_modules/@adrdp/tsql` → the repository, which the
+`@adrdp/tsql` resolves through a self-link, `node_modules/@adrdp/tsql` → the repository, which the
 test creates if missing. `--out` goes to a throwaway directory and a checked-in output is compared
 with it. The test also fails while an example is `link`ed, so a linked package.json cannot be
 committed. Only those three scripts are tested, with no database to set up (parity runs on
@@ -401,9 +406,20 @@ test file. `tests/README.md` explains the three.
   installed layout, that the native executable is locatable with its library files, that the package
   has no runtime dependencies but `commander`, `fast-check`, `@electric-sql/pglite` and `postgres`, and that the
   launcher stays Node-compatible.
+- `tests/architecture.test.ts` holds the layering of `src/lower/`, `src/typemap/` and `src/emit/`: one way between layers,
+  each folder entered through its `index.ts`, no import of a later stage. A new module in either folder has to
+  be given a layer there, or the test fails.
+
+**Lint rules are the conventions above, made checkable.** `.oxlintrc.json` runs oxlint type-aware (`oxlint-tsgolint`
+drives the TypeScript 7 checker): every checker query is awaited (`no-floating-promises`, `await-thenable`,
+`no-misused-promises`), type imports are spelled `type` (`verbatimModuleSyntax`), no `typescript/unstable/sync`
+and no default `typescript` import, no `Bun` global in `src/`, and nothing `erasableSyntaxOnly` leaves implicit
+(namespaces, parameter properties). A new rule belongs there only if the project already follows it; an
+exception is an inline `oxlint-disable-next-line` with its reason. `tests/parity`, `rejected` and `divergent`
+are inputs to compile, not code of this package, and are ignored.
 
 **Commits and pushes are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at
-`.githooks`; its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be
+`.githooks`; its `pre-commit` runs `bun run lint` and `bun test`, so a failing tree cannot be
 committed. `pre-push` refuses a branch that changed `src/` or `bin/` — what `files` ships — without a
 changeset among its commits, measured against what the remote already has, so the branch is judged as
 a whole rather than each commit. `bun run changeset -- --empty` is the deliberate "nothing to

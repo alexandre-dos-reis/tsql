@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { isFromPackage } from "../src/origin.ts";
-import { findTscPath, platformPackage } from "../src/tscPath.ts";
-import { PACKAGE_NAME } from "../src/typemap.ts";
+
+import { isAuthoringModule, PACKAGE_NAME } from "../src/authoring";
+import { isFromPackage } from "../src/origin";
+import { findTscPath, platformPackage } from "../src/tscPath";
 
 /**
  * What only breaks once the package is published and installed somewhere else:
@@ -62,6 +63,43 @@ describe("alias provenance survives packaging", () => {
   test("a file in no package at all does not", () => {
     const orphan = fakePackage(undefined, join("src", "index.ts"));
     expect(isFromPackage(orphan, PACKAGE_NAME)).toBe(false);
+  });
+});
+
+describe("the authoring module is exactly two files", () => {
+  const posix = (path: string) => path.replaceAll("\\", "/");
+  const declaration = (manifest.exports["."] as { types: string }).types;
+
+  test("the declaration the package publishes is recognised, installed", () => {
+    // Tied to `exports.types`, so renaming the built declaration fails here rather than leaving
+    // `int` and the aliases unrecognised in every consumer's build.
+    const installed = fakePackage(PACKAGE_NAME, declaration);
+    expect(isAuthoringModule(posix(installed))).toBe(true);
+  });
+
+  test("this repo's src/index.ts is recognised", () => {
+    expect(isAuthoringModule(posix(resolve("src/index.ts")))).toBe(true);
+  });
+
+  test("no other file of the package is, whatever its name", () => {
+    // `index.ts` inside the compiler is not the vocabulary, and a built `.js` declares no types.
+    for (const file of [
+      "src/lower/index.ts",
+      "src/typemap/index.ts",
+      "dist/index.mjs",
+      "dist/index.js",
+      "dist/index.d.ts",
+    ]) {
+      const inPackage = fakePackage(PACKAGE_NAME, join(...file.split("/")));
+      expect(isAuthoringModule(posix(inPackage)), file).toBe(false);
+    }
+  });
+
+  test("a consumer's own file with the same path is not", () => {
+    for (const file of ["src/index.ts", "dist/index.d.mts"]) {
+      const theirs = fakePackage("their-app", join(...file.split("/")));
+      expect(isAuthoringModule(posix(theirs)), file).toBe(false);
+    }
   });
 });
 
@@ -150,10 +188,13 @@ describe("the published layout is coherent", () => {
       }
       // The real build, into the installed copy: the declaration has to land
       // there too, or the types resolved below are this repository's.
-      const built = Bun.spawnSync([join(resolve("node_modules"), ".bin", "tsdown"), "--out-dir", join(installed, "dist")], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const built = Bun.spawnSync(
+        [join(resolve("node_modules"), ".bin", "tsdown"), "--out-dir", join(installed, "dist")],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
       expect(built.exitCode).toBe(0);
       for (const dependency of [...Object.keys(manifest.dependencies ?? {}), "typescript"]) {
         mkdirSync(dirname(join(root, "node_modules", dependency)), { recursive: true });

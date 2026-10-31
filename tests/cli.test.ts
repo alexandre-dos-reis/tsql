@@ -122,7 +122,12 @@ describe("the CLI compiles the files it is given", () => {
   });
 
   test("a missing project names the path, and says none is needed", async () => {
-    const { stderr, exitCode } = await run(["check", "tests/parity/ifElseChain.ts", "--project", "nowhere/tsconfig.json"]);
+    const { stderr, exitCode } = await run([
+      "check",
+      "tests/parity/ifElseChain.ts",
+      "--project",
+      "nowhere/tsconfig.json",
+    ]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("No TypeScript project at");
     expect(stderr).toContain("nowhere/tsconfig.json");
@@ -143,7 +148,13 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
   // Few runs: this checks the command's wiring, while tests/parity.test.ts
   // carries the full 200-input property checks and the negative control.
   test("every compiled function is checked and reported", async () => {
-    const { stdout, stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "10", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await run([
+      "parity",
+      "tests/parity/ifElseChain.ts",
+      "--runs",
+      "10",
+      ...PROJECT,
+    ]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
@@ -152,14 +163,30 @@ describe("tsql parity proves the SQL agrees with the TypeScript", () => {
 
   test("it writes nothing, and takes no --out", async () => {
     const out = "generated/should-not-exist.sql";
-    const { stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "1", "--out", out, ...PROJECT]);
+    const { stderr, exitCode } = await run([
+      "parity",
+      "tests/parity/ifElseChain.ts",
+      "--runs",
+      "1",
+      "--out",
+      out,
+      ...PROJECT,
+    ]);
     expect(exitCode).toBe(1);
     expect(stderr).toContain("unknown option '--out'");
     expect(await Bun.file(out).exists()).toBe(false);
   });
 
   test("a negative --seed needs no `=`", async () => {
-    const { stdout, stderr, exitCode } = await run(["parity", "tests/parity/ifElseChain.ts", "--runs", "3", "--seed", "-5", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await run([
+      "parity",
+      "tests/parity/ifElseChain.ts",
+      "--runs",
+      "3",
+      "--seed",
+      "-5",
+      ...PROJECT,
+    ]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
@@ -241,7 +268,13 @@ describe("the CLI runs on Node, not only Bun", () => {
   });
 
   test("tsql parity runs PGlite and the harness under node too", async () => {
-    const { stdout, stderr, exitCode } = await runOnNode(["parity", "tests/parity/ifElseChain.ts", "--runs", "5", ...PROJECT]);
+    const { stdout, stderr, exitCode } = await runOnNode([
+      "parity",
+      "tests/parity/ifElseChain.ts",
+      "--runs",
+      "5",
+      ...PROJECT,
+    ]);
     expect(stderr).toBe("");
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ todoLimit() agrees with app.todo_limit()");
@@ -328,12 +361,17 @@ describe("check --watch checks again when a file changes", () => {
 
   test("each round reads like a plain check, and a saved mistake is reported", async () => {
     const { writeFile, rm } = await import("node:fs/promises");
-    const { dir, file } = await project("export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n");
-    const proc = Bun.spawn([process.execPath, "src/cli.ts", "check", file, "--project", `${dir}/tsconfig.json`, "--watch"], {
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: undefined },
-    });
+    const { dir, file } = await project(
+      "export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n",
+    );
+    const proc = Bun.spawn(
+      [process.execPath, "src/cli.ts", "check", file, "--project", `${dir}/tsconfig.json`, "--watch"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, NO_COLOR: undefined, FORCE_COLOR: undefined },
+      },
+    );
     const stdout = { text: "" };
     const stderr = { text: "" };
     try {
@@ -346,7 +384,10 @@ describe("check --watch checks again when a file changes", () => {
       expect(stdout.text).not.toContain("\u001b[");
 
       // Truthiness is refused: the second round reports it, and keeps watching.
-      await writeFile(file, "export function limit(name: string): number {\n  if (name) {\n    return 3;\n  }\n  return 100;\n}\n");
+      await writeFile(
+        file,
+        "export function limit(name: string): number {\n  if (name) {\n    return 3;\n  }\n  return 100;\n}\n",
+      );
       await until(proc.stderr, stderr, /error\(s\)\./, 1);
       await until(proc.stdout, stdout, /Watching for changes\./, 2);
       expect(stdout.text).toMatch(/limits\.ts changed, checking again…/);
@@ -424,7 +465,9 @@ describe("tsql needs no tsconfig, and imposes the options that keep it faithful"
 
   test("a file is checked with no tsconfig at all", async () => {
     const { rm } = await import("node:fs/promises");
-    const dir = await files({ "limits.ts": "export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n" });
+    const dir = await files({
+      "limits.ts": "export function limit(free: boolean): number {\n  return free ? 3 : 100;\n}\n",
+    });
     try {
       const { stdout, stderr, exitCode } = await run(["check", `${dir}/limits.ts`]);
       expect(stderr).toBe("");

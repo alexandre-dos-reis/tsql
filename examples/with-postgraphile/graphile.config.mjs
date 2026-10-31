@@ -16,7 +16,8 @@ export default {
     // meant for them, so a check violation (SQLSTATE 23514) keeps its message.
     maskError(error) {
       const original = error.originalError;
-      if (original?.code === "23514") return new error.constructor(original.message, { nodes: error.nodes, path: error.path });
+      if (original?.code === "23514")
+        return new error.constructor(original.message, { nodes: error.nodes, path: error.path });
       return defaultMaskError(error);
     },
   },
