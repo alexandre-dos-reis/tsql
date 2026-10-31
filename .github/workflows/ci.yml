@@ -82,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Same Bun as devenv.nix: `bun check` (used by `typecheck`) arrived in 1.4.3.
+      # Same Bun as devenv.nix: the pin is kept so CI and contributors run one Bun.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
@@ -96,8 +96,6 @@ jobs:
 
       # The published JavaScript: what bin/tsql.mjs and the package's exports load.
       - run: bun run build
-
-      - run: bun run typecheck
 
       - run: bun run lint
 

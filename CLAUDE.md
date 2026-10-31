@@ -13,8 +13,8 @@ in `docs/design.md`.
 
 ## Environment
 
-Bun is pinned to 1.4.4 by `devenv.nix`, because nixpkgs tracks 1.3.13 and `bun check` arrived in
-1.4.3. Run commands inside the environment — `direnv allow` once, or prefix with `devenv shell --`.
+Bun is pinned to 1.4.4 by `devenv.nix`, because nixpkgs tracks 1.3.13 (the pin was introduced for
+`bun check`, since replaced by oxlint's type check, and is kept so everyone runs one Bun). Run commands inside the environment — `direnv allow` once, or prefix with `devenv shell --`.
 A bare `bun` on PATH may be the older system one.
 
 The pin overrides only `version` and the release tarballs on nixpkgs' own derivation, so the platform
@@ -28,8 +28,8 @@ bun test                        # unit + rejection + packaging + parity tests (P
                                 #   when TSQL_TEST_DB_URL=postgres://… is set)
 bun test tests/parity.test.ts   # one file
 bun test -t "nested object"     # one test or describe block by name
-bun run typecheck               # bun check over src, tests and scripts
-bun run lint                    # oxlint, type-aware: .oxlintrc.json holds the rules this file states
+bun run lint                    # oxlint: type-aware rules and TypeScript's own diagnostics over src, tests
+                                #   and scripts (`typeCheck`); .oxlintrc.json holds the rules this file states
 bun run format                  # oxfmt (dev dependency; not checked in CI; skips tests/rejected)
 ```
 
@@ -72,9 +72,9 @@ paths and settings), or lists the files named when there is none, and sets `FORC
 tsconfigs; `tests/cli.test.ts` checks a file with none, and that a tsconfig cannot turn `strict` off or
 bring in the DOM.
 
-`bun check` **only type checks** — no AST, no symbol resolution, no file provenance. It replaces the
-`typecheck` script, never the compiler API the translator depends on. A script named `check` would
-shadow the built-in subcommand, which is why `--no-script` stays in `typecheck`.
+`bun run lint` is also the type check (`typeCheck` in `.oxlintrc.json`, through `oxlint-tsgolint`): it only
+reports diagnostics — no AST, no symbol resolution, no file provenance — so it never replaces the compiler API
+the translator depends on.
 
 `examples/` holds projects a user copies, each with its own `package.json` asking for `@adrdp/tsql` at
 `^<version>`: `simple` (one type and one function in `input.ts`, no tsconfig, `output.sql` checked in
@@ -419,7 +419,7 @@ exception is an inline `oxlint-disable-next-line` with its reason. `tests/parity
 are inputs to compile, not code of this package, and are ignored.
 
 **Commits and pushes are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at
-`.githooks`; its `pre-commit` runs `bun run typecheck`, `bun run lint` and `bun test`, so a failing tree cannot be
+`.githooks`; its `pre-commit` runs `bun run lint` and `bun test`, so a failing tree cannot be
 committed. `pre-push` refuses a branch that changed `src/` or `bin/` — what `files` ships — without a
 changeset among its commits, measured against what the remote already has, so the branch is judged as
 a whole rather than each commit. `bun run changeset -- --empty` is the deliberate "nothing to

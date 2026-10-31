@@ -2,7 +2,7 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "oxc", "unicorn", "import"],
   "categories": { "correctness": "error" },
-  "options": { "typeAware": true, "typeCheck": false },
+  "options": { "typeAware": true, "typeCheck": true },
   "ignorePatterns": ["dist/**", "examples/**", "tests/parity/**", "tests/rejected/**", "tests/divergent/**"],
   "rules": {
     // The checker is a separate process: every query is awaited (CLAUDE.md, "TypeScript 7 compiler API").

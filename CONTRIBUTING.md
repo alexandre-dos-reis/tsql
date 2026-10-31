@@ -14,7 +14,7 @@ the compiler is put together, file by file; [`docs/design.md`](docs/design.md) e
 | fast-check | 4.10.2 | input generation for parity tests |
 | oxfmt | 0.74.0 | formatter (`bun run format`) |
 
-`devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one `bun check` needs; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
+`devenv.nix` pins Bun and Node, because nixpkgs tracks a version behind the one this project uses; only the release tarballs are overridden, so nixpkgs keeps doing the platform patching. `direnv allow` or `devenv shell` and the versions above are what you get.
 
 Three things worth knowing about TypeScript 7:
 
@@ -22,7 +22,7 @@ Three things worth knowing about TypeScript 7:
 - **It is `unstable/` on purpose.** The peer range is `~7.0.2` — patches only, because these subpaths may move between 7.x minors.
 - **The checker is a separate 23 MB native executable**, which arrives with the consumer's own `typescript` install. `src/tscPath.ts` locates it and passes it as `tsserverPath`, and insists its `lib.*.d.ts` files sit beside it — handed an executable without them, the native compiler *hangs* rather than erroring.
 
-`bun check` is Bun's own typescript-go port, and it type checks this repo about 20× faster than `tsc` did. It only *checks*, though — no AST, no symbol resolution, no file provenance — so it replaces the `typecheck` script, not the compiler API the translator depends on. A script named `check` would shadow the built-in subcommand, which is why `typecheck` passes `--no-script`.
+Type checking is oxlint's: `typeCheck` in `.oxlintrc.json` reports TypeScript's own diagnostics (through `oxlint-tsgolint`, the typescript-go port) with the lint rules, so `bun run lint` is the whole static check. It only *reports* — no AST, no symbol resolution, no file provenance — so it does not replace the compiler API the translator depends on.
 
 ## Commands
 
@@ -31,8 +31,7 @@ bun test                 # parity, SQL-shape and rejection tests on tests/, and 
                          # tsql scripts — PGlite, then PostgreSQL too when TSQL_TEST_DB_URL is set
 bun scripts/examples.ts link   # point the examples at this checkout before `bun install` in one
 bun scripts/examples.ts sync   # and back to the published versions before committing
-bun run typecheck        # bun check over the compiler and its tests
-bun run lint             # oxlint, type-aware (oxlint-tsgolint), configured in .oxlintrc.json
+bun run lint             # oxlint: type-aware rules and the type check, configured in .oxlintrc.json
 bun run format           # oxfmt, pinned as a dev dependency
 ```
 
@@ -45,9 +44,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 `.github/workflows/ci.yml` runs on every pull request and on `main`, with Bun 1.4.4 (as in `devenv.nix`) and Node 24 (the CLI test spawns `node`). The `test` job:
 
 1. `bun install --frozen-lockfile`
-2. `bun run typecheck`
-3. `bun run lint`
-4. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
+2. `bun run lint` — rules and type check
+3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
 
 `examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
@@ -66,7 +64,7 @@ becomes a `{` line and a comment line, silently detaching the marker from the li
 point at — the case still "passes" while checking nothing about position. Write a case the way it
 should read, by hand.
 
-**A commit is refused while the type checker, the linter or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck`, `bun run lint` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
+**A commit is refused while the linter (which also type checks) or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run lint` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 **A push is refused when `src/` or `bin/` changed and no changeset describes it.** `pre-push` judges the branch as a whole against what the remote already has, so commit as you like and add the changeset any time before pushing. Only those two directories are checked, because they are what `files` ships: tests, docs, examples, workflows and the hooks reach nobody who installs the package, and demanding a changeset for them teaches writing empty ones to get past the hook. When there genuinely is nothing to announce, say so deliberately with `bun run changeset -- --empty` — that counts. `git push --no-verify` skips it.
 

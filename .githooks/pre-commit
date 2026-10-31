@@ -1,8 +1,7 @@
 #!/bin/sh
-# No commit while the type checker, the linter or the tests fail — the same checks CI runs first.
+# No commit while the linter (which type checks) or the tests fail — the same checks CI runs first.
 # Installed by `bun install` (the `prepare` script sets core.hooksPath to .githooks).
 # `git commit --no-verify` skips it, for a work-in-progress commit you mean to fix.
 set -e
-bun run typecheck
 bun run lint
 bun test
