@@ -21,7 +21,20 @@ import {
 
 import { INT4_MAX, INT4_MIN, isInt4 } from "@/constants";
 import { CompileError } from "@/errors";
-import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType } from "@/ir";
+import {
+  describe,
+  isExactly,
+  isNumeric,
+  isScalar,
+  scalarType,
+  type ExprIR,
+  type PgType,
+  PG,
+  TEXT,
+  BOOLEAN,
+  EXPR,
+  OP,
+} from "@/ir";
 import { coerce, textOf, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 
@@ -51,7 +64,7 @@ export async function lowerExpr(node: Expression, s: State, expected?: PgType, g
 
     case SyntaxKind.StringLiteral:
     case SyntaxKind.NoSubstitutionTemplateLiteral:
-      return { kind: "lit", value: (node as StringLiteral).text, type: scalarType("text") };
+      return { kind: EXPR.lit, value: (node as StringLiteral).text, type: TEXT };
 
     case SyntaxKind.TemplateExpression:
       return lowerTemplate(node as TemplateExpression, s);
@@ -69,36 +82,36 @@ export async function lowerExpr(node: Expression, s: State, expected?: PgType, g
       // literal is refused outright rather than reported as a narrowing — it is
       // out of range, not merely fractional.
       const whole = isInt4(value);
-      if (!whole && Number.isInteger(value) && expected && isExactly(expected, "integer")) {
+      if (!whole && Number.isInteger(value) && expected && isExactly(expected, PG.integer)) {
         throw CompileError.at(
           node,
           `${value} is outside PostgreSQL's \`integer\` (${INT4_MIN} .. ${INT4_MAX}), so it cannot be an \`Integer\`. Declare it a \`Float\` to hold it as a double, as TypeScript does.`,
         );
       }
-      return { kind: "lit", value, type: scalarType(whole ? "integer" : "double precision") };
+      return { kind: EXPR.lit, value, type: scalarType(whole ? PG.integer : PG.double) };
     }
 
     case SyntaxKind.TrueKeyword:
-      return { kind: "lit", value: true, type: scalarType("boolean") };
+      return { kind: EXPR.lit, value: true, type: BOOLEAN };
     case SyntaxKind.FalseKeyword:
-      return { kind: "lit", value: false, type: scalarType("boolean") };
+      return { kind: EXPR.lit, value: false, type: BOOLEAN };
     case SyntaxKind.NullKeyword:
       // `null` is NULL of whatever type is expected; with nothing expected it
       // still needs a type, and only a comparison with it can follow.
       return {
-        kind: "lit",
+        kind: EXPR.lit,
         value: null,
         type:
           expected && isScalar(expected)
             ? scalarType(expected.sql, true, expected.allowed)
-            : scalarType("boolean", true),
+            : scalarType(PG.boolean, true),
       };
 
     case SyntaxKind.Identifier: {
       const name = (node as Identifier).text;
       const binding = s.scope.get(name);
       if (!binding) throw await referenceError(name, node, node, s);
-      return { kind: "ref", sqlName: binding.sqlName, type: binding.type };
+      return { kind: EXPR.ref, sqlName: binding.sqlName, type: binding.type };
     }
 
     case SyntaxKind.PropertyAccessExpression:
@@ -150,10 +163,10 @@ export async function lowerExpr(node: Expression, s: State, expected?: PgType, g
  * writes `null` where SQL's `||` makes the whole string NULL.
  */
 async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR> {
-  const text = scalarType("text");
+  const text = TEXT;
   const pieces: ExprIR[] = [];
   const literal = (value: string) => {
-    if (value !== "") pieces.push({ kind: "lit", value, type: text });
+    if (value !== "") pieces.push({ kind: EXPR.lit, value, type: text });
   };
 
   literal(node.head.text);
@@ -165,11 +178,11 @@ async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR
         `\`${span.expression.getText()}\` may be null: a template literal writes "null" in TypeScript, but SQL's \`||\` makes the whole string NULL. Narrow it first, or write the fallback with \`??\`.`,
       );
     }
-    if (isExactly(value.type, "text")) {
+    if (isExactly(value.type, PG.text)) {
       // An enum is written as its label, like `String(value)`, once cast to text.
       pieces.push(textOf(value));
-    } else if (isExactly(value.type, "integer") || isExactly(value.type, "boolean")) {
-      pieces.push({ kind: "cast", operand: value, to: "text", type: text });
+    } else if (isExactly(value.type, PG.integer) || isExactly(value.type, PG.boolean)) {
+      pieces.push({ kind: EXPR.cast, operand: value, to: PG.text, type: text });
     } else {
       throw CompileError.at(
         span.expression,
@@ -181,18 +194,18 @@ async function lowerTemplate(node: TemplateExpression, s: State): Promise<ExprIR
     literal(span.literal.text);
   }
 
-  if (pieces.length === 0) return { kind: "lit", value: "", type: text };
-  return pieces.reduce((left, right): ExprIR => ({ kind: "binary", op: "||", left, right, type: text }));
+  if (pieces.length === 0) return { kind: EXPR.lit, value: "", type: text };
+  return pieces.reduce((left, right): ExprIR => ({ kind: EXPR.binary, op: OP.concat, left, right, type: text }));
 }
 
 async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State, guarded = false): Promise<ExprIR> {
   const operand = await lowerExpr(node.operand as Expression, s);
   switch (node.operator) {
     case SyntaxKind.ExclamationToken: {
-      if (!isExactly(operand.type, "boolean") || !isScalar(operand.type)) {
+      if (!isExactly(operand.type, PG.boolean) || !isScalar(operand.type)) {
         throw CompileError.at(node, `\`!\` needs a boolean operand, not \`${describe(operand.type)}\`.`);
       }
-      return { kind: "not", operand, type: operand.type };
+      return { kind: EXPR.not, operand, type: operand.type };
     }
     case SyntaxKind.MinusToken: {
       if (!isNumeric(operand.type) || !isScalar(operand.type)) {
@@ -201,10 +214,10 @@ async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State, guarded =
       // `-(-2147483648)` is the one input that overflows, and it overflows in
       // PostgreSQL only. A negative literal is already folded by the time it
       // gets here, and its range was checked where it was read.
-      if (isExactly(operand.type, "integer") && !guarded && operand.kind !== "lit") {
-        throw unguarded("-", "Negating", node);
+      if (isExactly(operand.type, PG.integer) && !guarded && operand.kind !== EXPR.lit) {
+        throw unguarded(OP.sub, "Negating", node);
       }
-      return { kind: "neg", operand, type: operand.type };
+      return { kind: EXPR.neg, operand, type: operand.type };
     }
     default:
       throw CompileError.at(node, `Unary \`${formatSyntaxKind(node.operator)}\` is not supported.`);
@@ -213,7 +226,7 @@ async function lowerPrefixUnary(node: PrefixUnaryExpression, s: State, guarded =
 
 async function lowerConditional(node: ConditionalExpression, s: State, expected?: PgType): Promise<ExprIR> {
   const cond = await lowerExpr(node.condition, s);
-  if (!isExactly(cond.type, "boolean")) {
+  if (!isExactly(cond.type, PG.boolean)) {
     throw CompileError.at(
       node.condition,
       `A conditional expression needs a boolean condition, not \`${describe(cond.type)}\`.`,
@@ -222,7 +235,7 @@ async function lowerConditional(node: ConditionalExpression, s: State, expected?
   const whenTrue = await lowerExpr(node.whenTrue, s, expected);
   const whenFalse = await lowerExpr(node.whenFalse, s, expected);
   const type = unify(whenTrue.type, whenFalse.type, node, "branches of a conditional expression");
-  return { kind: "case", cond, whenTrue: coerce(whenTrue, type), whenFalse: coerce(whenFalse, type), type };
+  return { kind: EXPR.case, cond, whenTrue: coerce(whenTrue, type), whenFalse: coerce(whenFalse, type), type };
 }
 
 export function isNullLiteral(node: Expression): boolean {

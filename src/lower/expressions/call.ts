@@ -13,7 +13,7 @@ import {
 import { INT_GUARD, isIntGuard } from "@/authoring";
 import { CompileError } from "@/errors";
 import { type HelperName } from "@/helpers";
-import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "@/ir";
+import { describe, isExactly, type ExprIR, type ScalarType, PG, INTEGER, EXPR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 
@@ -62,7 +62,7 @@ export async function lowerCall(node: CallExpression, s: State, guarded = false)
     args.push(coerce(lowered, param.type));
   }
   s.calls.add(target.sqlName);
-  return { kind: "call", sqlName: target.sqlName, args, type: target.returns };
+  return { kind: EXPR.call, sqlName: target.sqlName, args, type: target.returns };
 }
 
 /**
@@ -79,8 +79,8 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
   if (!argument || rest.length > 0) {
     throw CompileError.at(node, `\`${INT_GUARD}\` takes exactly one argument, got ${node.arguments.length}.`);
   }
-  const operand = await lowerExpr(argument as Expression, s, scalarType("integer"), true);
-  if (!isExactly(operand.type, "integer")) {
+  const operand = await lowerExpr(argument as Expression, s, INTEGER, true);
+  if (!isExactly(operand.type, PG.integer)) {
     throw CompileError.at(
       argument as Node,
       `\`${INT_GUARD}\` guards \`integer\` arithmetic, but this is \`${describe(operand.type)}\`. ` +
@@ -91,10 +91,8 @@ async function lowerIntGuard(node: CallExpression, s: State): Promise<ExprIR> {
   return operand;
 }
 
-export const DOUBLE = scalarType("double precision");
-
 /** A call to a helper tsql installs (`src/helpers.ts`), recorded so the migration installs it. */
 export function helper(s: State, name: HelperName, args: ExprIR[], type: ScalarType): ExprIR {
   s.helpers.add(name);
-  return { kind: "helper", name, args, type };
+  return { kind: EXPR.helper, name, args, type };
 }

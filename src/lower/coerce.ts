@@ -20,13 +20,15 @@ import {
   type ExprIR,
   type PgScalar,
   type PgType,
+  PG,
+  EXPR,
 } from "@/ir";
 
 /** An enum value as `text`; anything else as it is (a domain is text already). */
 export function textOf(expr: ExprIR): ExprIR {
   if (!isEnum(expr.type)) return expr;
-  const type = scalarType("text", expr.type.nullable);
-  return expr.kind === "lit" ? { ...expr, type } : { kind: "cast", operand: expr, to: "text", type };
+  const type = scalarType(PG.text, expr.type.nullable);
+  return expr.kind === EXPR.lit ? { ...expr, type } : { kind: EXPR.cast, operand: expr, to: PG.text, type };
 }
 
 export function requireAssignable(from: PgType, to: PgType, at: Node, what: string): void {
@@ -69,25 +71,25 @@ export function coerce(expr: ExprIR, to: PgType): ExprIR {
     if (!isScalar(from) || !isScalar(into) || (from.sql === into.sql && sameNamed(from, into))) return expr;
     // `[]` and `[1, 2]` were already built with the target's element type; a
     // literal reaching here can be retyped rather than cast.
-    if (expr.kind === "arrayLiteral" && expr.parts.length === 0) return { ...expr, type: to };
-    return { kind: "arrayCast", operand: expr, type: to };
+    if (expr.kind === EXPR.arrayLiteral && expr.parts.length === 0) return { ...expr, type: to };
+    return { kind: EXPR.arrayCast, operand: expr, type: to };
   }
   if (!isScalar(expr.type) || !isScalar(to)) return expr;
   // Text into a domain or an enum, or out of one. TypeScript has already proven
   // the value is one of the set when the target names one, so the cast cannot
   // fail; an enum leaving for plain text is cast to text, which always succeeds.
-  if (expr.type.sql === "text" && to.sql === "text" && !sameNamed(expr.type, to)) {
-    const target = scalarType("text", expr.type.nullable, to.allowed, to.named);
+  if (expr.type.sql === PG.text && to.sql === PG.text && !sameNamed(expr.type, to)) {
+    const target = scalarType(PG.text, expr.type.nullable, to.allowed, to.named);
     // An untyped literal takes the type of wherever it is put.
-    if (expr.kind === "lit") return { ...expr, type: target };
-    if (to.named) return { kind: "cast", operand: textOf(expr), to: "text", type: target };
+    if (expr.kind === EXPR.lit) return { ...expr, type: target };
+    if (to.named) return { kind: EXPR.cast, operand: textOf(expr), to: PG.text, type: target };
     return textOf(expr);
   }
   if (expr.type.sql === to.sql) return expr;
   if (!isNumeric(expr.type) || !isNumeric(to)) return expr;
   // A whole-number literal needs no cast: PostgreSQL widens `integer` on its own.
-  if (expr.kind === "lit" && typeof expr.value === "number" && Number.isInteger(expr.value)) {
+  if (expr.kind === EXPR.lit && typeof expr.value === "number" && Number.isInteger(expr.value)) {
     return { ...expr, type: scalarType(to.sql, false, to.allowed) };
   }
-  return { kind: "cast", operand: expr, to: to.sql, type: scalarType(to.sql, expr.type.nullable) };
+  return { kind: EXPR.cast, operand: expr, to: to.sql, type: scalarType(to.sql, expr.type.nullable) };
 }

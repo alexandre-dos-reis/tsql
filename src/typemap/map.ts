@@ -29,6 +29,10 @@ import {
   widenNumeric,
   type PgScalar,
   type PgType,
+  PG,
+  TEXT,
+  DOUBLE,
+  BOOLEAN,
 } from "@/ir";
 import { originOfPath } from "@/origin";
 
@@ -56,11 +60,11 @@ async function mapTypeNodeInner(node: TypeNode, ctx: TypeCtx): Promise<Mapped> {
     case SyntaxKind.ParenthesizedType:
       return mapTypeNodeInner((node as ParenthesizedTypeNode).type, ctx);
     case SyntaxKind.StringKeyword:
-      return scalarType("text");
+      return TEXT;
     case SyntaxKind.NumberKeyword:
-      return scalarType("double precision");
+      return DOUBLE;
     case SyntaxKind.BooleanKeyword:
-      return scalarType("boolean");
+      return BOOLEAN;
     case SyntaxKind.LiteralType:
       return mapLiteralTypeNode(node as LiteralTypeNode, ctx);
     case SyntaxKind.UnionType:
@@ -162,13 +166,13 @@ async function mapLiteralTypeNode(node: LiteralTypeNode, ctx: TypeCtx): Promise<
     case SyntaxKind.NullKeyword:
       return NULL_ONLY;
     case SyntaxKind.StringLiteral:
-      return scalarType("text", false, [(literal as StringLiteral).text]);
+      return scalarType(PG.text, false, [(literal as StringLiteral).text]);
     case SyntaxKind.TrueKeyword:
     case SyntaxKind.FalseKeyword:
-      return scalarType("boolean");
+      return BOOLEAN;
     case SyntaxKind.NumericLiteral: {
       const value = Number((literal as NumericLiteral).text);
-      return scalarType(Number.isInteger(value) ? "integer" : "double precision");
+      return scalarType(Number.isInteger(value) ? PG.integer : PG.double);
     }
     default:
       return mapTypeStructurally(await typeOf(node, ctx), node, ctx);
@@ -205,16 +209,16 @@ export async function mapTypeStructurally(type: Type, at: Node, ctx: TypeCtx): P
     }
   }
 
-  if (type.flags & TypeFlags.Boolean) return scalarType("boolean");
-  if (type.flags & TypeFlags.BooleanLiteral) return scalarType("boolean");
-  if (type.flags & TypeFlags.String) return scalarType("text");
-  if (type.flags & TypeFlags.Number) return scalarType("double precision");
+  if (type.flags & TypeFlags.Boolean) return BOOLEAN;
+  if (type.flags & TypeFlags.BooleanLiteral) return BOOLEAN;
+  if (type.flags & TypeFlags.String) return TEXT;
+  if (type.flags & TypeFlags.Number) return DOUBLE;
   if (type.flags & TypeFlags.StringLiteral) {
-    return scalarType("text", false, [String((type as unknown as { value: string }).value)]);
+    return scalarType(PG.text, false, [String((type as unknown as { value: string }).value)]);
   }
   if (type.flags & TypeFlags.NumberLiteral) {
     const value = (type as unknown as { value: number }).value;
-    return scalarType(Number.isInteger(value) ? "integer" : "double precision");
+    return scalarType(Number.isInteger(value) ? PG.integer : PG.double);
   }
   if (type.isUnionType()) {
     const parts: Mapped[] = [];
@@ -267,7 +271,7 @@ function merge(parts: readonly Mapped[], at: Node): Mapped {
       scalar = part.sql;
     } else if (scalar !== part.sql) {
       const both: PgScalar[] = [scalar, part.sql];
-      if (both.every((s) => s === "integer" || s === "double precision")) {
+      if (both.every((s) => s === PG.integer || s === PG.double)) {
         scalar = widenNumeric(scalar, part.sql);
       } else {
         throw CompileError.at(
@@ -288,7 +292,7 @@ function merge(parts: readonly Mapped[], at: Node): Mapped {
   }
   // Note: `boolean` is `true | false` in TypeScript, so a two-member union of
   // boolean literals is just `boolean` — not an enumerated set worth keeping.
-  const keepAllowed = scalar === "text" && allowed && allowed.length > 0;
+  const keepAllowed = scalar === PG.text && allowed && allowed.length > 0;
   // Sorted so that regenerating unchanged sources yields identical SQL.
   return scalarType(scalar, nullable, keepAllowed ? [...new Set(allowed)].sort() : undefined);
 }

@@ -19,7 +19,7 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { type ExprIR, type StmtIR } from "@/ir";
+import { type ExprIR, type StmtIR, STMT } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { lowerExpr } from "@/lower/expressions/expr";
 import { within, type State, type Target } from "@/lower/state";
@@ -32,7 +32,7 @@ import { lowerFor, lowerForOf, lowerWhile } from "./loops";
 export async function lowerReturn(expr: Expression, s: State): Promise<StmtIR> {
   const value = await lowerExpr(expr, s, s.returns);
   requireAssignable(value.type, s.returns, expr, "return value");
-  return { kind: "return", expr: coerce(value, s.returns) };
+  return { kind: STMT.return, expr: coerce(value, s.returns) };
 }
 
 export async function lowerStatements(statements: readonly Statement[], s: State): Promise<StmtIR[]> {
@@ -66,7 +66,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
     case SyntaxKind.BreakStatement: {
       if ((node as BreakStatement).label) throw CompileError.at(node, "Labelled `break` is not supported.");
       const target = s.targets.at(-1);
-      if (target?.kind === "loop") return [{ kind: "exit" }];
+      if (target?.kind === "loop") return [{ kind: STMT.exit }];
       throw CompileError.at(
         node,
         target
@@ -82,7 +82,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
       if (!loop || loop.kind !== "loop") throw CompileError.at(node, "`continue` is only supported inside a loop.");
       // A `for` loop's increment runs before the next turn; PL/pgSQL's CONTINUE
       // would skip it, so it is emitted first.
-      return [...loop.increment, { kind: "continue" }];
+      return [...loop.increment, { kind: STMT.continue }];
     }
 
     case SyntaxKind.WhileStatement:
@@ -124,7 +124,7 @@ async function lowerStatement(node: Statement, s: State): Promise<StmtIR[]> {
 /** The value of a branch that does nothing but `return value`, already coerced to the return type. */
 export function returnedValue(body: readonly StmtIR[]): ExprIR | undefined {
   const [only] = body;
-  return body.length === 1 && only!.kind === "return" ? only!.expr : undefined;
+  return body.length === 1 && only!.kind === STMT.return ? only!.expr : undefined;
 }
 
 export async function lowerClauseBody(
@@ -164,9 +164,9 @@ export function asStatements(node: Statement): readonly Statement[] {
 
 export function alwaysReturns(body: readonly StmtIR[]): boolean {
   for (const statement of body) {
-    if (statement.kind === "return") return true;
+    if (statement.kind === STMT.return) return true;
     if (
-      statement.kind === "if" &&
+      statement.kind === STMT.if &&
       statement.orElse !== undefined &&
       statement.branches.every((b) => alwaysReturns(b.body)) &&
       alwaysReturns(statement.orElse)
@@ -175,7 +175,7 @@ export function alwaysReturns(body: readonly StmtIR[]): boolean {
     }
     // A `CASE` always has its `ELSE` (lowering requires the `default`).
     if (
-      (statement.kind === "simpleCase" || statement.kind === "searchedCase") &&
+      (statement.kind === STMT.simpleCase || statement.kind === STMT.searchedCase) &&
       statement.whens.every((w) => alwaysReturns(w.body)) &&
       alwaysReturns(statement.orElse)
     ) {

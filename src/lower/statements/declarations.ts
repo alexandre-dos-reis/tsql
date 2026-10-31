@@ -14,7 +14,7 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { isArray, isComposite, type ExprIR, type PgType, type StmtIR } from "@/ir";
+import { isArray, isComposite, type ExprIR, type PgType, type StmtIR, STMT, EXPR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { readPath, resolveAccess } from "@/lower/expressions/access";
 import { lowerExpr } from "@/lower/expressions/expr";
@@ -68,7 +68,7 @@ export async function lowerDeclarationList(list: VariableDeclarationList, node: 
     const sqlName = uniqueName(toSnakeCase(tsName), s.used);
     s.scope.set(tsName, { sqlName, type: declared, kind });
     s.locals.push({ tsName, sqlName, type: declared });
-    out.push({ kind: "assign", sqlName, expr: coerce(init, declared) });
+    out.push({ kind: STMT.assign, sqlName, expr: coerce(init, declared) });
   }
   return out;
 }
@@ -108,11 +108,11 @@ async function lowerDestructuring(
 
   const out: StmtIR[] = [];
   let base = resolved.base;
-  if (base.kind !== "ref") {
+  if (base.kind !== EXPR.ref) {
     const sqlName = uniqueName("destructured", s.used);
     s.locals.push({ tsName: sqlName, sqlName, type: base.type });
-    out.push({ kind: "assign", sqlName, expr: base });
-    base = { kind: "ref", sqlName, type: base.type };
+    out.push({ kind: STMT.assign, sqlName, expr: base });
+    base = { kind: EXPR.ref, sqlName, type: base.type };
   }
 
   const bind = async (elements: readonly BindingElement[], prefix: readonly string[]): Promise<void> => {
@@ -154,7 +154,7 @@ async function lowerDestructuring(
       const sqlName = uniqueName(toSnakeCase(tsName), s.used);
       s.scope.set(tsName, { sqlName, type: field.type, kind });
       s.locals.push({ tsName, sqlName, type: field.type });
-      out.push({ kind: "assign", sqlName, expr: field });
+      out.push({ kind: STMT.assign, sqlName, expr: field });
     }
   };
 

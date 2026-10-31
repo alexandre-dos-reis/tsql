@@ -22,7 +22,7 @@ import {
 import { SymbolFlags, TypeFlags, type Symbol as TsSymbol, type UnionType } from "typescript/unstable/async";
 
 import { CompileError } from "@/errors";
-import { type NamedText } from "@/ir";
+import { type NamedText, NAMED } from "@/ir";
 import { MAX_IDENTIFIER_BYTES, toSnakeCase } from "@/names";
 import { originOfPath } from "@/origin";
 import { relativize } from "@/program";
@@ -279,7 +279,7 @@ export async function enumMember(
   if (!local) return undefined;
   const symbol = (local.flags & SymbolFlags.Alias) !== 0 ? await ctx.checker.getAliasedSymbol(local) : local;
   const found = await namedFromSymbol(symbol, object, ctx);
-  if (!found || found.named.kind !== "enum") return undefined;
+  if (!found || found.named.kind !== NAMED.enum) return undefined;
   const value = MEMBERS.get(found.named)?.get(member);
   return value === undefined ? undefined : { named: found.named, value };
 }

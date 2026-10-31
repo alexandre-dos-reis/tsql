@@ -16,18 +16,18 @@
  *   other. Recursion is left to PL/pgSQL, which looks a call up only when it runs.
  */
 
-import { someExpr, type ExprIR, type FunctionIR } from "./ir";
+import { someExpr, type ExprIR, type FunctionIR, NAMED, STMT, EXPR } from "./ir";
 
-const isEnumLiteral = (expr: ExprIR) => expr.kind === "lit" && expr.type.named?.kind === "enum";
+const isEnumLiteral = (expr: ExprIR) => expr.kind === EXPR.lit && expr.type.named?.kind === NAMED.enum;
 
 /** The functions with `language` decided. Nothing else about them changes. */
 export function chooseLanguages(functions: readonly FunctionIR[]): FunctionIR[] {
   const byName = new Map(functions.map((fn) => [fn.sqlName, fn]));
   const namesEnumValue = (fn: FunctionIR) =>
-    fn.body.some((statement) => statement.kind === "return" && someExpr(statement.expr, isEnumLiteral));
+    fn.body.some((statement) => statement.kind === STMT.return && someExpr(statement.expr, isEnumLiteral));
   const eligible = new Set(
     functions.filter(
-      (fn) => fn.locals.length === 0 && fn.body.length === 1 && fn.body[0]!.kind === "return" && !namesEnumValue(fn),
+      (fn) => fn.locals.length === 0 && fn.body.length === 1 && fn.body[0]!.kind === STMT.return && !namesEnumValue(fn),
     ),
   );
 

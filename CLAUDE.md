@@ -295,6 +295,11 @@ them alphabetically and a migration carrying only the ones its functions use.
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).
+The scalar type names are written once, there: `PG.integer`, `PG.double`, `PG.boolean`, `PG.text` (never a bare `"integer"`),
+and `INTEGER`, `DOUBLE`, `BOOLEAN`, `TEXT` are the shared non-nullable `ScalarType`s; `src/helpers.ts` is the exception,
+because its SQL text is hash-locked.
+The `kind` of an IR node is never a bare string either: `EXPR.binary`, `STMT.return`, `TYPE.scalar`, `NAMED.enum`,
+`PART.items` (in `case`, `kind ===` and object literals), and a `BinOp` is `OP.add`, `OP.isNotDistinct`… — all in `ir.ts`.
 `src/typemap/` maps TypeScript types to `PgType`, **syntactically where possible** (`mapTypeNode`, in `map.ts`), so
 the alias the author wrote (`Integer`) survives instead of the `number` it resolves to;
 `mapInferredType` is the checker-driven fallback.

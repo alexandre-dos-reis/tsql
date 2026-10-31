@@ -2,7 +2,7 @@
  * A whole migration: the helpers, then the types in dependency order, then the functions.
  */
 import { runtimeSql, type HelperName } from "@/helpers";
-import { isArray, isScalar, type CompositeType, type FunctionIR, type NamedText } from "@/ir";
+import { isArray, isScalar, type CompositeType, type FunctionIR, type NamedText, NAMED } from "@/ir";
 import { creationOrder } from "@/language";
 import { quoteIdentifier } from "@/names";
 
@@ -64,7 +64,7 @@ export function emitMigration(
   // Types first: the function signatures below refer to them, and a composite's
   // fields may be domains or enums.
   for (const set of [...named].sort((a, b) => a.sqlName.localeCompare(b.sqlName))) {
-    parts.push(set.kind === "domain" ? emitDomain(set, options) : emitEnum(set, options));
+    parts.push(set.kind === NAMED.domain ? emitDomain(set, options) : emitEnum(set, options));
   }
   for (const composite of sortedComposites) parts.push(emitCompositeType(composite, options));
   for (const fn of sortedFunctions) parts.push(emitFunction(fn, options));

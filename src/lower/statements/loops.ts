@@ -13,7 +13,7 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { describe, isArray, isExactly, scalarType, type ExprIR, type StmtIR } from "@/ir";
+import { describe, isArray, isExactly, type ExprIR, type StmtIR, PG, BOOLEAN, STMT, EXPR } from "@/ir";
 import { lowerExpr } from "@/lower/expressions/expr";
 import { scoped, uniqueName, within, type State } from "@/lower/state";
 import { toSnakeCase } from "@/names";
@@ -24,7 +24,7 @@ import { asStatements, lowerStatements } from "./statement";
 
 /** Like an `if` condition: a boolean. NULL stops a `WHILE` as `false` stops a TypeScript loop. */
 function loopCondition(expression: Expression, cond: ExprIR, what: string): ExprIR {
-  if (!isExactly(cond.type, "boolean")) {
+  if (!isExactly(cond.type, PG.boolean)) {
     throw CompileError.at(
       expression,
       `A \`${what}\` condition must be a boolean, not \`${describe(cond.type)}\`. Truthiness is not translated — compare explicitly.`,
@@ -42,7 +42,7 @@ export async function lowerWhile(node: WhileStatement, s: State): Promise<StmtIR
   const body = await scoped(s, () =>
     within(s, { kind: "loop", increment: [] }, () => lowerStatements(asStatements(node.statement), s)),
   );
-  return { kind: "while", cond, body };
+  return { kind: STMT.while, cond, body };
 }
 
 /**
@@ -69,7 +69,7 @@ export async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> 
 
     const cond: ExprIR = node.condition
       ? loopCondition(node.condition, await lowerExpr(node.condition, s), "for")
-      : { kind: "lit", value: true, type: scalarType("boolean") };
+      : { kind: EXPR.lit, value: true, type: BOOLEAN };
 
     const increment: StmtIR[] = [];
     if (node.incrementor) {
@@ -79,7 +79,7 @@ export async function lowerFor(node: ForStatement, s: State): Promise<StmtIR[]> 
     }
 
     const body = await within(s, { kind: "loop", increment }, () => lowerStatements(asStatements(node.statement), s));
-    out.push({ kind: "while", cond, body: [...body, ...increment] });
+    out.push({ kind: STMT.while, cond, body: [...body, ...increment] });
     return out;
   });
 }
@@ -121,7 +121,7 @@ export async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR
   if (!isArray(array.type)) {
     throw CompileError.at(
       node.expression,
-      isExactly(array.type, "text")
+      isExactly(array.type, PG.text)
         ? "`for … of` over a string is not supported: it iterates code points, which SQL has no loop for."
         : `\`for … of\` iterates an array, and \`${node.expression.getText()}\` is \`${describe(array.type)}\`.`,
     );
@@ -138,6 +138,6 @@ export async function lowerForOf(node: ForOfStatement, s: State): Promise<StmtIR
     const body = await within(s, { kind: "loop", increment: [] }, () =>
       lowerStatements(asStatements(node.statement), s),
     );
-    return { kind: "foreach", variable: sqlName, array, body };
+    return { kind: STMT.foreach, variable: sqlName, array, body };
   });
 }

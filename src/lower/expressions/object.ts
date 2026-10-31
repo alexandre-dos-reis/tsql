@@ -13,7 +13,7 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { describe, isComposite, type ExprIR } from "@/ir";
+import { describe, isComposite, type ExprIR, EXPR } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 import { mapInferredType } from "@/typemap";
@@ -59,7 +59,7 @@ export async function lowerObjectLiteral(node: ObjectLiteralExpression, s: State
         // A spread may carry more than the target has; those fields are dropped.
         for (const field of source.type.fields) {
           if (!target.fields.some((f) => f.tsName === field.tsName)) continue;
-          values.set(field.tsName, { kind: "field", operand: source, sqlName: field.sqlName, type: field.type });
+          values.set(field.tsName, { kind: EXPR.field, operand: source, sqlName: field.sqlName, type: field.type });
         }
         break;
       }
@@ -107,5 +107,5 @@ export async function lowerObjectLiteral(node: ObjectLiteralExpression, s: State
     );
   }
 
-  return { kind: "row", args, type: target };
+  return { kind: EXPR.row, args, type: target };
 }

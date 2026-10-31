@@ -14,13 +14,12 @@ import {
 import { CompileError } from "@/errors";
 import { mathConstant } from "@/globals/math";
 import { unsupportedNumberMessage } from "@/globals/number";
-import { describe, isComposite, namedType, scalarType, type ExprIR } from "@/ir";
+import { describe, isComposite, namedType, type ExprIR, INTEGER, DOUBLE, EXPR } from "@/ir";
 import { type State } from "@/lower/state";
 import { classifyReference, referenceMessage } from "@/references";
 import { enumMember } from "@/typemap";
 
 import { ARRAY_SUBSET, arrayOperand } from "./array";
-import { DOUBLE } from "./call";
 import { lowerExpr } from "./expr";
 import { isMathGlobal, isNumberGlobal } from "./globalCall";
 
@@ -52,7 +51,7 @@ export async function resolveAccess(node: Expression, s: State): Promise<Resolve
   if (node.kind === SyntaxKind.Identifier) {
     const binding = s.scope.get((node as Identifier).text);
     if (!binding || !isComposite(binding.type)) return undefined;
-    return { base: { kind: "ref", sqlName: binding.sqlName, type: binding.type }, path: [] };
+    return { base: { kind: EXPR.ref, sqlName: binding.sqlName, type: binding.type }, path: [] };
   }
 
   // Anything else that yields a composite: a call, an object literal.
@@ -75,13 +74,13 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   if (node.kind === SyntaxKind.PropertyAccessExpression && (await isMathGlobal(operand, s))) {
     const name = (node as PropertyAccessExpression).name;
     const value = name.kind === SyntaxKind.Identifier ? mathConstant((name as Identifier).text) : undefined;
-    if (value !== undefined) return { kind: "lit", value, type: DOUBLE };
+    if (value !== undefined) return { kind: EXPR.lit, value, type: DOUBLE };
   }
   // `Number.MAX_SAFE_INTEGER`, `Number.EPSILON` — no member of `Number` is a
   // value that compiles, so say so here rather than letting it read as a field.
   if (node.kind === SyntaxKind.PropertyAccessExpression && (await isNumberGlobal(operand, s))) {
     const name = (node as PropertyAccessExpression).name;
-    const member = name.kind === SyntaxKind.Identifier ? (name as Identifier).text : name.getText();
+    const member = nameText(name);
     throw CompileError.at(node, unsupportedNumberMessage(member));
   }
   const array = await arrayOperand(operand, s);
@@ -94,7 +93,7 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
     }
     const name = (node as PropertyAccessExpression).name;
     if (name.kind === SyntaxKind.Identifier && (name as Identifier).text === "length") {
-      return { kind: "arrayLength", operand: array, type: scalarType("integer") };
+      return { kind: EXPR.arrayLength, operand: array, type: INTEGER };
     }
     throw CompileError.at(node, `\`${node.getText()}\` is not supported. ${ARRAY_SUBSET}`);
   }
@@ -108,7 +107,7 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
       access.name.kind === SyntaxKind.Identifier
     ) {
       const member = await enumMember(access.expression, (access.name as Identifier).text, s);
-      if (member) return { kind: "lit", value: member.value, type: namedType(member.named) };
+      if (member) return { kind: EXPR.lit, value: member.value, type: namedType(member.named) };
     }
   }
 
@@ -138,7 +137,7 @@ export function tryReadPath(base: ExprIR, path: readonly string[]): ExprIR | und
     if (!isComposite(value.type)) return undefined;
     const field = value.type.fields.find((f) => f.tsName === segment);
     if (!field) return undefined;
-    value = { kind: "field", operand: value, sqlName: field.sqlName, type: field.type };
+    value = { kind: EXPR.field, operand: value, sqlName: field.sqlName, type: field.type };
   }
   return value;
 }
@@ -155,7 +154,7 @@ export function readPath(base: ExprIR, path: readonly string[], at: Node): ExprI
     }
     const field = value.type.fields.find((f) => f.tsName === segment);
     if (!field) throw CompileError.at(at, `\`${value.type.tsName}\` has no field \`${segment}\`.`);
-    value = { kind: "field", operand: value, sqlName: field.sqlName, type: field.type };
+    value = { kind: EXPR.field, operand: value, sqlName: field.sqlName, type: field.type };
   }
   return value;
 }
@@ -182,6 +181,11 @@ const ACCESS_KINDS = new Set<SyntaxKind>([
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
 ]);
+
+/** The text of a property name: an identifier's own text, or the source of anything else (`obj["a b"]`). */
+export function nameText(name: Node): string {
+  return name.kind === SyntaxKind.Identifier ? (name as Identifier).text : name.getText();
+}
 
 /** `Math.max` -> `Math`; `new Date().getTime` -> `Date`; `fc.sample(x).length` -> `fc`. */
 export function rootIdentifier(node: Expression): Identifier | undefined {

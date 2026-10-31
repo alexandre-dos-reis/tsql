@@ -6,6 +6,7 @@ import { Command } from "commander";
 
 import { compileProject, formatResult, type CompileResult } from "./compile";
 import { ProjectNotFoundError } from "./errors";
+import { TYPE } from "./ir";
 import { err, out, painter } from "./style";
 
 /**
@@ -236,7 +237,7 @@ function listing(result: CompileResult): string {
     .map((name) => `    ${qualify(name)}()`);
   const types = [
     ...result.named.map((t) => ({ name: t.sqlName, kind: t.kind })),
-    ...result.composites.map((t) => ({ name: t.sqlName, kind: "composite" })),
+    ...result.composites.map((t) => ({ name: t.sqlName, kind: TYPE.composite })),
   ].sort((a, b) => a.name.localeCompare(b.name));
   for (const type of types) lines.push(`    ${qualify(type.name)} ${out("dim", type.kind)}`);
   return lines.join("\n");
