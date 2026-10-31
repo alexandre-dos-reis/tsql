@@ -211,7 +211,7 @@ npmjs.com pins the workflow *filename*, so `.github/workflows/release.yml` must 
   a chunk only `parity` loads, **not minified** (26 kB saved is invisible for a CLI
   loaded from disk, and `src/cli.ts` drops the stack from an unexpected error anyway). It emits the declaration in the same run, as `dist/index.d.mts` — the
   extension follows the `.mjs` entry's, which `exports` maps `types` to and `AUTHORING_FILE`
-  (`src/typemap.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
+  (`src/authoring.ts`) must recognise, or `int` is unrecognised in every consumer build at once. **No source
   ships**: a declaration is what a consumer's editor and type checker expect, and it costs them no parse
   of our implementation. `tests/packaging.test.ts` type checks a consumer against the installed
   declaration, with a `@ts-expect-error` that fails if the module resolved as `any` — so a wrong path or
@@ -241,7 +241,7 @@ global (`Math`, `JSON`, `Date`, anything the lib grows) is covered with no denyl
 named `Math` still compiles. Function and value are told apart by asking whether the symbol's type is
 callable (`isCallable`), not by the syntax of its declaration, so `function f() {}` and `const f = () =>
 {}` answer alike; a module-level value is refused because inlining it would freeze a copy in the
-database while the TypeScript stayed free to change, and the parity harness would keep agreeing. `src/typemap.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
+database while the TypeScript stayed free to change, and the parity harness would keep agreeing. `src/typemap/composite.ts` uses the same check so `Date` and `Error` are rejected as built-ins rather
 than turned into composite types.
 
 The numeric aliases are a second, related question: `Integer` is resolved **by name**, so the compiler
@@ -290,7 +290,7 @@ them alphabetically and a migration carrying only the ones its functions use.
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).
-`src/typemap.ts` maps TypeScript types to `PgType`, **syntactically where possible** (`mapTypeNode`), so
+`src/typemap/` maps TypeScript types to `PgType`, **syntactically where possible** (`mapTypeNode`, in `map.ts`), so
 the alias the author wrote (`Integer`) survives instead of the `number` it resolves to;
 `mapInferredType` is the checker-driven fallback.
 
@@ -328,7 +328,7 @@ Named closed sets of strings (`NamedText` on a `ScalarType`, `docs/design.md` "N
 so every text rule still applies: a union alias is a **domain** (structural, like the union), an
 `as const` object with its `(typeof X)[keyof typeof X]` alias or a string `enum` is a PostgreSQL
 **enum** (a named vocabulary, which PostGraphile/PostgREST expose). Recognised by provenance and by
-that exact syntactic form (`namedFromSymbol` in `typemap.ts`). Lowering casts an enum `::text` where
+that exact syntactic form (`namedFromSymbol` in `typemap/named.ts`). Lowering casts an enum `::text` where
 TypeScript uses it as a string (`textOf`, `comparable`, `coerce`) and casts *to* a named type only
 where TypeScript has proven membership; enum literals are emitted typed. The domain guard owns a
 `<name>_values` constraint and re-adds it when the union changes (re-validating columns); the enum

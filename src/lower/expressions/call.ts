@@ -12,7 +12,7 @@ import {
 import { CompileError } from "../../errors.ts";
 import { type HelperName } from "../../helpers.ts";
 import { describe, isExactly, scalarType, type ExprIR, type ScalarType } from "../../ir.ts";
-import { INT_GUARD, isIntGuard } from "../../typemap.ts";
+import { INT_GUARD, isIntGuard } from "../../authoring.ts";
 import { coerce, requireAssignable } from "../coerce.ts";
 import { type State } from "../state.ts";
 import { referenceError, rootIdentifier } from "./access.ts";

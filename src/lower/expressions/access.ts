@@ -15,7 +15,7 @@ import { mathConstant } from "../../globals/math.ts";
 import { unsupportedNumberMessage } from "../../globals/number.ts";
 import { describe, isComposite, namedType, scalarType, type ExprIR } from "../../ir.ts";
 import { classifyReference, referenceMessage } from "../../references.ts";
-import { enumMember } from "../../typemap.ts";
+import { enumMember } from "../../typemap/index.ts";
 import { type State } from "../state.ts";
 import { ARRAY_SUBSET, arrayOperand } from "./array.ts";
 import { DOUBLE } from "./call.ts";

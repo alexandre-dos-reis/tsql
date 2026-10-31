@@ -25,7 +25,7 @@ import {
   type ScalarType,
 } from "../../ir.ts";
 import { classifyReference } from "../../references.ts";
-import { INT_GUARD } from "../../typemap.ts";
+import { INT_GUARD } from "../../authoring.ts";
 import { coerce, unify } from "../coerce.ts";
 import { type State } from "../state.ts";
 import { DOUBLE, helper } from "./call.ts";

@@ -15,7 +15,7 @@ import {
 import { CompileError } from "../../errors.ts";
 import { isArray, isComposite, type ExprIR, type PgType, type StmtIR } from "../../ir.ts";
 import { toSnakeCase } from "../../names.ts";
-import { mapInferredType, mapTypeNode } from "../../typemap.ts";
+import { mapInferredType, mapTypeNode } from "../../typemap/index.ts";
 import { coerce, requireAssignable } from "../coerce.ts";
 import { readPath, resolveAccess } from "../expressions/access.ts";
 import { lowerExpr } from "../expressions/expr.ts";

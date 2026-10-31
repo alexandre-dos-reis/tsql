@@ -4,7 +4,7 @@
 import { SyntaxKind, type Block, type Expression } from "typescript/unstable/ast";
 import { CompileError } from "../errors.ts";
 import { type FunctionIR, type SignatureIR } from "../ir.ts";
-import { type TypeCtx } from "../typemap.ts";
+import { type TypeCtx } from "../typemap/index.ts";
 import { type ExportedFunction } from "./signature.ts";
 import { type State } from "./state.ts";
 import { alwaysReturns, lowerReturn, lowerStatements } from "./statements/statement.ts";

@@ -13,7 +13,7 @@ import {
 } from "typescript/unstable/ast";
 import { CompileError } from "../../errors.ts";
 import { describe, isComposite, type ExprIR } from "../../ir.ts";
-import { mapInferredType } from "../../typemap.ts";
+import { mapInferredType } from "../../typemap/index.ts";
 import { coerce, requireAssignable } from "../coerce.ts";
 import { type State } from "../state.ts";
 import { lowerExpr } from "./expr.ts";

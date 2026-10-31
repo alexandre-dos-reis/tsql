@@ -4,7 +4,7 @@
 import { SyntaxKind, type BinaryExpression, type Expression, type Identifier } from "typescript/unstable/ast";
 import { CompileError } from "../../errors.ts";
 import { assignable, describe, isExactly, isNumeric, scalarType, type ExprIR, type StmtIR } from "../../ir.ts";
-import { INT_GUARD } from "../../typemap.ts";
+import { INT_GUARD } from "../../authoring.ts";
 import { coerce, requireAssignable } from "../coerce.ts";
 import { referenceError } from "../expressions/access.ts";
 import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "../expressions/binary.ts";

@@ -16,7 +16,7 @@ import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "
 import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower/index.ts";
 import { openProject, typeCheck } from "./program.ts";
 import { chooseLanguages } from "./language.ts";
-import { mapTypeDeclaration, type TypeDeclaration } from "./typemap.ts";
+import { mapTypeDeclaration, type TypeDeclaration } from "./typemap/index.ts";
 
 export interface CompileOptions {
   /**

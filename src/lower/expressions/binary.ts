@@ -15,7 +15,7 @@ import {
   type ExprIR,
   type ScalarType,
 } from "../../ir.ts";
-import { INT_GUARD } from "../../typemap.ts";
+import { INT_GUARD } from "../../authoring.ts";
 import { coerce, textOf, unify } from "../coerce.ts";
 import { type State } from "../state.ts";
 import { rootIdentifier } from "./access.ts";

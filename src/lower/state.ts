@@ -3,7 +3,7 @@
  */
 import { type HelperName } from "../helpers.ts";
 import { type LocalIR, type PgType, type SignatureIR, type StmtIR } from "../ir.ts";
-import { type TypeCtx } from "../typemap.ts";
+import { type TypeCtx } from "../typemap/index.ts";
 
 interface Binding {
   readonly sqlName: string;

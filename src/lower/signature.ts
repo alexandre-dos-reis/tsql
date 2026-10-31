@@ -12,7 +12,7 @@ import {
 import { CompileError } from "../errors.ts";
 import { type ParamIR, type SignatureIR } from "../ir.ts";
 import { toSnakeCase } from "../names.ts";
-import { mapTypeNode, type TypeCtx } from "../typemap.ts";
+import { mapTypeNode, type TypeCtx } from "../typemap/index.ts";
 
 /**
  * A function the compiler translates: an exported `function` declaration, or an

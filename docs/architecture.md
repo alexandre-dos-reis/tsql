@@ -10,7 +10,8 @@ harness that checks the result, and which file in [`src/`](../src) does what.
                     type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
                                        │
-                                       ├─ typemap.ts        TypeScript types → PgType (composites, domains, enums, arrays)
+                                       ├─ typemap/          TypeScript types → PgType (composites, domains, enums, arrays)
+                                       ├─ authoring.ts      `Integer`, `Float` and `int`, recognised by provenance
                                        ├─ references.ts     what a name refers to (parameter, global, package…)
                                        ├─ globals/math.ts   the closed table of `Math` members that compile, and why the rest do not
                                        ├─ globals/number.ts the closed table of `Number` members that compile (`parseInt`), and why the rest do not
@@ -27,7 +28,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 
 **Lowering enforces every restriction; the emitter is a total function.** Anything that could be
 translated wrongly is refused while building the IR, in [`lower/`](../src/lower) and
-[`typemap.ts`](../src/typemap.ts). Any IR that exists can be emitted, so
+[`typemap/`](../src/typemap). Any IR that exists can be emitted, so
 [`emit.ts`](../src/emit.ts) never validates and never decides semantics: casts, operator choices
 (`=` or `IS NOT DISTINCT FROM`) and NULL handling are already explicit nodes in the IR. When adding
 a feature, the question is always *what must lowering prove so the emitter can stay dumb?*
@@ -69,7 +70,7 @@ is an error, never an empty build. `exportedFunctions` finds what to compile in 
 [`ExportedFunction`](../src/lower/signature.ts)); other exported functions (`let`, `function` expressions)
 are refused rather than skipped.
 
-### 4. Pass 1, signatures: `lower/signature.ts` + `typemap.ts`
+### 4. Pass 1, signatures: `lower/signature.ts` + `typemap/`
 
 [`lowerSignature`](../src/lower/signature.ts) maps every parameter and the return type, which must be
 written, to `PgType`s. All signatures are collected into a map first, so a call between compiled
@@ -82,10 +83,10 @@ are caught here.
 [`FunctionIR`](../src/ir.ts). Errors are collected per function, so one bad function does not hide
 the others.
 
-### 6. Pass 3, exported types: `compile.ts` + `typemap.ts`
+### 6. Pass 3, exported types: `compile.ts` + `typemap/declaration.ts`
 
 `exportedTypes` finds the `interface`, `type` and `enum` declarations each file exports, and
-[`mapTypeDeclaration`](../src/typemap.ts) maps each one by the same rules as a type reached from a
+[`mapTypeDeclaration`](../src/typemap/declaration.ts) maps each one by the same rules as a type reached from a
 parameter — so an exported type is created whether or not a function mentions it. It runs last, so a
 type a function uses is still reported at that use. A generic declaration is refused: a PostgreSQL
 type is one fixed shape.
@@ -120,15 +121,33 @@ function's SQL name, module, parameters and return types, which the parity harne
 
 Every expression carries its type, so lowering can decide casts and operators locally.
 
-## Types: `typemap.ts`, `origin.ts`, `index.ts`
+## Types: `typemap/`, `authoring.ts`, `origin.ts`, `index.ts`
 
-[`typemap.ts`](../src/typemap.ts) maps TypeScript types to `PgType`, **from the type the author
+[`typemap/`](../src/typemap) maps TypeScript types to `PgType`, **from the type the author
 wrote** (`mapTypeNode`) when there is one, so `count: Integer` stays `integer` instead of becoming
 the `number` it resolves to; `mapInferredType` asks the checker when there is no annotation.
 
+```
+src/typemap/
+  index.ts        the entry points: mapTypeNode, mapInferredType, mapTypeDeclaration, enumMember, TypeCtx
+  context.ts      TypeCtx, and the small results every mapper passes along
+  named.ts        domains and enums
+  composite.ts    interfaces and type aliases as composites
+  map.ts          the recursive core: annotations, the checker's types, arrays, unions, inference
+  declaration.ts  Pass 3: an exported declaration mapped for its own sake
+src/authoring.ts  Integer, Float and int, recognised by provenance (asked by typemap/ and lower/)
+```
+
+Dependencies run one way: `context.ts` at the bottom, then `named.ts`, then `map.ts` and
+`composite.ts`, then `declaration.ts`. The two middle modules import each other, because that is
+the recursion itself: an object type's fields are mapped by the same rules as anywhere, so
+`composite.ts` reaches back into `map.ts`. Only function declarations are called at run time, so
+the cycle is safe. `authoring.ts` sits beside [`origin.ts`](../src/origin.ts): both answer "where
+does this declaration come from", and lowering asks it too, for the `int` guard.
+
 - `Integer` and `Float` are aliases of `number` declared in
   [`index.ts`](../src/index.ts), the authoring module, alongside the `int` overflow guard. All three
-  are recognised by name, but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
+  are recognised by name (`authoring.ts`), but only after `isFromPackage` ([`origin.ts`](../src/origin.ts)) confirms
   the declaration comes from this package — never by path suffix, which a user's own `src/index.ts`
   would match. There is no `numeric`: it is not in `PgScalar`, so no path can produce it (see
   [design.md, Numbers](design.md#numbers)).

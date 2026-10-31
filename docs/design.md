@@ -976,7 +976,7 @@ Two further checks:
 export type Integer = string;
 ```
 
-A path-suffix check accepts that file, because it does end in `src/index.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/typemap.ts` is held equal to package.json's `name` by a test.
+A path-suffix check accepts that file, because it does end in `src/index.ts`, and `Integer` would compile to PostgreSQL's `integer` while TypeScript was holding a string. Asking the package name rejects it and maps it to `text`, which is what it is. `PACKAGE_NAME` in `src/authoring.ts` is held equal to package.json's `name` by a test.
 
 ## The CLI's own refusals
 

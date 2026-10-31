@@ -50,3 +50,6 @@ export function quoteIdentifier(name: string): string {
 export function quoteLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
+
+/** PostgreSQL's NAMEDATALEN - 1. Longer identifiers are silently truncated. */
+export const MAX_IDENTIFIER_BYTES = 63;

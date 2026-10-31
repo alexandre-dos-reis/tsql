@@ -87,7 +87,8 @@ tests/divergent/        hand-written TypeScript/SQL pairs that disagree: the har
 tests/README.md         what each kind of case and each test file is for
 src/program.ts          TypeScript 7 API wrapper
 src/tscPath.ts          finds the native executable the API drives
-src/typemap.ts          TypeScript types -> PostgreSQL types
+src/typemap/            TypeScript types -> PostgreSQL types (map in docs/architecture.md)
+src/authoring.ts        tsql's own `Integer`, `Float` and `int`, recognised by provenance
 src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
 src/lower/              AST -> IR; every restriction is enforced here (map in docs/architecture.md)

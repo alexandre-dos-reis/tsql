@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { isFromPackage } from "../src/origin.ts";
 import { findTscPath, platformPackage } from "../src/tscPath.ts";
-import { PACKAGE_NAME } from "../src/typemap.ts";
+import { PACKAGE_NAME } from "../src/authoring.ts";
 
 /**
  * What only breaks once the package is published and installed somewhere else:
@@ -150,10 +150,13 @@ describe("the published layout is coherent", () => {
       }
       // The real build, into the installed copy: the declaration has to land
       // there too, or the types resolved below are this repository's.
-      const built = Bun.spawnSync([join(resolve("node_modules"), ".bin", "tsdown"), "--out-dir", join(installed, "dist")], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const built = Bun.spawnSync(
+        [join(resolve("node_modules"), ".bin", "tsdown"), "--out-dir", join(installed, "dist")],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
       expect(built.exitCode).toBe(0);
       for (const dependency of [...Object.keys(manifest.dependencies ?? {}), "typescript"]) {
         mkdirSync(dirname(join(root, "node_modules", dependency)), { recursive: true });
