@@ -29,6 +29,7 @@ bun test                        # unit + rejection + packaging + parity tests (P
 bun test tests/parity.test.ts   # one file
 bun test -t "nested object"     # one test or describe block by name
 bun run typecheck               # bun check over src, tests and scripts
+bun run lint                    # oxlint, type-aware: .oxlintrc.json holds the rules this file states
 bun run format                  # oxfmt (dev dependency; not checked in CI; skips tests/rejected)
 ```
 
@@ -409,8 +410,16 @@ test file. `tests/README.md` explains the three.
   each folder entered through its `index.ts`, no import of a later stage. A new module in either folder has to
   be given a layer there, or the test fails.
 
+**Lint rules are the conventions above, made checkable.** `.oxlintrc.json` runs oxlint type-aware (`oxlint-tsgolint`
+drives the TypeScript 7 checker): every checker query is awaited (`no-floating-promises`, `await-thenable`,
+`no-misused-promises`), type imports are spelled `type` (`verbatimModuleSyntax`), no `typescript/unstable/sync`
+and no default `typescript` import, no `Bun` global in `src/`, and nothing `erasableSyntaxOnly` leaves implicit
+(namespaces, parameter properties). A new rule belongs there only if the project already follows it; an
+exception is an inline `oxlint-disable-next-line` with its reason. `tests/parity`, `rejected` and `divergent`
+are inputs to compile, not code of this package, and are ignored.
+
 **Commits and pushes are gated.** `bun install` runs `prepare`, which points `core.hooksPath` at
-`.githooks`; its `pre-commit` runs `bun run typecheck` and `bun test`, so a failing tree cannot be
+`.githooks`; its `pre-commit` runs `bun run typecheck`, `bun run lint` and `bun test`, so a failing tree cannot be
 committed. `pre-push` refuses a branch that changed `src/` or `bin/` — what `files` ships — without a
 changeset among its commits, measured against what the remote already has, so the branch is judged as
 a whole rather than each commit. `bun run changeset -- --empty` is the deliberate "nothing to

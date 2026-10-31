@@ -54,6 +54,7 @@ const finiteDouble = fc
 const SPECIAL_DOUBLES: readonly number[] = [Number.NaN, Infinity, -Infinity, -0];
 
 /** NUL and lone surrogates are not representable in a PostgreSQL text value. */
+// oxlint-disable-next-line no-control-regex -- NUL is exactly what this must match
 const TEXT_UNSAFE = /[\u0000\uD800-\uDFFF]/u;
 
 /**

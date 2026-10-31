@@ -44,7 +44,9 @@ export async function runParity(result: CompileResult, options: RunParityOptions
     try {
       await db.exec(result.sql);
     } catch (error) {
-      throw new Error(`Loading the generated migration failed: ${error instanceof Error ? error.message : error}`);
+      throw new Error(
+        `Loading the generated migration failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
 
     const outcomes: ParityOutcome[] = [];
@@ -101,7 +103,7 @@ async function openPostgres(url: string): Promise<Database> {
     await conn.unsafe("BEGIN");
   } catch (error) {
     await sql.end({ timeout: 1 });
-    throw new Error(`Could not connect to ${redact(url)}: ${error instanceof Error ? error.message : error}`);
+    throw new Error(`Could not connect to ${redact(url)}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return {

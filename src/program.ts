@@ -94,7 +94,7 @@ export async function openProject(source: ProjectSource): Promise<OpenProject> {
   const api = new API({ cwd: process.cwd(), tsserverPath });
   try {
     const snapshot = await api.updateSnapshot({ openProjects: [configFileName] });
-    const project = (await snapshot.getProjects()).find((p) => p.configFileName === configFileName);
+    const project = snapshot.getProjects().find((p) => p.configFileName === configFileName);
     if (!project) throw new Error(`Could not open TypeScript project: ${userConfig ?? files.join(", ")}`);
     return {
       api,

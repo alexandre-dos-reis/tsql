@@ -32,22 +32,60 @@ const FILE = resolve("tests/parity/parseInt.ts");
 /** Read by both exported single-argument functions: `readNumber` and `readDecimal`. */
 const STRINGS = [
   // plain, and the prefix rule
-  "42", "0", "7", "-7", "+5", "  42  ", "\t\n42", "\u{feff}42", "0".repeat(20) + "42",
+  "42",
+  "0",
+  "7",
+  "-7",
+  "+5",
+  "  42  ",
+  "\t\n42",
+  "\u{feff}42",
+  "0".repeat(20) + "42",
   // read a prefix, ignore the rest
-  "42abc", "12.9", "1e3", "0.5", "12 34",
+  "42abc",
+  "12.9",
+  "1e3",
+  "0.5",
+  "12 34",
   // nothing to read: NaN in TypeScript, so `int` throws and the cast raises
-  "", "   ", "abc", "Infinity", "-Infinity", "+-3", "- 3", "null", "undefined",
+  "",
+  "   ",
+  "abc",
+  "Infinity",
+  "-Infinity",
+  "+-3",
+  "- 3",
+  "null",
+  "undefined",
   // signed zero, which `numeric` does not have
-  "-0", "-000", "-0.0", "  -0  ",
+  "-0",
+  "-000",
+  "-0.0",
+  "  -0  ",
   // the 0x prefix: hexadecimal with no radix, stopped at the `x` with radix 10
-  "0x1F", "0X1f", " 0x10", "0xDEADBEEF", "-0x10", "+0x10", "0x0",
+  "0x1F",
+  "0X1f",
+  " 0x10",
+  "0xDEADBEEF",
+  "-0x10",
+  "+0x10",
+  "0x0",
   // a prefix with nothing after it is NaN, not the 0 that base ten would read
-  "0x", "0xzz", "0b101", "0o17",
+  "0x",
+  "0xzz",
+  "0b101",
+  "0o17",
   // the edges of `integer`, and past them, where both sides must raise
-  "2147483647", "-2147483648", "2147483648", "-2147483649",
+  "2147483647",
+  "-2147483648",
+  "2147483648",
+  "-2147483649",
   // past a double's exact range and past its range entirely
-  "9007199254740993", "99999999999999999999", "1" + "0".repeat(400),
-  "0x" + "f".repeat(14), "0x" + "f".repeat(256),
+  "9007199254740993",
+  "99999999999999999999",
+  "1" + "0".repeat(400),
+  "0x" + "f".repeat(14),
+  "0x" + "f".repeat(256),
 ];
 
 const result = await compileProject({
@@ -92,7 +130,8 @@ test("Number.parseInt agrees with JavaScript, raising where it raises", async ()
       // That difference is unobservable in an `integer` — `src/parity.ts`
       // compares ±0 as equal for the same reason — so separating them here would
       // report a divergence nobody could act on.
-      if (expected !== actual) failures.push(`${fn.tsName}(${JSON.stringify(text)}): TypeScript ${String(expected)}, SQL ${String(actual)}`);
+      if (expected !== actual)
+        failures.push(`${fn.tsName}(${JSON.stringify(text)}): TypeScript ${String(expected)}, SQL ${String(actual)}`);
     }
   }
   expect(failures).toEqual([]);
@@ -125,7 +164,7 @@ const MDN: Array<[string, 0 | 10, number | "NaN"]> = [
   ["0e0", 0, 0], // no `0x`, so base ten, which stops at the `e`
   ["0b101", 0, 0], // `0b` is not recognised, unlike `0x`
   ["077", 0, 77], // a leading zero is not octal
-  ["900719925474099267n", 10, 900719925474099267], // stops at the `n`; past `integer`, so both raise
+  ["900719925474099267n", 10, 900719925474099328], // stops at the `n`; past `integer`, so both raise
 ];
 
 test("agrees with the examples documented on MDN", async () => {
@@ -138,8 +177,7 @@ test("agrees with the examples documented on MDN", async () => {
   const failures: string[] = [];
   for (const [input, radix, documented] of MDN) {
     const fn = byRadix.get(radix)!;
-    const expected =
-      documented === "NaN" || documented > 2147483647 || documented < -2147483648 ? "raise" : documented;
+    const expected = documented === "NaN" || documented > 2147483647 || documented < -2147483648 ? "raise" : documented;
     let actual: number | "raise";
     try {
       const row = (await db.query(`SELECT (app.${fn.sqlName}($1))::text AS v`, [input])) as { v: string };
@@ -148,7 +186,9 @@ test("agrees with the examples documented on MDN", async () => {
       actual = "raise";
     }
     if (expected !== actual) {
-      failures.push(`parseInt(${JSON.stringify(input)}${radix === 10 ? ", 10" : ""}): MDN ${String(documented)}, SQL ${String(actual)}`);
+      failures.push(
+        `parseInt(${JSON.stringify(input)}${radix === 10 ? ", 10" : ""}): MDN ${String(documented)}, SQL ${String(actual)}`,
+      );
     }
   }
   expect(failures).toEqual([]);

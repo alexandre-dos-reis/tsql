@@ -32,6 +32,7 @@ bun test                 # parity, SQL-shape and rejection tests on tests/, and 
 bun scripts/examples.ts link   # point the examples at this checkout before `bun install` in one
 bun scripts/examples.ts sync   # and back to the published versions before committing
 bun run typecheck        # bun check over the compiler and its tests
+bun run lint             # oxlint, type-aware (oxlint-tsgolint), configured in .oxlintrc.json
 bun run format           # oxfmt, pinned as a dev dependency
 ```
 
@@ -45,7 +46,8 @@ oxfmt honours `// prettier-ignore`, which keeps the reserved-word list in `src/n
 
 1. `bun install --frozen-lockfile`
 2. `bun run typecheck`
-3. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
+3. `bun run lint`
+4. `bun test` — including the parity tests on `tests/parity/`, on PGlite and on the PostgreSQL 18 service, and **every folder in `examples/`** through its `tsql:check`, `tsql:parity` and `tsql:compile` scripts — those three only, with nothing installed and no database (parity on PGlite). A new example is covered by adding its folder.
 
 `examples/` and `tests/` are deliberately separate. `examples/` holds projects a user copies — each with its own `package.json`, as small as it can be, not covering every case — and CI checks them through the same commands a user runs. Coverage lives in `tests/`: an accepted case is one file in `tests/parity/`, proven on both backends with nothing else to edit; a rejected case is one file in `tests/rejected/` plus a line naming its expected message.
 
@@ -64,7 +66,7 @@ becomes a `{` line and a comment line, silently detaching the marker from the li
 point at — the case still "passes" while checking nothing about position. Write a case the way it
 should read, by hand.
 
-**A commit is refused while the type checker or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
+**A commit is refused while the type checker, the linter or the tests fail.** `bun install` sets `core.hooksPath` to `.githooks` (the `prepare` script), whose `pre-commit` runs `bun run typecheck`, `bun run lint` and `bun test`. `git commit --no-verify` skips it, for a work-in-progress commit; CI runs the same checks either way.
 
 **A push is refused when `src/` or `bin/` changed and no changeset describes it.** `pre-push` judges the branch as a whole against what the remote already has, so commit as you like and add the changeset any time before pushing. Only those two directories are checked, because they are what `files` ships: tests, docs, examples, workflows and the hooks reach nobody who installs the package, and demanding a changeset for them teaches writing empty ones to get past the hook. When there genuinely is nothing to announce, say so deliberately with `bun run changeset -- --empty` — that counts. `git push --no-verify` skips it.
 

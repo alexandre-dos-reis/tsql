@@ -52,6 +52,8 @@ export async function scoped<T>(s: State, body: () => Promise<T>): Promise<T> {
   try {
     return await body();
   } finally {
+    // A copy: the scope is edited while it is walked.
+    // oxlint-disable-next-line unicorn/no-useless-spread
     for (const name of [...s.scope.keys()]) if (!before.has(name)) s.scope.delete(name);
   }
 }

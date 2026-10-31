@@ -47,6 +47,7 @@
     "test": "bun test",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
+    "lint": "oxlint",
     "typecheck": "bun check --no-script",
     "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "build": "tsdown",
@@ -67,6 +68,8 @@
     "@changesets/cli": "^3.0.3",
     "@types/bun": "1.4.4",
     "oxfmt": "0.74.0",
+    "oxlint": "^1.90.0",
+    "oxlint-tsgolint": "^7.0.2005",
     "tsdown": "^0.23.3",
     "typescript": "7.0.2"
   },
