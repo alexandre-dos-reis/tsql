@@ -90,7 +90,7 @@ src/tscPath.ts          finds the native executable the API drives
 src/typemap.ts          TypeScript types -> PostgreSQL types
 src/references.ts       classifies a name: parameter, local, compiled function, or runtime global
 src/origin.ts           where a declaration lives: this project, the standard library, or a package
-src/lower.ts            AST -> IR; every restriction is enforced here
+src/lower/              AST -> IR; every restriction is enforced here (map in docs/architecture.md)
 src/language.ts         which functions are `LANGUAGE sql` (inlined), and the order they are created in
 src/emit.ts             IR -> SQL (PL/pgSQL functions, types), with precedence-aware parenthesising
 src/parity.ts           parity harness (internal): fast-check generators and the TS-vs-SQL comparison

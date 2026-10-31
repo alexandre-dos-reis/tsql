@@ -145,7 +145,7 @@ source line.
 **Lowering enforces every restriction; the emitter is a total function.** Any IR that exists is
 emittable, so `src/emit.ts` never validates and never decides semantics. Concretely:
 
-- Widening casts are materialised as explicit `cast` IR nodes by `coerce` in `src/lower.ts` — the
+- Widening casts are materialised as explicit `cast` IR nodes by `coerce` in `src/lower/coerce.ts` — the
   emitter does not infer them.
 - Nullability drives operator choice during lowering (`=` vs `IS NOT DISTINCT FROM`), not at emit time.
 - The emitter's only real job beyond string building is precedence-aware parenthesising (`PREC` /

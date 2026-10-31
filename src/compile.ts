@@ -13,7 +13,7 @@ import { TSQL_SCHEMA } from "./helpers.ts";
 import type { Paint } from "./style.ts";
 import { emitMigration, type EmitOptions } from "./emit.ts";
 import type { CompositeType, FunctionIR, NamedText, PgType, SignatureIR } from "./ir.ts";
-import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower.ts";
+import { isExported, lowerFunction, lowerSignature, type ExportedFunction } from "./lower/index.ts";
 import { openProject, typeCheck } from "./program.ts";
 import { chooseLanguages } from "./language.ts";
 import { mapTypeDeclaration, type TypeDeclaration } from "./typemap.ts";

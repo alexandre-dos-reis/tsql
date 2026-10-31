@@ -431,3 +431,27 @@ export function someExpr(expr: ExprIR, test: (expr: ExprIR) => boolean): boolean
       return any(expr.parts.flatMap((part) => (part.kind === "items" ? part.items : [part.array])));
   }
 }
+
+/**
+ * Can a value of `from` be stored where `to` is expected? Numbers may only
+ * widen (`integer` → `numeric` → `double precision`). Narrowing is refused:
+ * TypeScript keeps the double it computed, while PostgreSQL would silently
+ * round it on assignment — `return x` with `x = 2.5` into `RETURNS integer`
+ * gives 2.5 in one language and 2 in the other.
+ */
+export function assignable(from: PgType, to: PgType): boolean {
+  if (from.nullable && !to.nullable) return false;
+  if (isArray(from) || isArray(to)) {
+    if (!isArray(from) || !isArray(to)) return false;
+    // An array of nullable elements cannot stand in for one whose elements are not.
+    if (from.element.nullable && !to.element.nullable) return false;
+    // Numeric elements widen as numbers do, by an array cast.
+    const [a, b] = [from.element, to.element];
+    if (isScalar(a) && isScalar(b) && isNumeric(a) && isNumeric(b)) return widenNumeric(a.sql, b.sql) === b.sql;
+    return sameFamily(from, to);
+  }
+  if (isNumeric(from) && isNumeric(to) && isScalar(from) && isScalar(to)) {
+    return widenNumeric(from.sql, to.sql) === to.sql;
+  }
+  return sameFamily(from, to);
+}

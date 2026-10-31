@@ -5,7 +5,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 [`design.md`](design.md) is the *why* of each semantic choice; this document is the *where*.
 
 ```
- functions/*.ts ──► program.ts ──► compile.ts ──► lower.ts ──► IR (ir.ts) ──► emit.ts ──► migration.sql
+ functions/*.ts ──► program.ts ──► compile.ts ──► lower/   ──► IR (ir.ts) ──► emit.ts ──► migration.sql
  (+ tsconfig)       open project   orchestrate    AST → IR     types,          IR → SQL
                     type check     three passes   enforces     statements,     total, no checks
                                                    every rule   expressions
@@ -26,7 +26,7 @@ harness that checks the result, and which file in [`src/`](../src) does what.
 ## The one rule
 
 **Lowering enforces every restriction; the emitter is a total function.** Anything that could be
-translated wrongly is refused while building the IR, in [`lower.ts`](../src/lower.ts) and
+translated wrongly is refused while building the IR, in [`lower/`](../src/lower) and
 [`typemap.ts`](../src/typemap.ts). Any IR that exists can be emitted, so
 [`emit.ts`](../src/emit.ts) never validates and never decides semantics: casts, operator choices
 (`=` or `IS NOT DISTINCT FROM`) and NULL handling are already explicit nodes in the IR. When adding
@@ -66,19 +66,19 @@ compiler: `"types": []` makes `process`, `Bun` and `require` type errors at no c
 `selected` narrows them to the files named on the command line — a name the project does not hold
 is an error, never an empty build. `exportedFunctions` finds what to compile in each file: exported
 `function` declarations and exported `const`s bound to an arrow function (an
-[`ExportedFunction`](../src/lower.ts)); other exported functions (`let`, `function` expressions)
+[`ExportedFunction`](../src/lower/signature.ts)); other exported functions (`let`, `function` expressions)
 are refused rather than skipped.
 
-### 4. Pass 1, signatures: `lower.ts` + `typemap.ts`
+### 4. Pass 1, signatures: `lower/signature.ts` + `typemap.ts`
 
-[`lowerSignature`](../src/lower.ts) maps every parameter and the return type, which must be
+[`lowerSignature`](../src/lower/signature.ts) maps every parameter and the return type, which must be
 written, to `PgType`s. All signatures are collected into a map first, so a call between compiled
 functions type-checks whatever the declaration order. SQL-name collisions (`fooBar` and `foo_bar`)
 are caught here.
 
-### 5. Pass 2, bodies: `lower.ts`
+### 5. Pass 2, bodies: `lower/function.ts`
 
-[`lowerFunction`](../src/lower.ts) walks each body against those signatures and builds a
+[`lowerFunction`](../src/lower/function.ts) walks each body against those signatures and builds a
 [`FunctionIR`](../src/ir.ts). Errors are collected per function, so one bad function does not hide
 the others.
 
@@ -143,12 +143,34 @@ the `number` it resolves to; `mapInferredType` asks the checker when there is no
 The `TypeCtx` carries the checker and the composites and named types discovered so far, shared
 across the whole build so each becomes one `CREATE TYPE`.
 
-## Lowering: `lower.ts`, `references.ts`
+## Lowering: `lower/`, `references.ts`
 
-[`lower.ts`](../src/lower.ts) is the largest file, because it is where every rule lives. A
-function body is lowered against a `State`, which extends `TypeCtx` with the signatures, the
-`scope` of bindings (parameters, `const`, `let`), the locals to declare, the SQL names in use, the
-return type, and the enclosing `switch`/loop targets for `break` and `continue`.
+[`lower/`](../src/lower) is where every rule lives, split by what is lowered. A
+function body is lowered against a `State` ([`state.ts`](../src/lower/state.ts)), which extends
+`TypeCtx` with the signatures, the `scope` of bindings (parameters, `const`, `let`), the locals to
+declare, the SQL names in use, the return type, and the enclosing `switch`/loop targets for `break`
+and `continue`.
+
+```
+src/lower/
+  index.ts          the entry points compile.ts sees: lowerSignature, lowerFunction, isExported
+  signature.ts      Pass 1: lowerSignature, ExportedFunction
+  function.ts       Pass 2: lowerFunction
+  state.ts          State, bindings, break/continue targets
+  coerce.ts         type rules on the IR: coerce, requireAssignable, unify, textOf
+  statements/       statement.ts (dispatcher, return), control.ts (if, switch), loops.ts,
+                    declarations.ts, assignment.ts
+  expressions/      expr.ts (dispatcher), call.ts, globalCall.ts (Math, Number), array.ts,
+                    access.ts, object.ts, equality.ts, binary.ts
+```
+
+Dependencies run one way: `coerce.ts` and `state.ts` at the bottom, then `expressions/`, then
+`statements/`, then `function.ts` and `signature.ts`. Nothing in `expressions/` imports
+`statements/`. Inside each folder the modules call each other — every form recurses through
+`lowerExpr` or `lowerStatements` — so those two folders hold import cycles. They are safe because
+only function declarations are called at run time; the constants evaluated at load depend on
+`ir.ts` alone. `assignable`, the predicate behind `requireAssignable`, lives in `ir.ts` with the
+other type predicates.
 
 - **Statements**: `lowerStatement` dispatches to `lowerIf`, `lowerSwitch` (a `CASE`, expression
   form when every branch only returns), `lowerWhile`, `lowerFor`, `lowerForOf` (`FOREACH`),
@@ -272,7 +294,7 @@ editing a test file: the test files run whatever the folders contain.
 2. Decide what lowering must prove for the SQL to agree with the TypeScript in every case,
    including NULL, overflow and collation.
 3. Add an IR node in `ir.ts` only if no existing one expresses it; make `emit.ts` print it.
-4. Lower it in `lower.ts`, refusing every case you cannot prove, with a message that says what to
+4. Lower it in `lower/`, refusing every case you cannot prove, with a message that says what to
    write instead.
 5. Add an accepted case in `tests/parity/` and a rejected case per refusal in `tests/rejected/`;
    record the reasoning in `design.md`.
