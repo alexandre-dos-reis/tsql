@@ -20,13 +20,14 @@ import {
   type ExprIR,
   type PgScalar,
   type PgType,
+  PG,
 } from "@/ir";
 
 /** An enum value as `text`; anything else as it is (a domain is text already). */
 export function textOf(expr: ExprIR): ExprIR {
   if (!isEnum(expr.type)) return expr;
-  const type = scalarType("text", expr.type.nullable);
-  return expr.kind === "lit" ? { ...expr, type } : { kind: "cast", operand: expr, to: "text", type };
+  const type = scalarType(PG.text, expr.type.nullable);
+  return expr.kind === "lit" ? { ...expr, type } : { kind: "cast", operand: expr, to: PG.text, type };
 }
 
 export function requireAssignable(from: PgType, to: PgType, at: Node, what: string): void {
@@ -76,11 +77,11 @@ export function coerce(expr: ExprIR, to: PgType): ExprIR {
   // Text into a domain or an enum, or out of one. TypeScript has already proven
   // the value is one of the set when the target names one, so the cast cannot
   // fail; an enum leaving for plain text is cast to text, which always succeeds.
-  if (expr.type.sql === "text" && to.sql === "text" && !sameNamed(expr.type, to)) {
-    const target = scalarType("text", expr.type.nullable, to.allowed, to.named);
+  if (expr.type.sql === PG.text && to.sql === PG.text && !sameNamed(expr.type, to)) {
+    const target = scalarType(PG.text, expr.type.nullable, to.allowed, to.named);
     // An untyped literal takes the type of wherever it is put.
     if (expr.kind === "lit") return { ...expr, type: target };
-    if (to.named) return { kind: "cast", operand: textOf(expr), to: "text", type: target };
+    if (to.named) return { kind: "cast", operand: textOf(expr), to: PG.text, type: target };
     return textOf(expr);
   }
   if (expr.type.sql === to.sql) return expr;

@@ -1,7 +1,7 @@
 import fc from "fast-check";
 
 import type { ManifestFunction } from "./compile";
-import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType } from "./ir";
+import { isArray, isScalar, type ArrayType, type CompositeType, type PgType, type ScalarType, PG } from "./ir";
 import { quoteIdentifier } from "./names";
 
 /**
@@ -77,16 +77,16 @@ function compositeArbitrary(type: CompositeType): fc.Arbitrary<unknown> {
 
 function scalarArbitrary(type: ScalarType): fc.Arbitrary<unknown> {
   switch (type.sql) {
-    case "text":
+    case PG.text:
       return type.allowed ? fc.constantFrom(...type.allowed) : fc.string().filter((s) => !TEXT_UNSAFE.test(s));
-    case "integer":
+    case PG.integer:
       return fc.integer({ min: -INT_BOUND, max: INT_BOUND });
-    case "double precision":
+    case PG.double:
       return fc.oneof(
         { weight: 9, arbitrary: finiteDouble },
         { weight: 1, arbitrary: fc.constantFrom(...SPECIAL_DOUBLES) },
       );
-    case "boolean":
+    case PG.boolean:
       return fc.boolean();
   }
 }
@@ -191,7 +191,7 @@ export function valuesEqual(sqlValue: unknown, tsValue: unknown, type: ScalarTyp
   if (sqlValue === null || tsValue === null) return sqlValue === tsValue;
 
   switch (type.sql) {
-    case "double precision": {
+    case PG.double: {
       const a = Number(sqlValue);
       const b = Number(tsValue);
       // `Object.is`: `-0` and `0` are different doubles, and so are they here.

@@ -5,7 +5,7 @@ import { SyntaxKind, type BinaryExpression, type Expression, type Identifier } f
 
 import { INT_GUARD } from "@/authoring";
 import { CompileError } from "@/errors";
-import { assignable, describe, isExactly, isNumeric, scalarType, type ExprIR, type StmtIR } from "@/ir";
+import { assignable, describe, isExactly, isNumeric, type ExprIR, type StmtIR, PG, INTEGER } from "@/ir";
 import { coerce, requireAssignable } from "@/lower/coerce";
 import { referenceError } from "@/lower/expressions/access";
 import { arithmetic, ASSIGNMENT_OPERATORS, combine } from "@/lower/expressions/binary";
@@ -52,7 +52,7 @@ export async function lowerAssignment(expression: Expression, s: State): Promise
       }
       value = async (current) => {
         const next = combine(base, current, await lowerExpr(binary.right, s), binary, true);
-        if (isExactly(next.type, "integer") && COMPOUND_OVERFLOWS.has(base)) {
+        if (isExactly(next.type, PG.integer) && COMPOUND_OVERFLOWS.has(base)) {
           throw CompileError.at(
             binary.operatorToken,
             `\`${binary.operatorToken.getText()}\` on an \`integer\` has nowhere to put the 32-bit overflow guard. ` +
@@ -79,11 +79,11 @@ export async function lowerAssignment(expression: Expression, s: State): Promise
       const step = arithmetic(
         op === SyntaxKind.PlusToken ? "+" : "-",
         current,
-        { kind: "lit", value: 1, type: scalarType("integer") },
+        { kind: "lit", value: 1, type: INTEGER },
         expression,
         true,
       );
-      if (isExactly(step.type, "integer")) {
+      if (isExactly(step.type, PG.integer)) {
         const text = (target as Identifier).text;
         throw CompileError.at(
           expression,

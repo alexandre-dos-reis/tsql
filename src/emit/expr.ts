@@ -3,7 +3,7 @@
  */
 import { isInt4 } from "@/constants";
 import { TSQL_SCHEMA } from "@/helpers";
-import { type BinOp, type ExprIR } from "@/ir";
+import { type BinOp, type ExprIR, PG } from "@/ir";
 import { quoteIdentifier, quoteLiteral } from "@/names";
 
 import { arrayTypeName, type Qualifier } from "./qualify";
@@ -91,7 +91,7 @@ function emitExprInner(expr: ExprIR, q: Qualifier, precedence: number): string {
       // IEEE double TypeScript computed with — so fractional literals are cast,
       // and so are whole ones too wide for `integer`, which would otherwise be
       // `bigint`. Whole numbers within 32 bits are `integer` and widen implicitly.
-      return expr.type.sql === "double precision" && !isInt4(expr.value)
+      return expr.type.sql === PG.double && !isInt4(expr.value)
         ? `${numberLiteral(expr.value)}::double precision`
         : numberLiteral(expr.value);
 

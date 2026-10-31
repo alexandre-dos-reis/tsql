@@ -5,14 +5,14 @@
 import { SyntaxKind, type Node, type TypeReferenceNode } from "typescript/unstable/ast";
 import { SymbolFlags } from "typescript/unstable/async";
 
-import { type PgScalar } from "./ir";
+import { type PgScalar, PG } from "./ir";
 import { isFromPackage } from "./origin";
 import type { TypeCtx } from "./typemap";
 
 /** Numeric aliases from src/index.ts, resolved by name at build time. */
 const NUMERIC_ALIASES: Record<string, PgScalar> = {
-  Integer: "integer",
-  Float: "double precision",
+  Integer: PG.integer,
+  Float: PG.double,
 };
 
 /**

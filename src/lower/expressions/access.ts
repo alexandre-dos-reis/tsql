@@ -14,13 +14,12 @@ import {
 import { CompileError } from "@/errors";
 import { mathConstant } from "@/globals/math";
 import { unsupportedNumberMessage } from "@/globals/number";
-import { describe, isComposite, namedType, scalarType, type ExprIR } from "@/ir";
+import { describe, isComposite, namedType, type ExprIR, INTEGER, DOUBLE } from "@/ir";
 import { type State } from "@/lower/state";
 import { classifyReference, referenceMessage } from "@/references";
 import { enumMember } from "@/typemap";
 
 import { ARRAY_SUBSET, arrayOperand } from "./array";
-import { DOUBLE } from "./call";
 import { lowerExpr } from "./expr";
 import { isMathGlobal, isNumberGlobal } from "./globalCall";
 
@@ -81,7 +80,7 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
   // value that compiles, so say so here rather than letting it read as a field.
   if (node.kind === SyntaxKind.PropertyAccessExpression && (await isNumberGlobal(operand, s))) {
     const name = (node as PropertyAccessExpression).name;
-    const member = name.kind === SyntaxKind.Identifier ? (name as Identifier).text : name.getText();
+    const member = nameText(name);
     throw CompileError.at(node, unsupportedNumberMessage(member));
   }
   const array = await arrayOperand(operand, s);
@@ -94,7 +93,7 @@ export async function lowerAccess(node: Expression, s: State): Promise<ExprIR> {
     }
     const name = (node as PropertyAccessExpression).name;
     if (name.kind === SyntaxKind.Identifier && (name as Identifier).text === "length") {
-      return { kind: "arrayLength", operand: array, type: scalarType("integer") };
+      return { kind: "arrayLength", operand: array, type: INTEGER };
     }
     throw CompileError.at(node, `\`${node.getText()}\` is not supported. ${ARRAY_SUBSET}`);
   }
@@ -182,6 +181,11 @@ const ACCESS_KINDS = new Set<SyntaxKind>([
   SyntaxKind.CallExpression,
   SyntaxKind.NewExpression,
 ]);
+
+/** The text of a property name: an identifier's own text, or the source of anything else (`obj["a b"]`). */
+export function nameText(name: Node): string {
+  return name.kind === SyntaxKind.Identifier ? (name as Identifier).text : name.getText();
+}
 
 /** `Math.max` -> `Math`; `new Date().getTime` -> `Date`; `fc.sample(x).length` -> `fc`. */
 export function rootIdentifier(node: Expression): Identifier | undefined {

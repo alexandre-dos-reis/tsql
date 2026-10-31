@@ -12,6 +12,22 @@ function emitBranch(body: readonly StmtIR[], q: Qualifier, indent: string): stri
   return body.length > 0 ? emitStatements(body, q, indent) : [`${indent}NULL;`];
 }
 
+/** `CASE … WHEN … THEN … ELSE … END CASE;`: the two forms differ only in the head and in what follows `WHEN`. */
+function emitCase(
+  head: string,
+  arms: readonly { readonly test: string; readonly body: readonly StmtIR[] }[],
+  orElse: readonly StmtIR[],
+  q: Qualifier,
+  indent: string,
+): string[] {
+  const lines = [`${indent}${head}`];
+  for (const arm of arms) {
+    lines.push(`${indent}  WHEN ${arm.test} THEN`, ...emitBranch(arm.body, q, `${indent}    `));
+  }
+  lines.push(`${indent}  ELSE`, ...emitBranch(orElse, q, `${indent}    `), `${indent}END CASE;`);
+  return lines;
+}
+
 export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: string): string[] {
   const lines: string[] = [];
   for (const statement of body) {
@@ -51,21 +67,30 @@ export function emitStatements(body: readonly StmtIR[], q: Qualifier, indent: st
       }
 
       case "simpleCase":
-        lines.push(`${indent}CASE ${emitExpr(statement.subject, q)}`);
-        for (const when of statement.whens) {
-          lines.push(`${indent}  WHEN ${when.values.map((v) => emitExpr(v, q)).join(", ")} THEN`);
-          lines.push(...emitBranch(when.body, q, `${indent}    `));
-        }
-        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        lines.push(
+          ...emitCase(
+            `CASE ${emitExpr(statement.subject, q)}`,
+            statement.whens.map((when) => ({
+              test: when.values.map((v) => emitExpr(v, q)).join(", "),
+              body: when.body,
+            })),
+            statement.orElse,
+            q,
+            indent,
+          ),
+        );
         break;
 
       case "searchedCase":
-        lines.push(`${indent}CASE`);
-        for (const when of statement.whens) {
-          lines.push(`${indent}  WHEN ${emitExpr(when.cond, q)} THEN`);
-          lines.push(...emitBranch(when.body, q, `${indent}    `));
-        }
-        lines.push(`${indent}  ELSE`, ...emitBranch(statement.orElse, q, `${indent}    `), `${indent}END CASE;`);
+        lines.push(
+          ...emitCase(
+            "CASE",
+            statement.whens.map((when) => ({ test: emitExpr(when.cond, q), body: when.body })),
+            statement.orElse,
+            q,
+            indent,
+          ),
+        );
         break;
 
       case "while":

@@ -11,7 +11,7 @@ import {
 } from "typescript/unstable/ast";
 
 import { CompileError } from "@/errors";
-import { describe, isArray, isComposite, isExactly, sameNamed, scalarType, type ExprIR, type StmtIR } from "@/ir";
+import { describe, isArray, isComposite, isExactly, sameNamed, type ExprIR, type StmtIR, PG, BOOLEAN } from "@/ir";
 import { textOf } from "@/lower/coerce";
 import { checkStrictEquality, strictEquality } from "@/lower/expressions/equality";
 import { isNullLiteral, lowerExpr } from "@/lower/expressions/expr";
@@ -26,7 +26,7 @@ export async function lowerIf(node: IfStatement, s: State): Promise<StmtIR> {
 
   while (current) {
     const cond = await lowerExpr(current.expression, s);
-    if (!isExactly(cond.type, "boolean")) {
+    if (!isExactly(cond.type, PG.boolean)) {
       throw CompileError.at(
         current.expression,
         `An \`if\` condition must be a boolean, not \`${describe(cond.type)}\`. Truthiness is not translated — compare explicitly.`,
@@ -170,10 +170,10 @@ export async function lowerSwitch(node: SwitchStatement, s: State): Promise<Stmt
     cond: g.labels
       .map((l): ExprIR =>
         l.value === null
-          ? { kind: "nullTest", operand: ref, negated: false, type: scalarType("boolean") }
+          ? { kind: "nullTest", operand: ref, negated: false, type: BOOLEAN }
           : strictEquality(ref, l.value, false, l.node),
       )
-      .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: scalarType("boolean") })),
+      .reduce((left, right): ExprIR => ({ kind: "binary", op: "or", left, right, type: BOOLEAN })),
     body: g.body,
   }));
   if (allReturn) {

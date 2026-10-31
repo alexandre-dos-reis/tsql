@@ -25,11 +25,12 @@ import {
   type ArrayType,
   type ExprIR,
   type PgType,
+  BOOLEAN,
 } from "@/ir";
 import { coerce, requireAssignable, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 
-import { resolveAccess, tryReadPath } from "./access";
+import { nameText, resolveAccess, tryReadPath } from "./access";
 import { isNullLiteral, lowerExpr } from "./expr";
 
 /**
@@ -150,7 +151,7 @@ export async function lowerArrayMethod(
   array: ExprIR & { readonly type: ArrayType },
   s: State,
 ): Promise<ExprIR> {
-  const method = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const method = nameText(access.name);
   if (method !== "includes") {
     throw CompileError.at(access, `\`.${method}()\` is not supported. ${ARRAY_SUBSET} Write the loop out.`);
   }
@@ -168,7 +169,7 @@ export async function lowerArrayMethod(
   const argument = node.arguments[0] as Expression;
   if (isNullLiteral(argument)) {
     const value: ExprIR = { kind: "lit", value: null, type: scalarType(element.sql, true) };
-    return { kind: "arrayIncludes", array, value, type: scalarType("boolean") };
+    return { kind: "arrayIncludes", array, value, type: BOOLEAN };
   }
   const value = await lowerExpr(argument, s);
   if (!isScalar(value.type) || !sameFamily(value.type, element)) {
@@ -180,5 +181,5 @@ export async function lowerArrayMethod(
       `Looking for a \`${value.type.sql}\` in \`${describe(array.type)}\` would need a cast that rounds it. Declare the array's elements as wide as the value.`,
     );
   }
-  return { kind: "arrayIncludes", array, value: coerce(value, element), type: scalarType("boolean") };
+  return { kind: "arrayIncludes", array, value: coerce(value, element), type: BOOLEAN };
 }

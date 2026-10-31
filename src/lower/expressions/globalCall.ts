@@ -16,12 +16,25 @@ import { INT4_MIN } from "@/constants";
 import { CompileError } from "@/errors";
 import { mathFunction, unsupportedMathMessage } from "@/globals/math";
 import { numberFunction, unsupportedNumberMessage } from "@/globals/number";
-import { describe, isExactly, isNumeric, isScalar, scalarType, type ExprIR, type PgType, type ScalarType } from "@/ir";
+import {
+  describe,
+  isExactly,
+  isNumeric,
+  isScalar,
+  scalarType,
+  type ExprIR,
+  type PgType,
+  type ScalarType,
+  PG,
+  INTEGER,
+  DOUBLE,
+} from "@/ir";
 import { coerce, unify } from "@/lower/coerce";
 import { type State } from "@/lower/state";
 import { classifyReference } from "@/references";
 
-import { DOUBLE, helper } from "./call";
+import { nameText } from "./access";
+import { helper } from "./call";
 import { lowerExpr } from "./expr";
 
 /**
@@ -91,7 +104,7 @@ export async function lowerNumberCall(
   s: State,
   guarded: boolean,
 ): Promise<ExprIR> {
-  const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const member = nameText(access.name);
   const entry = numberFunction(member);
   if (!entry) throw CompileError.at(access, unsupportedNumberMessage(member));
   const label = `Number.${member}`;
@@ -137,7 +150,7 @@ export async function lowerNumberCall(
   }
 
   const text = await lowerExpr(node.arguments[0] as Expression, s);
-  if (!isScalar(text.type) || !isExactly(text.type, "text") || text.type.nullable) {
+  if (!isScalar(text.type) || !isExactly(text.type, PG.text) || text.type.nullable) {
     throw CompileError.at(
       node.arguments[0] as Node,
       `\`${label}\` reads a \`string\` that cannot be null, not \`${describe(text.type)}${text.type.nullable ? " | null" : ""}\`. ` +
@@ -149,7 +162,6 @@ export async function lowerNumberCall(
   // where it raises on exactly the values TypeScript's `int` throws on. Nothing
   // is emitted here for the guard, which is why `lowerIntGuard` sees an
   // `integer` and erases itself as it does around arithmetic.
-  const INTEGER = scalarType("integer");
 
   // The radix goes to the helper as JavaScript spells it: 10 for base ten, 0
   // for an omitted one, which reads a leading `0x` as hexadecimal.
@@ -163,7 +175,7 @@ export async function lowerMathCall(
   s: State,
   guarded: boolean,
 ): Promise<ExprIR> {
-  const member = access.name.kind === SyntaxKind.Identifier ? (access.name as Identifier).text : access.name.getText();
+  const member = nameText(access.name);
   const entry = mathFunction(member);
   if (!entry) throw CompileError.at(access, unsupportedMathMessage(member));
   const label = `Math.${member}`;
@@ -195,7 +207,7 @@ export async function lowerMathCall(
         `\`${label}\` needs numbers that cannot be null, not \`${describe(lowered.type)}${lowered.type.nullable ? " | null" : ""}\`.`,
       );
     }
-    if (entry.shape === "int32" && !isExactly(lowered.type, "integer")) {
+    if (entry.shape === "int32" && !isExactly(lowered.type, PG.integer)) {
       throw CompileError.at(
         argument as Node,
         `\`${label}\` takes \`Integer\` arguments: it works on a 32-bit pattern, and a \`Float\` would first be truncated and wrapped modulo 2^32 (\`NaN\` and the infinities to 0), which tsql does not reproduce.`,
@@ -207,7 +219,7 @@ export async function lowerMathCall(
   switch (entry.shape) {
     case "same": {
       const operand = args[0]!;
-      if (isExactly(operand.type, "integer") && !guarded) {
+      if (isExactly(operand.type, PG.integer) && !guarded) {
         throw CompileError.at(
           node,
           `\`${label}\` of an \`Integer\` can overflow 32 bits — \`${label}(${INT4_MIN})\` is ${-INT4_MIN} — which PostgreSQL refuses (\`integer out of range\`) where TypeScript returns it. ` +
@@ -227,7 +239,7 @@ export async function lowerMathCall(
           return helper(s, `math_${entry.rule}`, [x], DOUBLE);
         case "sign":
           // An `Integer` has no `NaN` and no negative zero: `sign` is exact on it.
-          return isExactly(operand.type, "integer")
+          return isExactly(operand.type, PG.integer)
             ? { kind: "builtin", sql: "sign", args: [x], type: DOUBLE }
             : helper(s, "math_sign", [x], DOUBLE);
         default:
@@ -242,7 +254,7 @@ export async function lowerMathCall(
       const widest = scalarType((type as ScalarType).sql);
       const widened = args.map((a) => coerce(a, widest));
       // Integers have neither a NaN nor a negative zero: the PostgreSQL function is exact.
-      if (!isExactly(widest, "double precision")) {
+      if (!isExactly(widest, PG.double)) {
         return { kind: "builtin", sql: entry.sql!, args: widened, type: widest };
       }
       // Pairwise, left to right, as `Math.max(a, b, c)` is `max(max(a, b), c)`.
@@ -250,6 +262,6 @@ export async function lowerMathCall(
       return widened.slice(1).reduce((acc, next) => helper(s, `math_${rule}`, [acc, next], DOUBLE), widened[0]!);
     }
     case "int32":
-      return helper(s, `math_${entry.rule as "clz32" | "imul"}`, args, scalarType("integer"));
+      return helper(s, `math_${entry.rule as "clz32" | "imul"}`, args, INTEGER);
   }
 }

@@ -7,6 +7,14 @@
 
 export type PgScalar = "text" | "integer" | "double precision" | "boolean";
 
+/** The names of the scalar types: written here, and read as `PG.integer` everywhere else. */
+export const PG = {
+  text: "text",
+  integer: "integer",
+  double: "double precision",
+  boolean: "boolean",
+} as const satisfies Record<string, PgScalar>;
+
 export interface ScalarType {
   readonly kind: "scalar";
   readonly sql: PgScalar;
@@ -108,9 +116,15 @@ export function scalarType(
   };
 }
 
+/** The plain, non-nullable scalar types, shared: a `ScalarType` is never mutated. */
+export const TEXT = scalarType(PG.text);
+export const INTEGER = scalarType(PG.integer);
+export const DOUBLE = scalarType(PG.double);
+export const BOOLEAN = scalarType(PG.boolean);
+
 /** The named type a closed set of strings maps to: `text` and a domain or an enum. */
 export function namedType(named: NamedText, nullable = false): ScalarType {
-  return scalarType("text", nullable, named.values, named);
+  return scalarType(PG.text, nullable, named.values, named);
 }
 
 /** An enum value needs `::text` wherever text is expected; a domain is text already. */
@@ -156,7 +170,7 @@ export function isExactly(type: PgType, sql: PgScalar): boolean {
   return isScalar(type) && type.sql === sql;
 }
 
-const NUMERIC_SCALARS = new Set<PgScalar>(["integer", "double precision"]);
+const NUMERIC_SCALARS = new Set<PgScalar>([PG.integer, PG.double]);
 
 export function isNumeric(type: PgType): boolean {
   return isScalar(type) && NUMERIC_SCALARS.has(type.sql);
@@ -205,7 +219,7 @@ function sameElement(a: ScalarType | CompositeType, b: ScalarType | CompositeTyp
 }
 
 /** TypeScript computes all arithmetic in doubles; these ranks only widen. */
-const NUMERIC_RANK: Record<string, number> = { integer: 1, "double precision": 2 };
+const NUMERIC_RANK: Record<string, number> = { [PG.integer]: 1, [PG.double]: 2 };
 
 export function widenNumeric(a: PgScalar, b: PgScalar): PgScalar {
   return (NUMERIC_RANK[a] ?? 0) >= (NUMERIC_RANK[b] ?? 0) ? a : b;
