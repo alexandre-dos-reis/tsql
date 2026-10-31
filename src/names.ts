@@ -51,5 +51,24 @@ export function quoteLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+/**
+ * A text literal written as PostgreSQL's Unicode escapes — `U&'\0009\000A'`.
+ *
+ * Used for the whitespace `.trim()` removes, where the characters themselves
+ * would be 25 invisible ones in the migration: a reader could not tell which,
+ * and an editor trimming the file would change what the function does. Four hex
+ * digits for the BMP, `\+` and six above it, which is the form PostgreSQL
+ * documents.
+ *
+ * `U&'…'` needs `standard_conforming_strings` on (the default since 9.1), and
+ * code points above U+007F need a UTF8 server encoding.
+ */
+export function quoteUnicodeLiteral(codePoints: readonly number[]): string {
+  const escapes = codePoints.map((point) =>
+    point > 0xffff ? `\\+${point.toString(16).padStart(6, "0")}` : `\\${point.toString(16).padStart(4, "0")}`,
+  );
+  return `U&'${escapes.join("")}'`;
+}
+
 /** PostgreSQL's NAMEDATALEN - 1. Longer identifiers are silently truncated. */
 export const MAX_IDENTIFIER_BYTES = 63;

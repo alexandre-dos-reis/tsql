@@ -292,6 +292,18 @@ replaced, and `tests/helpers.test.ts` pins it. It is also one helper rather than
 is what lets the base-ten expression live in one place: a helper cannot call another, `runtimeSql` creating
 them alphabetically and a migration carrying only the ones its functions use.
 
+`src/globals/string.ts` is the third table, for `String.prototype`, and holds `trim`, `trimStart` and `trimEnd` — `btrim`, `ltrim` and
+`rtrim` **handed the characters to remove** (`JS_WHITESPACE`, the 25 code points of ECMAScript's `WhiteSpace` and `LineTerminator`).
+The set form is the point: one-argument `btrim(s)` strips spaces only, and a character set compares code points, so no locale or
+collation decides anything — which is why `toUpperCase` stays refused (`upper()` follows the database's rules) and why these need
+**no helper**: PostgreSQL already has the same three functions. They are reached by the *operand's* type, not by provenance —
+`textOperand` (`src/lower/expressions/stringMethod.ts`) asks whether it lowered to `text`, so there is no global to recognise; an
+enum operand is cast `::text` and the result is plain `text`. The set is emitted as the `EXPR.unicodeLit` node, `U&'\0009\000a…'`,
+because 25 invisible characters cannot be reviewed and an editor stripping trailing whitespace would change the function; the code
+points come from lowering, so the emitter still decides nothing. The table is written out rather than derived per compile, and
+`tests/trimValues.test.ts` derives it from the engine over the whole BMP and fails if they differ. `docs/design.md` ("Strings")
+carries the measurements and every refusal's reason.
+
 ## Types and composites
 
 `src/ir.ts` defines the IR and all the type predicates (`sameFamily`, `widenNumeric`, `assignable`).
