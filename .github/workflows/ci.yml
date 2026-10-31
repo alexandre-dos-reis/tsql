@@ -54,7 +54,8 @@ jobs:
     # Skip the release path. The "Version Packages" PR, and the commit merging
     # it, only move version numbers and the CHANGELOG — no source changes — and
     # `prepublishOnly` runs the build, the type checker and the whole suite
-    # inside `npm publish` anyway, so the release is still gated on green.
+    # inside `npm publish` anyway, so the release is still gated on green. release.yml
+    # runs on this skip too, and only for this commit: it is the one that publishes.
     #
     # `github.head_ref` is set on pull_request only, and `head_commit` on push
     # only; each comparison is vacuously true for the other event, so the set
