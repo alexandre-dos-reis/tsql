@@ -1,6 +1,6 @@
 {
   "name": "@adrdp/tsql",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Compiles a restricted subset of TypeScript functions and types to PostgreSQL, refusing anything whose semantics it cannot preserve",
   "keywords": [
     "bun",

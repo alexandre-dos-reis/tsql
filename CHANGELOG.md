@@ -1,5 +1,36 @@
 # @adrdp/tsql
 
+## 0.5.0
+
+### Minor Changes
+
+- 804feb1: Compile `String.prototype`'s three searches: `s.includes(t)`, `s.startsWith(t)` and `s.endsWith(t)`
+  become `strpos(s, t) > 0`, `starts_with(s, t)` and `starts_with(reverse(s), reverse(t))`. A
+  substring search compares code points, so — like the trims, and unlike `<` on strings — no locale
+  and no collation decides anything, and no helper is installed in the `tsql` schema.
+  
+  `endsWith` is written as a prefix test on both strings reversed rather than as
+  `right(s, length(t)) = t`, which is equally exact but mentions the needle twice: `s.endsWith(f(x))`
+  would call the compiled `f` twice.
+  
+  Their optional second argument is refused: it is a position counted in UTF-16 code units, which
+  PostgreSQL's `text` has no notion of — it counts characters, so `"😀a".includes("a", 1)` would
+  disagree. `indexOf` and `lastIndexOf` stay refused for the same reason, now pointing at `includes`
+  and `endsWith` where those answer the question.
+- 37565a0: Compile `String.prototype`'s three trims: `s.trim()`, `s.trimStart()` and `s.trimEnd()` become
+  `btrim`, `ltrim` and `rtrim` **handed the set of characters to remove** — the 25 code points
+  ECMAScript's `trim` strips (`WhiteSpace` and `LineTerminator`), written in the migration as
+  `U&'\0009\000a…'`. The set form matters: the one-argument `btrim(s)` removes spaces only, so it
+  would diverge on a tab, and a character set compares code points, so neither the database's locale
+  nor its collation decides anything. No helper is installed in the `tsql` schema: PostgreSQL already
+  has these three functions with the same definition.
+  
+  This is the first method on a value to compile. Methods on anything but a string, and every other
+  string method, are still refused — now with the divergence named rather than a categorical answer:
+  `.toUpperCase()` reports the locale and collation question, `.length`, `.indexOf()` and `.slice()`
+  report that TypeScript counts UTF-16 code units where PostgreSQL counts characters, and
+  `.trimLeft()`/`.trimRight()` are told to write `trimStart`/`trimEnd`.
+
 ## 0.4.0
 
 ### Minor Changes
